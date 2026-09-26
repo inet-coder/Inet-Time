@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 
 from core.settings import settings
+from routers import accounts, users
 
 app = FastAPI(title="Userbots API")
+app.include_router(users.router)
+app.include_router(accounts.router)
 
 
 @app.get("/health")

@@ -43,7 +43,7 @@ export function ServiceGrid({ catalog, services, lockLabel, onOpen, onToggle }: 
           >
             <div className="service__top">
               <ServiceIcon code={svc.code} />
-              {svc.unlocked && svc.kind === "stories" ? (
+              {svc.unlocked && ["stories", "birthday", "presence"].includes(svc.kind) ? (
                 <ChevronRight size={20} className="list-item__chev" />
               ) : svc.unlocked ? (
                 <button

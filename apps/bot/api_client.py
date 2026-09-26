@@ -129,6 +129,23 @@ class ApiClient:
     async def send_stories(self, user_id: int, account_id: int, username: str) -> dict:
         return await self._call("POST", f"/ai/{user_id}/{account_id}/stories", json={"username": username})
 
+    # --- Tug'ilgan kun va faollik holati ---
+
+    async def get_birthday(self, user_id: int, account_id: int) -> dict:
+        return await self._call("GET", f"/profile/{user_id}/{account_id}/birthday")
+
+    async def save_birthday(self, user_id: int, account_id: int, day: int, month: int, year: int | None) -> dict:
+        return await self._call("PUT", f"/profile/{user_id}/{account_id}/birthday", json={"day": day, "month": month, "year": year})
+
+    async def import_birthday(self, user_id: int, account_id: int) -> dict:
+        return await self._call("POST", f"/profile/{user_id}/{account_id}/birthday/import")
+
+    async def get_presence(self, user_id: int, account_id: int) -> dict:
+        return await self._call("GET", f"/profile/{user_id}/{account_id}/presence")
+
+    async def save_presence(self, user_id: int, account_id: int, mode: str) -> dict:
+        return await self._call("PUT", f"/profile/{user_id}/{account_id}/presence", json={"mode": mode})
+
     async def payment_instructions(self) -> str:
         return (await self._call("GET", "/payments/instructions"))["instructions"]
 

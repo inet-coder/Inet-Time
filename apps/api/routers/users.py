@@ -143,6 +143,7 @@ async def get_overview(user_id: int, db: AsyncSession = Depends(get_db)) -> dict
                 "first_name": a.first_name,
                 "status": a.status.value,
                 "is_premium": a.is_premium,
+                "birthday": a.birthday,
                 "automations": by_account.get(a.id, []),
             }
             for a in accounts

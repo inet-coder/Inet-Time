@@ -135,7 +135,8 @@ async def run_automation_once(ctx, automation_id: int, job_id: str) -> None:
                 by_field.setdefault(a.field, []).append(a)
 
             tpl_ctx = TemplateContext(
-                first_name=account.first_name, last_name=account.last_name, username=account.username, timezone=tz
+                first_name=account.first_name, last_name=account.last_name, username=account.username, timezone=tz,
+                birthday=account.birthday,
             )
             field_adapter = get_field_adapter()
             applied = []

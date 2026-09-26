@@ -32,3 +32,7 @@ class AISetup(StatesGroup):
 
 class StoriesAsk(StatesGroup):
     waiting_username = State()
+
+
+class BirthdayAsk(StatesGroup):
+    waiting_date = State()

@@ -28,6 +28,7 @@ import {
 } from "./components/Editors";
 import { AdminView } from "./components/AdminView";
 import { AIReplyEditor, StoriesEditor } from "./components/AIEditors";
+import { BirthdayEditor, PresenceEditor } from "./components/ProfileEditors";
 import { PlansView } from "./components/PlansView";
 import { ProfileCard } from "./components/ProfileCard";
 import { ServiceGrid } from "./components/ServiceGrid";
@@ -39,7 +40,12 @@ import { confirmDialog, haptic, matchChrome, openBot, tg } from "./tg";
 import { money, whenText } from "./util";
 
 // Profil maydonini o'zgartirmaydigan xizmatlar — o'z oynasi bor, "profil ko'rinishi" ko'rsatilmaydi.
-const SPECIAL_EDITORS: Record<string, typeof AIReplyEditor> = { ai_reply: AIReplyEditor, stories: StoriesEditor };
+const SPECIAL_EDITORS: Record<string, typeof AIReplyEditor> = {
+  ai_reply: AIReplyEditor,
+  stories: StoriesEditor,
+  birthday: BirthdayEditor,
+  presence: PresenceEditor,
+};
 
 const EDITORS: Record<string, (p: EditorProps) => JSX.Element> = {
   template: TemplateEditor,

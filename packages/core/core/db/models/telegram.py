@@ -19,6 +19,8 @@ class TelegramAccount(TimestampMixin, Base):
     username: Mapped[str | None] = mapped_column(String(64))
     first_name: Mapped[str | None] = mapped_column(String(128))
     last_name: Mapped[str | None] = mapped_column(String(128))
+    # Tug'ilgan kun: "MM-DD" yoki "YYYY-MM-DD" — {bday}, {age} shablonlari uchun.
+    birthday: Mapped[str | None] = mapped_column(String(10))
     is_premium: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[TelegramAccountStatus] = mapped_column(
         Enum(TelegramAccountStatus, native_enum=False, length=16),

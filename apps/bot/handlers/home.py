@@ -60,7 +60,8 @@ def _account_label(account: dict) -> str:
 
 def _preview(template: str, account: dict) -> str:
     ctx = TemplateContext(
-        first_name=account["first_name"], last_name=None, username=account["username"], timezone=settings.default_timezone
+        first_name=account["first_name"], last_name=None, username=account["username"], timezone=settings.default_timezone,
+        birthday=account.get("birthday"),
     )
     return render(template, ctx)
 
@@ -243,8 +244,8 @@ async def template_received(message: Message, state: FSMContext) -> None:
 
     try:
         preview = _preview(template, account)
-    except ValueError:
-        await message.answer("🤔 Noma'lum o'zgaruvchi bor. Qaytadan yuboring.\n\n" + TEMPLATE_HELP, reply_markup=kb.cancel())
+    except ValueError as exc:
+        await message.answer(f"🤔 {exc}. Qaytadan yuboring.\n\n" + TEMPLATE_HELP, reply_markup=kb.cancel())
         return
     limit = _MAX_LEN[meta["field"]] * (2 if meta["field"] == "bio" and account["is_premium"] else 1)
     if not preview or len(preview) > limit:

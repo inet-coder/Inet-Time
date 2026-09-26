@@ -11,6 +11,23 @@ TEMPLATE_VARIABLES = [
     {"key": "{day}", "label": "Kun"},
     {"key": "{month}", "label": "Oy"},
     {"key": "{year}", "label": "Yil"},
+    {"key": "{bday}", "label": "🎂 Tug'ilgan kun"},
+    {"key": "{bday_days}", "label": "🎂 Necha kun qoldi"},
+    {"key": "{age}", "label": "Yosh"},
+    {"key": "{newyear_days}", "label": "🎄 Yangi yilgacha"},
+    {"key": "{year_bar}", "label": "⏳ Yil ▓░"},
+    {"key": "{year_percent}", "label": "Yil %"},
+    {"key": "{weekend}", "label": "📆 Dam olishgacha"},
+    {"key": "{daypart}", "label": "☀️ Xayrli tong/kech"},
+]
+
+# 🎂 kartasidagi tayyor shablonlar (bio uchun). Tug'ilgan kun kiritilgan bo'lishi kerak.
+BIRTHDAY_TEMPLATES = [
+    "🎂 {bday}",
+    "🎈 {bday_days} kundan keyin tug'ilgan kunim!",
+    "🎂 {age} yosh · keyingisiga {bday_days} kun",
+    "🥳 {bday} · {date}",
+    "🎁 Sovg'alar qabul qilinadi: {bday_days} kun qoldi",
 ]
 
 SERVICE_CATALOG = [
@@ -34,7 +51,16 @@ SERVICE_CATALOG = [
         "desc": "Bio shablon bo'yicha yangilanib turadi",
         "flag": None,
         "default": "🕐 {time} · {weekday}",
-        "presets": ["🕐 {time} · {weekday}", "📅 {date} · {weekday}", "☕️ Hozir soat {time}", "📍 Toshkent · {time}"],
+        "presets": [
+            "🕐 {time} · {weekday}",
+            "📅 {date} · {weekday}",
+            "{daypart} · {time}",
+            "📍 Toshkent · {time}",
+            "🎄 Yangi yilga {newyear_days} kun",
+            "⏳ {year}: {year_bar} {year_percent}%",
+            "📆 {weekend} · {time}",
+            "🎂 {bday}",
+        ],
     },
     {
         "code": "auto_name",
@@ -115,8 +141,29 @@ SERVICE_CATALOG = [
     },
 ]
 
-# Profil maydonini o'zgartirmaydigan xizmatlar — automation emas, alohida sozlanadi.
-NON_AUTOMATION_KINDS = {"ai_reply", "stories"}
+SERVICE_CATALOG += [
+    {
+        "code": "birthday",
+        "kind": "birthday",
+        "field": "bio",
+        "title": "Tug'ilgan kun",
+        "icon": "🎂",
+        "desc": "Bio'da tug'ilgan kuningizgacha qancha qolgani",
+        "flag": None,
+    },
+    {
+        "code": "presence",
+        "kind": "presence",
+        "field": "presence",
+        "title": "Faollik holati",
+        "icon": "👁",
+        "desc": "Onlayn, «yaqinda onlayn edi» yoki aniq vaqt",
+        "flag": None,
+    },
+]
+
+# Profil maydonini o'zgartirmaydigan (yoki o'z oynasi bor) xizmatlar — automation sifatida yoqilmaydi.
+NON_AUTOMATION_KINDS = {"ai_reply", "stories", "birthday", "presence"}
 
 # Automation sifatida yoqiladigan xizmatlar (profil maydonini o'zgartiradi).
 SERVICE_CODES = {s["code"] for s in SERVICE_CATALOG if s["kind"] not in NON_AUTOMATION_KINDS}

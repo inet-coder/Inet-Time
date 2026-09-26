@@ -44,7 +44,10 @@ async def _load(tg_user) -> tuple[int, dict, dict | None]:
 
 
 def _preview(template: str, account: dict) -> str:
-    ctx = TemplateContext(first_name=account["first_name"], username=account["username"], timezone=settings.default_timezone)
+    ctx = TemplateContext(
+        first_name=account["first_name"], username=account["username"], timezone=settings.default_timezone,
+        birthday=account.get("birthday"),
+    )
     return render(template, ctx)
 
 
@@ -56,8 +59,8 @@ def _check_text(template: str, field: str, account: dict) -> str | None:
     """Xato matnini qaytaradi (yoki None — hammasi joyida)."""
     try:
         preview = _preview(template, account)
-    except ValueError:
-        return f"🤔 «{template}» — noma'lum o'zgaruvchi.\n\n{TEMPLATE_HELP}"
+    except ValueError as exc:
+        return f"🤔 «{template}» — {exc}.\n\n{TEMPLATE_HELP}"
     if not preview or len(preview) > _limit(field, account):
         return f"✂️ «{template}» juda uzun: {len(preview)}/{_limit(field, account)} belgi."
     return None

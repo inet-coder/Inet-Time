@@ -20,7 +20,7 @@ export type LimitMeta = { key: string; title: string; min: number; max: number }
 
 export type CatalogService = {
   code: string;
-  kind: "template" | "online" | "playlist" | "schedule" | "emoji" | "photo" | "ai_reply" | "stories";
+  kind: "template" | "online" | "playlist" | "schedule" | "emoji" | "photo" | "ai_reply" | "stories" | "birthday" | "presence";
   field: string;
   title: string;
   icon: string;
@@ -91,6 +91,17 @@ export type StoryItem = {
   caption: string;
   thumb: string | null;
 };
+
+export type BirthdayState = {
+  birthday: string | null;
+  day: number | null;
+  month: number | null;
+  year: number | null;
+  templates: { template: string; preview: string | null; error?: string }[];
+};
+
+export type PresenceMode = "online" | "recently" | "contacts" | "default";
+export type PresenceState = { mode: PresenceMode; online_unlocked: boolean };
 
 export type ScheduleSuggestion = { time: string; text: string };
 
@@ -170,6 +181,13 @@ export const api = {
     }),
   sendStories: (accountId: number, username: string, storyIds?: number[]) =>
     request<{ ok: boolean }>("POST", "/webapp/stories/send", { account_id: accountId, username, story_ids: storyIds ?? null }),
+  birthday: (accountId: number) => request<BirthdayState>("GET", `/webapp/birthday?account_id=${accountId}`),
+  saveBirthday: (accountId: number, body: { day: number; month: number; year: number | null }) =>
+    request<BirthdayState>("PUT", `/webapp/birthday?account_id=${accountId}`, body),
+  importBirthday: (accountId: number) => request<BirthdayState>("POST", `/webapp/birthday/import?account_id=${accountId}`),
+  presence: (accountId: number) => request<PresenceState>("GET", `/webapp/presence?account_id=${accountId}`),
+  savePresence: (accountId: number, mode: PresenceMode) =>
+    request<PresenceState>("PUT", `/webapp/presence?account_id=${accountId}`, { mode }),
   topup: (amount: number) =>
     request<{ ok: boolean; payment_id: number; instructions: string }>("POST", "/webapp/topup", { amount }),
 };

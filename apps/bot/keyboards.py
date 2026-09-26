@@ -100,6 +100,7 @@ def pro_menu(live: dict[str, dict], flags: dict) -> InlineKeyboardMarkup:
         icon = _status_icon(live, code) if flags.get(meta["flag"]) or code in live else " 🔒"
         target = "svc:online" if code == "online" else f"pro:{code}"
         rows.append([(f"{meta['title']}{icon}", target)])
+    rows.append([("🎂 Tug'ilgan kun", "bday"), ("👁 Faollik holati", "presence")])
     rows.append([("🏠 Bosh sahifa", "home")])
     return _kb(rows)
 
@@ -152,7 +153,7 @@ def upsell() -> InlineKeyboardMarkup:
 
 
 def account_menu(multi_account: bool) -> InlineKeyboardMarkup:
-    rows = [[("➕ Akkaunt qo'shish", "acc_add")]]
+    rows = [[("👁 Faollik holati", "presence")], [("➕ Akkaunt qo'shish", "acc_add")]]
     if multi_account:
         rows.append([("🔄 Boshqa akkaunt", "acc_switch")])
     rows.append([("🚫 Akkauntni uzish", "acc_del")])
@@ -294,3 +295,33 @@ def cancel_to(target: str) -> InlineKeyboardMarkup:
 
 def stories_again() -> InlineKeyboardMarkup:
     return _kb([[("👀 Yana stories", "pro:stories")], [("🏠 Bosh sahifa", "home")]])
+
+
+# --- Tug'ilgan kun va faollik holati ---
+
+
+def birthday_menu(data: dict) -> InlineKeyboardMarkup:
+    rows = []
+    if data["birthday"]:
+        rows += [[(t["preview"], f"bday_use:{i}")] for i, t in enumerate(data["templates"]) if t["preview"]]
+    rows.append([("📥 Telegram profilidan olish", "bday_import")])
+    rows += _webapp_row()
+    rows.append([("⬅️ Orqaga", "pro")])
+    return _kb(rows)
+
+
+def presence_menu(current: str, online_unlocked: bool) -> InlineKeyboardMarkup:
+    options = [
+        ("online", "🟢 Doim onlayn"),
+        ("recently", "🕶 Yaqinda onlayn edi"),
+        ("contacts", "👥 Faqat kontaktlarga"),
+        ("default", "🕐 Standart (aniq vaqt)"),
+    ]
+    rows = []
+    for mode, title in options:
+        if mode == "online" and not online_unlocked:
+            rows.append([(f"{title} 🔒", "plans")])
+        else:
+            rows.append([(("✅ " if mode == current else "") + title, f"presence:{mode}")])
+    rows.append([("⬅️ Orqaga", "pro")])
+    return _kb(rows)

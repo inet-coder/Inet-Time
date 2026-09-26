@@ -113,7 +113,8 @@ async def _bot_username() -> str | None:
 def _ctx(account: dict | TelegramAccount) -> TemplateContext:
     get = account.get if isinstance(account, dict) else lambda k: getattr(account, k)
     return TemplateContext(
-        first_name=get("first_name"), last_name=get("last_name"), username=get("username"), timezone=settings.default_timezone
+        first_name=get("first_name"), last_name=get("last_name"), username=get("username"), timezone=settings.default_timezone,
+        birthday=get("birthday"),
     )
 
 
@@ -206,8 +207,8 @@ async def preview(payload: PreviewIn, user: User = Depends(current_user), db: As
     try:
         current = render(payload.template, _ctx(account), now)
         later = render(payload.template, _ctx(account), now + datetime.timedelta(minutes=1))
-    except ValueError:
-        return {"ok": False, "error": "Shablonda noma'lum o'zgaruvchi bor", "limit": limit}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "limit": limit}
     if not current.strip():
         return {"ok": False, "error": "Bo'sh bo'lmasligi kerak", "now": current, "limit": limit, "length": 0}
     if len(current) > limit:
@@ -245,7 +246,7 @@ async def enable_service(payload: ServiceIn, user: User = Depends(current_user),
             try:
                 rendered = render(item["template"], _ctx(account))
             except (ValueError, KeyError) as exc:
-                raise HTTPException(400, "Shablonda noma'lum o'zgaruvchi bor") from exc
+                raise HTTPException(400, str(exc) if isinstance(exc, ValueError) else "Shablonda noma'lum o'zgaruvchi bor") from exc
             if not rendered.strip() or len(rendered) > limit:
                 raise HTTPException(400, f"«{item['template']}» bo'sh yoki juda uzun ({len(rendered)}/{limit})")
 

@@ -93,7 +93,9 @@ INTERVAL_CHOICES = {
 TEMPLATE_HELP = (
     "🔤 O'zgaruvchilar:\n"
     "{first_name} ism · {name} to'liq ism · {username}\n"
-    "{time} soat · {date} sana · {weekday} hafta kuni"
+    "{time} soat · {date} sana · {weekday} hafta kuni\n"
+    "{bday} tug'ilgan kun · {newyear_days} yangi yil · {year_bar} yil\n"
+    "{weekend} dam olish · {daypart} xayrli tong/kech"
 )
 
 STATUS_ICONS = {"ACTIVE": "✅", "STARTING": "⏳", "ERROR": "⚠️"}

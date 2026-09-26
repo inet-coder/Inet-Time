@@ -2185,3 +2185,87 @@ svg {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
   text-align: left;
 }
+
+/* --- Tug'ilgan kun, faollik holati --- */
+.date-row {
+  display: grid;
+  grid-template-columns: 70px 1fr 80px;
+  gap: 8px;
+}
+.date-row select.input {
+  appearance: none;
+  font-weight: 600;
+}
+.preset--live {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: inherit;
+  font-size: 14px;
+}
+.preset--live:disabled {
+  opacity: 0.55;
+}
+.presence-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 8px 0 14px;
+  padding: 14px;
+  border-radius: 16px;
+  text-align: center;
+  background: var(--bg);
+}
+.presence-preview b {
+  font-size: 16px;
+}
+.presence-preview b.is-online {
+  color: var(--link);
+}
+.mode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mode {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  text-align: left;
+  background: var(--bg);
+  border: 1.5px solid transparent;
+  transition: border-color 0.15s, background 0.15s;
+}
+.mode.is-selected {
+  border-color: var(--accent);
+  background: var(--soft);
+}
+.mode__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  color: var(--link);
+  background: var(--card);
+  flex-shrink: 0;
+}
+.mode__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mode__body .hint {
+  font-size: 12.5px;
+}
+.mode__check {
+  color: var(--link);
+}
+.spinner--sm {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+}

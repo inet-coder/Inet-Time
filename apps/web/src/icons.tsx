@@ -1,8 +1,10 @@
 import {
   Bot,
+  Cake,
   CalendarClock,
   CircleDashed,
   Clock,
+  Eye,
   FileText,
   Images,
   PenLine,
@@ -25,6 +27,8 @@ export const SERVICE_ICONS: Record<string, { Icon: LucideIcon; from: string; to:
   photo: { Icon: Images, from: "#ff6b6b", to: "#c9304a" },
   ai_reply: { Icon: Bot, from: "#1fd1b6", to: "#0b7f9e" },
   stories: { Icon: CircleDashed, from: "#ff8a4c", to: "#e1306c" },
+  birthday: { Icon: Cake, from: "#ff9ad5", to: "#d9408f" },
+  presence: { Icon: Eye, from: "#7aa7ff", to: "#4a5bd6" },
 };
 
 const FALLBACK = { Icon: Sparkles, from: "#8a93a6", to: "#5b6478" };

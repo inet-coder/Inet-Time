@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Balans to'ldirishda foydalanuvchiga ko'rsatiladi (masalan: karta raqami va egasi).
     payment_instructions: str = ""
     default_timezone: str = "Asia/Tashkent"
+    # Mini App manzili. Bo'sh bo'lsa bot uni cloudflared quick tunnel'dan o'zi aniqlaydi.
+    webapp_url: str = ""
+    tunnel_metrics_url: str = "http://tunnel:2000/quicktunnel"
 
     @property
     def admin_telegram_id_set(self) -> set[int]:

@@ -6,5 +6,7 @@ COPY apps/web/package.json ./package.json
 RUN npm install
 
 COPY apps/web ./
+RUN npm run build
 
-CMD ["npm", "run", "dev"]
+# Tunnel orqali telefonda tez ochilishi uchun dev-server emas, yig'ilgan (build) versiya beriladi.
+CMD ["npm", "run", "preview"]

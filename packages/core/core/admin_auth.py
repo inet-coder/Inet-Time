@@ -24,6 +24,7 @@ def create_access_token(admin_id: int) -> str:
     now = datetime.datetime.now(datetime.timezone.utc)
     payload = {
         "sub": str(admin_id),
+        "typ": "admin",
         "iat": now,
         "exp": now + datetime.timedelta(minutes=ACCESS_TOKEN_TTL_MINUTES),
     }
@@ -31,8 +32,11 @@ def create_access_token(admin_id: int) -> str:
 
 
 def decode_access_token(token: str) -> int:
-    """Admin ID qaytaradi. Noto'g'ri/muddati o'tgan token bo'lsa jwt.PyJWTError ko'taradi."""
+    """Admin ID qaytaradi. Noto'g'ri/muddati o'tgan yoki admin bo'lmagan token uchun jwt.PyJWTError ko'taradi."""
     payload = jwt.decode(token, settings.jwt_secret, algorithms=[JWT_ALGORITHM])
+    if payload.get("typ") != "admin":
+        # Mini App foydalanuvchi tokeni bilan admin endpointlariga kirib bo'lmasin (ID'lar kesishishi mumkin).
+        raise jwt.InvalidTokenError("admin tokeni emas")
     return int(payload["sub"])
 
 

@@ -5,6 +5,7 @@ from aiogram.types import Message
 
 from api_client import api_client
 from handlers.home import send_home
+from handlers.pro import begin_emoji_setup
 
 router = Router(name="start")
 
@@ -16,6 +17,9 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
     if command.args and command.args.startswith("ref_"):
         referral_code = command.args.removeprefix("ref_")
     user = await api_client.get_or_create_user(message.from_user, referral_code=referral_code)
+    if command.args == "emoji":
+        await begin_emoji_setup(message, state)
+        return
     await send_home(message.bot, message.chat.id, message.from_user.id, user["id"])
 
 

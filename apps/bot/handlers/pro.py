@@ -185,6 +185,24 @@ async def start_setup(callback: CallbackQuery, state: FSMContext) -> None:
     await safe_answer(callback)
 
 
+async def begin_emoji_setup(message: Message, state: FSMContext) -> None:
+    """Mini App'dagi "emoji qo'shish" havolasi (/start emoji) — Premium emoji faqat Telegram chatida kiritiladi."""
+    _, overview, account = await _load(message.from_user)
+    if account is None:
+        await message.answer("Avval akkaunt ulang.", reply_markup=kb.login_methods())
+        return
+    if not overview["plan"]["flags"].get(PRO_SERVICES["emoji"]["flag"]):
+        await message.answer("🔒 Emoji status Pro tarifda ochiladi.", reply_markup=kb.upsell())
+        return
+    if not account["is_premium"]:
+        await message.answer("Bu akkauntda Telegram Premium yo'q — emoji status faqat Premium akkauntlarda ishlaydi.")
+        return
+    await state.set_state(ProSetup.emoji_items)
+    await message.answer(
+        f"😀 Status uchun Premium emoji(lar) yuboring (1–{MAX_ITEMS} ta, bitta xabarda).", reply_markup=kb.cancel_to_pro()
+    )
+
+
 # --- Bio playlist ---
 
 

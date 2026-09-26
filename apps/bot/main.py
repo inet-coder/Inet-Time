@@ -1,11 +1,14 @@
 import asyncio
 import logging
 
+import httpx
 from aiogram import Bot, Dispatcher
+from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand, ErrorEvent
+from aiogram.types import BotCommand, ErrorEvent, MenuButtonWebApp, WebAppInfo
 
 from api_client import api_client
+from common import set_webapp_url, webapp_url
 from core.settings import settings
 from handlers import add_account, admin, billing, home, pro, start
 
@@ -36,6 +39,34 @@ async def on_error(event: ErrorEvent) -> None:
         pass
 
 
+WEBAPP_CHECK_SECONDS = 60
+
+
+async def _discover_webapp_url() -> str | None:
+    if settings.webapp_url:
+        return settings.webapp_url
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            hostname = (await client.get(settings.tunnel_metrics_url)).json().get("hostname")
+    except (httpx.HTTPError, ValueError):
+        return None
+    return f"https://{hostname}" if hostname else None
+
+
+async def webapp_url_watcher(bot: Bot) -> None:
+    """Quick tunnel har restartda yangi manzil beradi — menyu tugmasini doim joriy manzilga moslaymiz."""
+    while True:
+        url = await _discover_webapp_url()
+        if url and url != webapp_url():
+            try:
+                await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="📱 Ilova", web_app=WebAppInfo(url=url)))
+                set_webapp_url(url)
+                logger.info("Mini App manzili: %s", url)
+            except TelegramAPIError:
+                logger.exception("menu button o'rnatilmadi")
+        await asyncio.sleep(WEBAPP_CHECK_SECONDS)
+
+
 async def main() -> None:
     if not settings.bot_token:
         # Token yo'q bo'lsa ham konteyner qulamasin.
@@ -44,9 +75,11 @@ async def main() -> None:
         return
     bot = Bot(token=settings.bot_token)
     await bot.set_my_commands([BotCommand(command="start", description="Bosh sahifa")])
+    watcher = asyncio.create_task(webapp_url_watcher(bot))
     try:
         await dp.start_polling(bot)
     finally:
+        watcher.cancel()
         await api_client.close()
 
 

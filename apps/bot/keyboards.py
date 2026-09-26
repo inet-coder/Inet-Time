@@ -1,16 +1,28 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from catalog import PRO_SERVICES, SERVICES, STATUS_ICONS, interval_text
+from common import webapp_url
+
+
+def _button(text: str, data: str) -> InlineKeyboardButton:
+    # https:// bilan boshlansa — Mini App tugmasi, aks holda oddiy callback.
+    if data.startswith("https://"):
+        return InlineKeyboardButton(text=text, web_app=WebAppInfo(url=data))
+    return InlineKeyboardButton(text=text, callback_data=data)
 
 
 def _kb(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=data) for text, data in row] for row in rows]
-    )
+    return InlineKeyboardMarkup(inline_keyboard=[[_button(text, data) for text, data in row] for row in rows])
+
+
+def _webapp_row() -> list[list[tuple[str, str]]]:
+    url = webapp_url()
+    return [[("📱 Ilovani ochish — ko'rinish va tahrirlash", url)]] if url else []
 
 
 def home_no_account(admin: bool) -> InlineKeyboardMarkup:
     rows = [
+        *_webapp_row(),
         [("📞 Telefon raqam orqali ulash", "login_phone")],
         [("📷 QR kod orqali ulash", "login_qr")],
         [("💎 Tariflar", "plans"), ("💰 Balans", "bal")],
@@ -30,13 +42,16 @@ def home(live: dict[str, dict], multi_account: bool, admin: bool) -> InlineKeybo
         return f"{SERVICES[code]['title']} {_status_icon(live, code)}", f"svc:{code}"
 
     rows = [
+        *_webapp_row(),
         [svc_button("clock_name"), svc_button("auto_bio")],
         [svc_button("auto_name"), ("⭐ Pro xizmatlar", "pro")],
+    ]
+    if multi_account:
+        rows.append([("🔄 Boshqa akkauntga o'tish", "acc_switch")])
+    rows += [
         [("💎 Tariflar", "plans"), ("💰 Balans", "bal")],
         [("🤝 Taklif qilish", "ref"), ("⚙️ Akkaunt", "acc")],
     ]
-    if multi_account:
-        rows.insert(2, [("🔄 Boshqa akkauntga o'tish", "acc_switch")])
     if admin:
         rows.append([("🛠 Admin panel", "adm")])
     return _kb(rows)

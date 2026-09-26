@@ -9,6 +9,17 @@ from core.settings import settings
 # Faqat xotirada: restartdan keyin birinchi akkaunt tanlanadi — bu yetarli.
 _selected_account: dict[int, int] = {}
 
+# Mini App manzili — main.py'dagi watcher yangilab turadi (quick tunnel har restartda yangi URL beradi).
+_webapp = {"url": None}
+
+
+def webapp_url() -> str | None:
+    return _webapp["url"]
+
+
+def set_webapp_url(url: str | None) -> None:
+    _webapp["url"] = url
+
 
 def is_admin(telegram_user_id: int) -> bool:
     return telegram_user_id in settings.admin_telegram_id_set

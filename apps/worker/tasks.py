@@ -19,6 +19,7 @@ from core.db.models import (
     TelegramAccount,
     WorkerJob,
 )
+from core.preview import slot_index
 from core.telegram.factory import get_adapter
 from core.telegram.field_adapter_factory import get_field_adapter
 from core.templates import TemplateContext, render
@@ -65,12 +66,11 @@ async def _get_session_string(db, account: TelegramAccount) -> str:
 
 def _choose_by_time(actions: list[AutomationAction], tz: str) -> AutomationAction:
     """Jadval: hozirgi mahalliy vaqtdan oldingi eng oxirgi slot; birinchi slotdan oldin — kechagi oxirgisi."""
-    timed = sorted((a for a in actions if a.at_time), key=lambda a: a.at_time)
+    timed = [a for a in actions if a.at_time]
     if not timed:
         return actions[0]
     now = datetime.datetime.now(ZoneInfo(tz)).strftime("%H:%M")
-    past = [a for a in timed if a.at_time <= now]
-    return past[-1] if past else timed[-1]
+    return timed[slot_index([a.at_time for a in timed], now)]
 
 
 def _photo_ref_key(automation_id: int) -> str:

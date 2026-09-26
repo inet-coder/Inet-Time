@@ -107,7 +107,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export async function authenticate(): Promise<void> {
   const initData = tg?.initData;
-  if (!initData) throw new ApiError(401, "Ilovani Telegram bot ichidan oching");
+  if (!initData) throw new ApiError(401, "Studiyani Telegram bot ichidan oching");
   const result = await request<{ token: string }>("POST", "/webapp/auth", { init_data: initData });
   token = result.token;
 }

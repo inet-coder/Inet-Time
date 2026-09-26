@@ -1,6 +1,6 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
-from catalog import PRO_SERVICES, SERVICES, STATUS_ICONS, interval_text
+from catalog import PRO_SERVICES, SERVICES, STATUS_ICONS, STUDIO, interval_text
 from common import webapp_url
 
 
@@ -17,16 +17,14 @@ def _kb(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
 
 def _webapp_row() -> list[list[tuple[str, str]]]:
     url = webapp_url()
-    return [[("📱 Ilovani ochish — ko'rinish va tahrirlash", url)]] if url else []
+    return [[(STUDIO, url)]] if url else []
 
 
 def home_no_account(admin: bool) -> InlineKeyboardMarkup:
     rows = [
+        [("📞 Raqam orqali ulash", "login_phone"), ("📷 QR orqali", "login_qr")],
         *_webapp_row(),
-        [("📞 Telefon raqam orqali ulash", "login_phone")],
-        [("📷 QR kod orqali ulash", "login_qr")],
-        [("💎 Tariflar", "plans"), ("💰 Balans", "bal")],
-        [("🤝 Do'stlarni taklif qilish", "ref")],
+        [("💎 Tariflar", "plans"), ("❓ Yordam", "help")],
     ]
     if admin:
         rows.append([("🛠 Admin panel", "adm")])
@@ -34,23 +32,25 @@ def home_no_account(admin: bool) -> InlineKeyboardMarkup:
 
 
 def _status_icon(live: dict[str, dict], code: str) -> str:
-    return STATUS_ICONS.get(live[code]["status"], "✅") if code in live else "❌"
+    # Faqat yoqilganlar belgilanadi — o'chiq xizmat tugmasi toza qoladi.
+    return " " + STATUS_ICONS.get(live[code]["status"], "✅") if code in live else ""
 
 
 def home(live: dict[str, dict], multi_account: bool, admin: bool) -> InlineKeyboardMarkup:
     def svc_button(code: str) -> tuple[str, str]:
-        return f"{SERVICES[code]['title']} {_status_icon(live, code)}", f"svc:{code}"
+        return f"{SERVICES[code]['title']}{_status_icon(live, code)}", f"svc:{code}"
 
+    extra_active = sum(1 for code in PRO_SERVICES if code in live)
     rows = [
         *_webapp_row(),
         [svc_button("clock_name"), svc_button("auto_bio")],
-        [svc_button("auto_name"), ("⭐ Pro xizmatlar", "pro")],
+        [svc_button("auto_name"), (f"➕ Ko'proq{f' ({extra_active} ✅)' if extra_active else ''}", "pro")],
     ]
     if multi_account:
-        rows.append([("🔄 Boshqa akkauntga o'tish", "acc_switch")])
+        rows.append([("🔄 Boshqa akkaunt", "acc_switch")])
     rows += [
-        [("💎 Tariflar", "plans"), ("💰 Balans", "bal")],
-        [("🤝 Taklif qilish", "ref"), ("⚙️ Akkaunt", "acc")],
+        [("💎 Tarif", "plans"), ("💰 Balans", "bal")],
+        [("⚙️ Akkaunt", "acc"), ("❓ Yordam", "help")],
     ]
     if admin:
         rows.append([("🛠 Admin panel", "adm")])
@@ -58,7 +58,11 @@ def home(live: dict[str, dict], multi_account: bool, admin: bool) -> InlineKeybo
 
 
 def back_home() -> InlineKeyboardMarkup:
-    return _kb([[("⬅️ Bosh sahifa", "home")]])
+    return _kb([[("🏠 Bosh sahifa", "home")]])
+
+
+def help_menu() -> InlineKeyboardMarkup:
+    return _kb([*_webapp_row(), [("🎁 Do'stga ulashish", "ref")], [("🏠 Bosh sahifa", "home")]])
 
 
 def cancel() -> InlineKeyboardMarkup:
@@ -72,17 +76,17 @@ def _back_for(code: str) -> tuple[str, str]:
 def service_on(code: str, automation_id: int) -> InlineKeyboardMarkup:
     rows = [[("⏹ O'chirish", f"svc_off:{automation_id}")]]
     if SERVICES[code]["field"] != "online":
-        rows.append([("✏️ Shablonni o'zgartirish", f"svc_tpl:{code}")])
+        rows.append([("✏️ Matnni o'zgartirish", f"svc_tpl:{code}")])
     rows.append([_back_for(code)])
     return _kb(rows)
 
 
-def service_off(code: str, locked: bool) -> InlineKeyboardMarkup:
+def service_off(code: str, locked: bool, plan_name: str | None = None) -> InlineKeyboardMarkup:
     if locked:
-        return _kb([[("💎 Pro tarifni olish", "plans")], [_back_for(code)]])
+        return _kb([[(f"💎 {plan_name or 'Tarif'}ga o'tish", "plans")], [_back_for(code)]])
     rows = [[("✅ Yoqish", f"svc_on:{code}")]]
     if SERVICES[code]["field"] != "online":
-        rows.append([("✏️ O'z shablonim bilan yoqish", f"svc_tpl:{code}")])
+        rows.append([("✏️ O'z matnim bilan", f"svc_tpl:{code}")])
     rows.append([_back_for(code)])
     return _kb(rows)
 
@@ -93,10 +97,10 @@ def service_off(code: str, locked: bool) -> InlineKeyboardMarkup:
 def pro_menu(live: dict[str, dict], flags: dict) -> InlineKeyboardMarkup:
     rows = []
     for code, meta in PRO_SERVICES.items():
-        icon = _status_icon(live, code) if flags.get(meta["flag"]) or code in live else "🔒"
+        icon = _status_icon(live, code) if flags.get(meta["flag"]) or code in live else " 🔒"
         target = "svc:online" if code == "online" else f"pro:{code}"
-        rows.append([(f"{meta['title']} {icon}", target)])
-    rows.append([("⬅️ Bosh sahifa", "home")])
+        rows.append([(f"{meta['title']}{icon}", target)])
+    rows.append([("🏠 Bosh sahifa", "home")])
     return _kb(rows)
 
 
@@ -110,10 +114,14 @@ def pro_service_on(code: str, automation_id: int) -> InlineKeyboardMarkup:
     )
 
 
-def pro_service_off(code: str, locked: bool) -> InlineKeyboardMarkup:
+def pro_service_off(code: str, locked: bool, plan_name: str | None = None) -> InlineKeyboardMarkup:
     if locked:
-        return _kb([[("💎 Pro tarifni olish", "plans")], [("⬅️ Orqaga", "pro")]])
-    return _kb([[("⚙️ Sozlash va yoqish", f"pro_set:{code}")], [("⬅️ Orqaga", "pro")]])
+        return _kb([[(f"💎 {plan_name or 'Tarif'}ga o'tish", "plans")], [("⬅️ Orqaga", "pro")]])
+    rows = [[("⚙️ Sozlash va yoqish", f"pro_set:{code}")]]
+    if webapp_url():
+        rows.append([(f"{STUDIO}da sozlash", webapp_url())])
+    rows.append([("⬅️ Orqaga", "pro")])
+    return _kb(rows)
 
 
 def choose_order() -> InlineKeyboardMarkup:
@@ -140,15 +148,15 @@ def cancel_to_pro() -> InlineKeyboardMarkup:
 
 
 def upsell() -> InlineKeyboardMarkup:
-    return _kb([[("💎 Tariflar", "plans")], [("⬅️ Bosh sahifa", "home")]])
+    return _kb([[("💎 Tariflarni ko'rish", "plans")], [("🏠 Bosh sahifa", "home")]])
 
 
 def account_menu(multi_account: bool) -> InlineKeyboardMarkup:
-    rows = [[("➕ Yana akkaunt qo'shish", "acc_add")]]
+    rows = [[("➕ Akkaunt qo'shish", "acc_add")]]
     if multi_account:
-        rows.append([("🔄 Boshqa akkauntga o'tish", "acc_switch")])
+        rows.append([("🔄 Boshqa akkaunt", "acc_switch")])
     rows.append([("🚫 Akkauntni uzish", "acc_del")])
-    rows.append([("⬅️ Bosh sahifa", "home")])
+    rows.append([("🏠 Bosh sahifa", "home")])
     return _kb(rows)
 
 
@@ -159,14 +167,13 @@ def account_picker(accounts: list[dict]) -> InlineKeyboardMarkup:
 
 
 def confirm_revoke(account_id: int) -> InlineKeyboardMarkup:
-    return _kb([[("✅ Ha, uzish", f"acc_del_yes:{account_id}")], [("⬅️ Yo'q", "acc")]])
+    return _kb([[("🚫 Ha, uzilsin", f"acc_del_yes:{account_id}")], [("⬅️ Yo'q, qolsin", "acc")]])
 
 
 def login_methods() -> InlineKeyboardMarkup:
     return _kb(
         [
-            [("📞 Telefon raqam orqali", "login_phone")],
-            [("📷 QR kod orqali", "login_qr")],
+            [("📞 Raqam orqali", "login_phone"), ("📷 QR orqali", "login_qr")],
             [("⬅️ Orqaga", "home")],
         ]
     )
@@ -177,7 +184,7 @@ def qr_waiting() -> InlineKeyboardMarkup:
 
 
 def qr_expired() -> InlineKeyboardMarkup:
-    return _kb([[("🔄 Yangi QR kod", "login_qr")], [("📞 Telefon orqali ulash", "login_phone")], [("⬅️ Bosh sahifa", "home")]])
+    return _kb([[("🔄 Yangi QR kod", "login_qr")], [("📞 Raqam orqali ulash", "login_phone")], [("🏠 Bosh sahifa", "home")]])
 
 
 def plans(plans_list: list[dict], current_code: str) -> InlineKeyboardMarkup:
@@ -185,7 +192,8 @@ def plans(plans_list: list[dict], current_code: str) -> InlineKeyboardMarkup:
     for p in plans_list:
         verb = "uzaytirish" if p["code"] == current_code else "olish"
         rows.append([(f"{p['name']} {verb}", f"buy:{p['code']}")])
-    rows.append([("💰 Balans", "bal"), ("⬅️ Bosh sahifa", "home")])
+    rows += _webapp_row()
+    rows.append([("💰 Balans", "bal"), ("🏠 Bosh sahifa", "home")])
     return _kb(rows)
 
 
@@ -198,7 +206,7 @@ def after_purchase(online_unlocked: bool) -> InlineKeyboardMarkup:
 
 
 def confirm_buy(plan_code: str) -> InlineKeyboardMarkup:
-    return _kb([[("✅ Tasdiqlash", f"buy_yes:{plan_code}")], [("⬅️ Bekor qilish", "plans")]])
+    return _kb([[("✅ To'lash", f"buy_yes:{plan_code}")], [("⬅️ Bekor qilish", "plans")]])
 
 
 def need_topup() -> InlineKeyboardMarkup:
@@ -206,7 +214,7 @@ def need_topup() -> InlineKeyboardMarkup:
 
 
 def balance() -> InlineKeyboardMarkup:
-    return _kb([[("💳 Balansni to'ldirish", "topup")], [("💎 Tariflar", "plans"), ("⬅️ Bosh sahifa", "home")]])
+    return _kb([[("💳 Balansni to'ldirish", "topup")], [("💎 Tariflar", "plans"), ("🏠 Bosh sahifa", "home")]])
 
 
 def topup_amounts(amounts: list[int]) -> InlineKeyboardMarkup:
@@ -225,7 +233,8 @@ def admin_menu(pending_count: int) -> InlineKeyboardMarkup:
         [
             [(f"💳 Kutayotgan to'lovlar ({pending_count})", "adm_pays")],
             [("👥 Foydalanuvchilar", "adm_users")],
-            [("⬅️ Bosh sahifa", "home")],
+            *_webapp_row(),
+            [("🏠 Bosh sahifa", "home")],
         ]
     )
 

@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from api_client import api_client
-from handlers.home import send_home
+from handlers.home import send_help, send_home
 from handlers.pro import begin_emoji_setup
 
 router = Router(name="start")
@@ -20,11 +20,17 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
     if command.args == "emoji":
         await begin_emoji_setup(message, state)
         return
-    await send_home(message.bot, message.chat.id, message.from_user.id, user["id"])
+    await send_home(message.bot, message.chat.id, message.from_user.id, user["id"], message.from_user.first_name)
 
 
 @router.message(Command("menu"))
 async def cmd_menu(message: Message, state: FSMContext) -> None:
     await state.clear()
     user = await api_client.get_or_create_user(message.from_user)
-    await send_home(message.bot, message.chat.id, message.from_user.id, user["id"])
+    await send_home(message.bot, message.chat.id, message.from_user.id, user["id"], message.from_user.first_name)
+
+
+@router.message(Command("help"))
+async def cmd_help(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await send_help(message)

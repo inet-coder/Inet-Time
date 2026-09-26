@@ -8,14 +8,18 @@ import keyboards as kb
 from api_client import ApiError, api_client
 from catalog import (
     BASIC_SERVICES,
+    ERROR_HINT,
     PRO_SERVICES,
     SERVICES,
     STATUS_ICONS,
+    STATUS_TEXT,
+    STUDIO,
     TEMPLATE_HELP,
     UPDATE_INTERVAL_SECONDS,
     plan_features,
-    plan_status_lines,
-    pro_unlocked,
+    plan_line,
+    unlocking_plan,
+    usage_line,
 )
 from common import current_account, db_user_id, is_admin, money, safe_answer, safe_edit, select_account
 from core.settings import settings
@@ -24,14 +28,26 @@ from states import EditTemplate
 
 router = Router(name="home")
 
-WELCOME = (
-    "Salom! 👋\n\n"
-    "Bu bot Telegram profilingizni avtomatik yangilab turadi:\n"
-    "• 🕐 ismingiz yonida joriy soat\n"
-    "• 📝 o'zgarib turadigan bio\n"
-    "• ✏️ avto ism, 🟢 24/7 online\n\n"
-    "Boshlash uchun akkauntingizni ulang 👇\n"
-    "(Telefon raqam orqali ulash eng qulay usul.)"
+
+def _welcome(first_name: str | None) -> str:
+    return (
+        f"👋 Salom{', ' + first_name if first_name else ''}!\n\n"
+        "Men Telegram profilingizni o'zim yangilab turaman:\n"
+        "🕐 ismda soat · 📝 avto bio · 🗓 jadval\n"
+        "🟢 24/7 online · 🖼 rasm · 😀 emoji status\n\n"
+        "Boshlash uchun akkauntingizni ulang — 1 daqiqa 👇"
+    )
+
+
+HELP = (
+    "❓ Qanday ishlaydi\n\n"
+    "1️⃣ Akkauntni ulang — 📞 raqam yoki 📷 QR orqali.\n"
+    "2️⃣ Xizmatni yoqing — profilingiz o'zi yangilanadi.\n"
+    f"3️⃣ {STUDIO}da natijani oldindan ko'ring va tahrirlang.\n\n"
+    "⏹ Xizmatni o'chirsangiz — profil asl holiga qaytadi.\n"
+    "🚫 Akkauntni istalgan vaqtda uzasiz: ⚙️ Akkaunt.\n"
+    "🔒 Sessiya shifrlangan holda saqlanadi.\n\n"
+    "Savol bo'lsa — shu chatga yozing yoki /start bosing."
 )
 
 # Telegram cheklovlari: ism 64, bio 70 belgi (Premium'da 140).
@@ -49,53 +65,56 @@ def _preview(template: str, account: dict) -> str:
     return render(template, ctx)
 
 
-async def _plan_block(overview: dict) -> str:
-    lines = plan_status_lines(overview)
-    if not overview["plan"]["expires_at"]:
-        # Pullik tarifi yo'q foydalanuvchiga eng yuqori tarif nima berishini ko'rsatamiz.
-        plans = await api_client.list_plans()
-        if plans:
-            best = max(plans, key=lambda p: p["price"])
-            lines.append(f"   💡 {best['name']} bilan: " + ", ".join(plan_features(best["flags"])))
-    return "\n".join(lines)
+async def _upgrade_hint(overview: dict) -> str | None:
+    """Pullik tarifi yo'q foydalanuvchiga eng yuqori tarif nima berishini bir qatorda."""
+    if overview["plan"]["expires_at"]:
+        return None
+    plans = await api_client.list_plans()
+    if not plans:
+        return None
+    best = max(plans, key=lambda p: p["price"])
+    return f"💡 {best['name']}: {plan_features(best['flags'])}"
 
 
-async def build_home(tg_user_id: int, user_id: int) -> tuple[str, InlineKeyboardMarkup | None]:
+async def build_home(tg_user_id: int, user_id: int, first_name: str | None = None) -> tuple[str, InlineKeyboardMarkup | None]:
     overview = await api_client.get_overview(user_id)
     if overview["user"]["is_banned"]:
-        return "⛔ Hisobingiz bloklangan. Savollar bo'lsa admin bilan bog'laning.", None
+        return "⛔ Hisobingiz bloklangan. Savol bo'lsa — admin bilan bog'laning.", None
 
     admin = is_admin(tg_user_id)
-    plan_block = await _plan_block(overview)
-    balance_line = f"💰 Balans: {money(overview['user']['balance'])}"
     account = current_account(overview, tg_user_id)
     if account is None:
-        return f"{WELCOME}\n\n{plan_block}\n{balance_line}", kb.home_no_account(admin)
+        return _welcome(first_name), kb.home_no_account(admin)
 
     live = {a["service_code"]: a for a in account["automations"]}
-    flags = overview["plan"]["flags"]
-    lines = [f"👤 Akkaunt: {_account_label(account)}", plan_block, balance_line, "", "Xizmatlar:"]
-    for code in BASIC_SERVICES:
-        meta, automation = SERVICES[code], live.get(code)
-        if automation is not None:
-            status = STATUS_ICONS.get(automation["status"], "✅")
-            lines.append(f"{status} {meta['title']} → «{_preview(automation['template'], account)}»")
+    lines = [
+        f"👤 {_account_label(account)}",
+        f"{plan_line(overview)} · 💰 {money(overview['user']['balance'])}",
+        usage_line(overview),
+        "",
+    ]
+    active = []
+    for code, automation in live.items():
+        meta = SERVICES.get(code) or PRO_SERVICES.get(code)
+        if meta is None:
+            continue
+        icon = STATUS_ICONS.get(automation["status"], "✅")
+        if code in BASIC_SERVICES:
+            active.append(f"{icon} {meta['title']} → «{_preview(automation['template'], account)}»")
         else:
-            lines.append(f"❌ {meta['title']}")
-
-    active_pro = [f"{STATUS_ICONS.get(live[c]['status'], '✅')} {m['title']}" for c, m in PRO_SERVICES.items() if c in live]
-    if active_pro:
-        lines.append("\n⭐ Pro xizmatlar:\n" + "\n".join(active_pro))
-    elif pro_unlocked(flags):
-        lines.append("\n⭐ Pro xizmatlar: hali yoqilmagan")
+            active.append(f"{icon} {meta['title']}")
+    if active:
+        lines += ["Ishlayapti:", *active]
     else:
-        lines.append("\n⭐ Pro xizmatlar: 🔒 Pro tarifda (playlist, jadval, emoji, rasm, 24/7 online)")
-    lines.append("\nYoqish/o'chirish uchun tugmani bosing 👇")
+        lines += ["Hozircha hech narsa yoqilmagan.", "🕐 Soat ismda'dan boshlang — bir bosishda yoqiladi."]
+    if hint := await _upgrade_hint(overview):
+        lines += ["", hint]
+    lines += ["", "Xizmatni tanlang 👇"]
     return "\n".join(lines), kb.home(live, len(overview["accounts"]) > 1, admin)
 
 
-async def send_home(bot: Bot, chat_id: int, tg_user_id: int, user_id: int) -> None:
-    text, markup = await build_home(tg_user_id, user_id)
+async def send_home(bot: Bot, chat_id: int, tg_user_id: int, user_id: int, first_name: str | None = None) -> None:
+    text, markup = await build_home(tg_user_id, user_id, first_name)
     await bot.send_message(chat_id, text, reply_markup=markup)
 
 
@@ -107,7 +126,7 @@ async def _load(callback: CallbackQuery) -> tuple[dict, dict | None]:
 
 async def edit_home(callback: CallbackQuery) -> None:
     user_id = await db_user_id(callback.from_user)
-    text, markup = await build_home(callback.from_user.id, user_id)
+    text, markup = await build_home(callback.from_user.id, user_id, callback.from_user.first_name)
     await safe_edit(callback, text, markup)
 
 
@@ -130,23 +149,24 @@ async def _render_service(callback: CallbackQuery, code: str, note: str = "") ->
     automation = next((a for a in account["automations"] if a["service_code"] == code), None)
 
     if automation is not None:
-        status_text = {"ACTIVE": "✅ yoqilgan", "STARTING": "⏳ ishga tushmoqda", "ERROR": "⚠️ xatolik"}.get(
-            automation["status"], automation["status"]
-        )
-        text = f"{meta['title']} — {status_text}\n\n{meta['desc']}"
+        text = f"{meta['title']} · {STATUS_TEXT.get(automation['status'], automation['status'])}\n\n{meta['desc']}"
         if meta["field"] != "online":
-            text += f"\n\nShablon: {automation['template']}\nHozir: «{_preview(automation['template'], account)}»"
+            text += f"\n\nHozir: «{_preview(automation['template'], account)}»\nShablon: {automation['template']}"
         if automation["status"] == "ERROR":
-            text += "\n\n⚠️ Telegram bilan muammo yuz berdi. Xizmatni o'chirib, qayta yoqib ko'ring."
+            text += f"\n\n{ERROR_HINT}"
         markup = kb.service_on(code, automation["id"])
     else:
-        locked = bool(meta.get("pro_flag")) and not overview["plan"]["flags"].get(meta["pro_flag"])
-        text = f"{meta['title']} — ❌ o'chiq\n\n{meta['desc']}"
+        flag = meta.get("pro_flag")
+        locked = bool(flag) and not overview["plan"]["flags"].get(flag)
+        text = f"{meta['title']}\n\n{meta['desc']}"
         if meta["field"] != "online":
-            text += f"\n\nNamuna: «{_preview(meta['default'], account)}»"
+            text += f"\n\nKo'rinishi: «{_preview(meta['default'], account)}»"
+        plan_name = None
         if locked:
-            text += f"\n\n🔒 Bu xizmat {overview['plan']['name']} tarifida yo'q — tarifni yangilang."
-        markup = kb.service_off(code, locked)
+            unlock = unlocking_plan(await api_client.list_plans(), flag)
+            plan_name = unlock["name"] if unlock else None
+            text += f"\n\n🔒 {plan_name or 'Yuqoriroq'} tarifida ochiladi."
+        markup = kb.service_off(code, locked, plan_name)
 
     await safe_edit(callback, text + note, markup)
 
@@ -170,13 +190,15 @@ async def _enable(callback: CallbackQuery, code: str, template: str) -> str | No
         if exc.status_code == 402:
             await safe_edit(
                 callback,
-                f"🔒 {exc.message}\n\nBoshqa xizmatni o'chiring yoki tarifni oshiring.",
+                f"🔒 {exc.message}\n\nBoshqa xizmatni o'chiring yoki tarifni yangilang.",
                 kb.upsell(),
             )
             return None
         raise
     if replaced:
-        return f"\n\nℹ️ {SERVICES[replaced[0]['service_code']]['title']} o'chirildi — ikkalasi ham bir xil maydonni o'zgartiradi."
+        old = replaced[0]["service_code"]
+        title = (SERVICES.get(old) or PRO_SERVICES.get(old, {})).get("title", old)
+        return f"\n\nℹ️ {title} o'chirildi — ikkalasi bir joyni o'zgartiradi."
     return ""
 
 
@@ -200,7 +222,7 @@ async def ask_template(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(code=code)
     await safe_edit(
         callback,
-        f"{meta['title']} uchun shablon yuboring.\n\n{TEMPLATE_HELP}\n\nNamuna: {meta['default']}",
+        f"✏️ {meta['title']} uchun matn yuboring.\n\n{TEMPLATE_HELP}\n\nMasalan: {meta['default']}",
         kb.cancel(),
     )
     await safe_answer(callback)
@@ -218,11 +240,11 @@ async def template_received(message: Message, state: FSMContext) -> None:
     try:
         preview = _preview(template, account)
     except ValueError:
-        await message.answer("Shablonda noma'lum o'zgaruvchi bor. Qaytadan yuboring.\n\n" + TEMPLATE_HELP, reply_markup=kb.cancel())
+        await message.answer("🤔 Noma'lum o'zgaruvchi bor. Qaytadan yuboring.\n\n" + TEMPLATE_HELP, reply_markup=kb.cancel())
         return
     limit = _MAX_LEN[meta["field"]] * (2 if meta["field"] == "bio" and account["is_premium"] else 1)
     if not preview or len(preview) > limit:
-        await message.answer(f"Natija bo'sh yoki juda uzun ({len(preview)}/{limit} belgi). Qisqaroq yuboring.", reply_markup=kb.cancel())
+        await message.answer(f"✂️ Juda uzun: {len(preview)}/{limit} belgi. Qisqaroq yuboring.", reply_markup=kb.cancel())
         return
 
     try:
@@ -232,11 +254,11 @@ async def template_received(message: Message, state: FSMContext) -> None:
     except ApiError as exc:
         if exc.status_code == 402:
             await state.clear()
-            await message.answer(f"🔒 {exc.message}\n\nBoshqa xizmatni o'chiring yoki tarifni oshiring.", reply_markup=kb.upsell())
+            await message.answer(f"🔒 {exc.message}\n\nBoshqa xizmatni o'chiring yoki tarifni yangilang.", reply_markup=kb.upsell())
             return
         raise
     await state.clear()
-    await message.answer(f"✅ {meta['title']} yoqildi.\nKo'rinishi: «{preview}»")
+    await message.answer(f"✅ {meta['title']} yoqildi!\nKo'rinishi: «{preview}»")
     await send_home(message.bot, message.chat.id, message.from_user.id, user_id)
 
 
@@ -248,7 +270,7 @@ async def disable_service(callback: CallbackQuery) -> None:
     except ApiError as exc:
         await safe_answer(callback, exc.message, show_alert=True)
         return
-    await safe_answer(callback, "⏹ O'chirildi. Profilingiz asl holiga qaytariladi.", show_alert=True)
+    await safe_answer(callback, "⏹ O'chirildi — profil asl holiga qaytadi.")
     await asyncio.sleep(1.5)
     await edit_home(callback)
 
@@ -260,16 +282,15 @@ async def disable_service(callback: CallbackQuery) -> None:
 async def show_account(callback: CallbackQuery) -> None:
     overview, account = await _load(callback)
     if account is None:
-        await safe_edit(callback, "Hali akkaunt ulanmagan.", kb.login_methods())
+        await safe_edit(callback, "Akkaunt hali ulanmagan. Qanday ulaymiz?", kb.login_methods())
         await safe_answer(callback)
         return
     flags = overview["plan"]["flags"]
-    premium = "ha" if account["is_premium"] else "yo'q"
+    premium = " · ⭐ Premium" if account["is_premium"] else ""
     text = (
         f"⚙️ Akkaunt\n\n"
-        f"👤 {account['first_name'] or ''} ({_account_label(account)})\n"
-        f"Premium: {premium}\n"
-        f"Ulangan akkauntlar: {overview['usage']['accounts']}/{flags['account_limit']}"
+        f"👤 {account['first_name'] or ''} ({_account_label(account)}){premium}\n"
+        f"Ulangan: {overview['usage']['accounts']}/{flags['account_limit']} akkaunt"
     )
     await safe_edit(callback, text, kb.account_menu(len(overview["accounts"]) > 1))
     await safe_answer(callback)
@@ -279,9 +300,9 @@ async def show_account(callback: CallbackQuery) -> None:
 async def add_account(callback: CallbackQuery) -> None:
     await safe_edit(
         callback,
-        "Qaysi usulda ulaymiz?\n\n"
-        "📞 Telefon raqam — telefonda eng qulay.\n"
-        "📷 QR kod — botni kompyuterda ochgan bo'lsangiz, telefoningiz bilan skanerlaysiz.",
+        "Qanday ulaymiz?\n\n"
+        "📞 Raqam — telefonda eng qulay.\n"
+        "📷 QR — bot kompyuterda ochiq bo'lsa, telefon bilan skanerlaysiz.",
         kb.login_methods(),
     )
     await safe_answer(callback)
@@ -308,8 +329,10 @@ async def confirm_revoke(callback: CallbackQuery) -> None:
         return
     await safe_edit(
         callback,
-        f"{_account_label(account)} akkauntini uzasizmi?\n\n"
-        "Barcha xizmatlar to'xtaydi, profilingiz asl holiga qaytariladi va bot bu akkauntga boshqa kira olmaydi.",
+        f"🚫 {_account_label(account)} uzilsinmi?\n\n"
+        "• barcha xizmatlar to'xtaydi\n"
+        "• profil asl holiga qaytadi\n"
+        "• bot bu akkauntga boshqa kira olmaydi",
         kb.confirm_revoke(account["id"]),
     )
     await safe_answer(callback)
@@ -318,7 +341,7 @@ async def confirm_revoke(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("acc_del_yes:"))
 async def revoke(callback: CallbackQuery) -> None:
     await api_client.revoke_account(int(callback.data.split(":", 1)[1]))
-    await safe_answer(callback, "Akkaunt uzilmoqda...")
+    await safe_answer(callback, "🚫 Akkaunt uzilmoqda…")
     await asyncio.sleep(2)
     await edit_home(callback)
 
@@ -332,12 +355,22 @@ async def show_referral(callback: CallbackQuery) -> None:
     user = await api_client.get_user(user_id)
     bot_username = (await callback.bot.get_me()).username
     link = f"https://t.me/{bot_username}?start=ref_{user['referral_code']}"
-    await safe_edit(callback, f"🤝 Do'stlaringizni taklif qiling!\n\nSizning havolangiz:\n{link}", kb.back_home())
+    await safe_edit(callback, f"🎁 Do'stlaringizga ulashing\n\nSizning havolangiz:\n{link}", kb.back_home())
     await safe_answer(callback)
+
+
+@router.callback_query(F.data == "help")
+async def show_help(callback: CallbackQuery) -> None:
+    await safe_edit(callback, HELP, kb.help_menu())
+    await safe_answer(callback)
+
+
+async def send_help(message: Message) -> None:
+    await message.answer(HELP, reply_markup=kb.help_menu())
 
 
 @router.message()
 async def fallback(message: Message) -> None:
     """Holatsiz har qanday matn — bosh sahifani ko'rsatadi (bot jim qolmasin)."""
     user_id = await db_user_id(message.from_user)
-    await send_home(message.bot, message.chat.id, message.from_user.id, user_id)
+    await send_home(message.bot, message.chat.id, message.from_user.id, user_id, message.from_user.first_name)

@@ -22,6 +22,7 @@ QR_POLL_INTERVAL_SECONDS = 3
 QR_POLL_TIMEOUT_SECONDS = 90
 CONNECT_FAILED = "Ulab bo'lmadi."
 WRONG_CODE = "Kod noto'g'ri."
+QR_EXPIRED = "⌛ QR kod eskirdi. Yangisini oling yoki raqam orqali ulang."
 
 
 def _render_qr_png(url: str) -> bytes:
@@ -38,12 +39,12 @@ async def _delete(message: Message) -> None:
 
 
 async def _limit_reached(callback: CallbackQuery, exc: ApiError) -> None:
-    await safe_edit(callback, f"🔒 {exc.message}\n\nKo'proq akkaunt uchun tarifni oshiring.", kb.upsell())
+    await safe_edit(callback, f"🔒 {exc.message}\n\nKo'proq akkaunt — yuqoriroq tarifda.", kb.upsell())
 
 
 async def _on_connected(bot: Bot, chat_id: int, tg_user_id: int, user_id: int, result: dict) -> None:
-    label = f"@{result['username']}" if result.get("username") else "akkauntingiz"
-    await bot.send_message(chat_id, f"✅ {label} ulandi! Endi xizmatlarni yoqishingiz mumkin.")
+    label = f"@{result['username']}" if result.get("username") else "Akkauntingiz"
+    await bot.send_message(chat_id, f"🎉 {label} ulandi! Endi xizmatni tanlang 👇")
     await send_home(bot, chat_id, tg_user_id, user_id)
 
 
@@ -66,9 +67,10 @@ async def start_qr_login(callback: CallbackQuery, state: FSMContext) -> None:
     qr_message = await callback.message.answer_photo(
         BufferedInputFile(_render_qr_png(login["qr_url"]), filename="qr.png"),
         caption=(
-            "📷 Ulanmoqchi bo'lgan akkaunt telefonida oching:\n"
-            "Telegram → Sozlamalar → Qurilmalar → «Kompyuterni ulash» va shu QR kodni skanerlang.\n\n"
-            "⏳ Skanerlashingizni kutyapman (90 soniya)..."
+            "📷 Telefonda oching:\n"
+            "Telegram → Sozlamalar → Qurilmalar → «Qurilma ulash»\n"
+            "va shu kodni skanerlang.\n\n"
+            "⏳ 90 soniya kutaman…"
         ),
         reply_markup=kb.qr_waiting(),
     )
@@ -98,20 +100,20 @@ async def _poll_qr(bot: Bot, qr_message: Message, login_id: str, tg_user_id: int
                 await state.set_state(QrLogin.waiting_password)
                 await state.update_data(login_id=login_id)
                 await bot.send_message(
-                    chat_id, "🔐 Akkauntda ikki bosqichli himoya (2FA) yoqilgan. Parolingizni yuboring:",
+                    chat_id, "🔐 Ikki bosqichli parolni yuboring.\n(Xabar darhol o'chiriladi.)",
                     reply_markup=kb.cancel(),
                 )
             elif status == "EXPIRED":
-                await bot.send_message(chat_id, "⌛ QR kod muddati tugadi.", reply_markup=kb.qr_expired())
+                await bot.send_message(chat_id, QR_EXPIRED, reply_markup=kb.qr_expired())
             else:
                 await bot.send_message(chat_id, f"⚠️ {result.get('error') or CONNECT_FAILED}", reply_markup=kb.qr_expired())
             return
 
         await _delete(qr_message)
-        await bot.send_message(chat_id, "⌛ QR kod muddati tugadi.", reply_markup=kb.qr_expired())
+        await bot.send_message(chat_id, QR_EXPIRED, reply_markup=kb.qr_expired())
     except Exception:  # noqa: BLE001 — fon vazifasi: xato yutilmasin, lekin bot qulamasin
         logger.exception("QR polling failed")
-        await bot.send_message(chat_id, "⚠️ Ulashda xatolik yuz berdi. Qaytadan urinib ko'ring.", reply_markup=kb.qr_expired())
+        await bot.send_message(chat_id, "⚠️ Ulab bo'lmadi. Qaytadan urinib ko'ring.", reply_markup=kb.qr_expired())
 
 
 @router.message(QrLogin.waiting_password)
@@ -127,7 +129,8 @@ async def start_phone_login(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(PhoneLogin.waiting_phone)
     await safe_edit(
         callback,
-        "📞 Ulanmoqchi bo'lgan akkauntning telefon raqamini yuboring.\nMasalan: +998901234567",
+        "📞 Ulanadigan akkaunt raqamini yuboring:\n+998901234567\n\n"
+        "🔒 Sessiya shifrlangan holda saqlanadi. Istalgan vaqtda uzasiz.",
         kb.cancel(),
     )
     await safe_answer(callback)
@@ -137,7 +140,7 @@ async def start_phone_login(callback: CallbackQuery, state: FSMContext) -> None:
 async def phone_received(message: Message, state: FSMContext) -> None:
     phone = "+" + re.sub(r"\D", "", message.text or "")
     if len(phone) < 10:
-        await message.answer("Raqam noto'g'ri. Masalan: +998901234567", reply_markup=kb.cancel())
+        await message.answer("🤔 Raqam noto'g'ri. Masalan: +998901234567", reply_markup=kb.cancel())
         return
 
     user_id = await db_user_id(message.from_user)
@@ -146,7 +149,7 @@ async def phone_received(message: Message, state: FSMContext) -> None:
     except ApiError as exc:
         if exc.status_code == 402:
             await state.clear()
-            await message.answer(f"🔒 {exc.message}\n\nKo'proq akkaunt uchun tarifni oshiring.", reply_markup=kb.upsell())
+            await message.answer(f"🔒 {exc.message}\n\nKo'proq akkaunt — yuqoriroq tarifda.", reply_markup=kb.upsell())
         else:
             await message.answer(exc.message, reply_markup=kb.cancel())
         return
@@ -154,9 +157,9 @@ async def phone_received(message: Message, state: FSMContext) -> None:
     await state.update_data(login_id=login["login_id"])
     await state.set_state(PhoneLogin.waiting_code)
     await message.answer(
-        "✉️ Telegram'ga kod yuborildi (Telegram ilovasidagi «Telegram» chatiga).\n\n"
-        "❗️ Kodni raqamlar orasiga tire qo'yib yuboring, masalan: 1-2-3-4-5\n"
-        "Aks holda Telegram kodni boshqa chatga yuborilgan deb hisoblab, bekor qiladi.",
+        "✉️ Kod «Telegram» chatiga keldi.\n\n"
+        "Tire bilan yuboring: 1-2-3-4-5\n"
+        "❗️ Tiresiz yuborsangiz, Telegram kodni bekor qiladi.",
         reply_markup=kb.cancel(),
     )
 
@@ -166,14 +169,14 @@ async def code_received(message: Message, state: FSMContext) -> None:
     code = re.sub(r"\D", "", message.text or "")
     await _delete(message)
     if len(code) < 5:
-        await message.answer("Kod 5 xonali bo'lishi kerak. Masalan: 1-2-3-4-5", reply_markup=kb.cancel())
+        await message.answer("Kod 5 xonali. Masalan: 1-2-3-4-5", reply_markup=kb.cancel())
         return
 
     result = await api_client.phone_login_code((await state.get_data())["login_id"], code)
     status = result["status"]
     if status == "NEED_PASSWORD":
         await state.set_state(PhoneLogin.waiting_password)
-        await message.answer("🔐 Ikki bosqichli himoya (2FA) parolingizni yuboring:", reply_markup=kb.cancel())
+        await message.answer("🔐 Ikki bosqichli parolni yuboring.\n(Xabar darhol o'chiriladi.)", reply_markup=kb.cancel())
     elif status == "SUCCESS":
         await state.clear()
         await _on_connected(message.bot, message.chat.id, message.from_user.id, await db_user_id(message.from_user), result)
@@ -181,7 +184,7 @@ async def code_received(message: Message, state: FSMContext) -> None:
         await state.clear()
         await message.answer(f"🔒 {result['error']}", reply_markup=kb.upsell())
     else:
-        await message.answer(f"⚠️ {WRONG_CODE} Qaytadan yuboring (masalan: 1-2-3-4-5):", reply_markup=kb.cancel())
+        await message.answer(f"❌ {WRONG_CODE} Qaytadan: 1-2-3-4-5", reply_markup=kb.cancel())
 
 
 @router.message(PhoneLogin.waiting_password)

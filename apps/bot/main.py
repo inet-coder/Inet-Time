@@ -8,6 +8,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, ErrorEvent, MenuButtonWebApp, WebAppInfo
 
 from api_client import api_client
+from catalog import STUDIO_SHORT
 from common import set_webapp_url, webapp_url
 from core.settings import settings
 from handlers import add_account, admin, billing, home, pro, start
@@ -29,7 +30,7 @@ async def on_error(event: ErrorEvent) -> None:
     # Foydalanuvchiga texnik xato ko'rsatilmaydi (BUILD.md: Error UX) — to'liq xato faqat logda.
     logger.exception("update qayta ishlanmadi", exc_info=event.exception)
     update = event.update
-    text = "⚠️ Vaqtinchalik xatolik. Qaytadan urinib ko'ring yoki /start bosing."
+    text = "⚠️ Nimadir xato ketdi. Qaytadan urinib ko'ring yoki /start bosing."
     try:
         if update.callback_query:
             await update.callback_query.answer(text, show_alert=True)
@@ -59,12 +60,34 @@ async def webapp_url_watcher(bot: Bot) -> None:
         url = await _discover_webapp_url()
         if url and url != webapp_url():
             try:
-                await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="📱 Ilova", web_app=WebAppInfo(url=url)))
+                await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text=STUDIO_SHORT, web_app=WebAppInfo(url=url)))
                 set_webapp_url(url)
                 logger.info("Mini App manzili: %s", url)
             except TelegramAPIError:
                 logger.exception("menu button o'rnatilmadi")
         await asyncio.sleep(WEBAPP_CHECK_SECONDS)
+
+
+# /start bosilishidan oldin ko'rinadigan matnlar (bot profili va bo'sh chat).
+DESCRIPTION = (
+    "Telegram profilingiz o'zi yangilanib turadi:\n"
+    "🕐 ismda soat · 📝 avto bio · 🗓 jadval\n"
+    "🟢 24/7 online · 🖼 rasm · 😀 emoji status\n\n"
+    "«Start» ni bosing — 1 daqiqada ulanadi."
+)
+SHORT_DESCRIPTION = "Profilingiz o'zi yangilanadi: ismda soat, avto bio, jadval, 24/7 online, rasm va emoji."
+
+
+async def setup_profile(bot: Bot) -> None:
+    try:
+        await bot.set_my_commands(
+            [BotCommand(command="start", description="🏠 Bosh sahifa"), BotCommand(command="help", description="❓ Qanday ishlaydi")]
+        )
+        await bot.set_my_description(DESCRIPTION)
+        await bot.set_my_short_description(SHORT_DESCRIPTION)
+    except TelegramAPIError:
+        # Juda tez-tez chaqirilsa Telegram cheklaydi — bot ishlashiga ta'sir qilmaydi.
+        logger.warning("bot tavsifi/komandalari yangilanmadi", exc_info=True)
 
 
 async def main() -> None:
@@ -74,7 +97,7 @@ async def main() -> None:
         await asyncio.Event().wait()
         return
     bot = Bot(token=settings.bot_token)
-    await bot.set_my_commands([BotCommand(command="start", description="Bosh sahifa")])
+    await setup_profile(bot)
     watcher = asyncio.create_task(webapp_url_watcher(bot))
     try:
         await dp.start_polling(bot)

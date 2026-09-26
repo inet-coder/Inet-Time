@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from admin_deps import require_permission
 from core.audit import record_audit
-from core.billing import FREE_CODE, PromoError, paid_plans, plan_price, plan_public, quote
+from core.billing import FREE_CODE, PromoError, paid_plans, payment_instructions, plan_price, plan_public, quote
 from core.db.base import async_session
 from core.db.enums import ActorType, PaymentMethod, PaymentStatus, SubscriptionStatus, TransactionType
 from core.db.models import AdminUser, Payment, Plan, PromoRedemption, Subscription, Transaction, User
@@ -173,6 +173,12 @@ async def create_purchase(payload: PurchaseCreate, db: AsyncSession = Depends(ge
     await db.commit()
     await db.refresh(payment)
     return payment
+
+
+@router.get("/instructions")
+async def get_payment_instructions(db: AsyncSession = Depends(get_db)) -> dict:
+    """Admin paneldan saqlangan to'lov rekvizitlari (bot balans so'rovida ko'rsatadi)."""
+    return {"instructions": await payment_instructions(db)}
 
 
 @router.get("", response_model=list[PaymentOut])

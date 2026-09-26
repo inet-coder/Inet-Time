@@ -22,7 +22,8 @@ class ApiError(Exception):
 
 class ApiClient:
     def __init__(self) -> None:
-        self._client = httpx.AsyncClient(base_url=settings.api_base_url, timeout=15)
+        headers = {"X-Internal-Token": settings.internal_api_token} if settings.internal_api_token else {}
+        self._client = httpx.AsyncClient(base_url=settings.api_base_url, timeout=15, headers=headers)
         self._admin_token: str | None = None
 
     async def close(self) -> None:
@@ -116,6 +117,9 @@ class ApiClient:
         return await self._call("POST", f"/automations/{automation_id}/stop", json={"restore": restore})
 
     # --- billing ---
+
+    async def payment_instructions(self) -> str:
+        return (await self._call("GET", "/payments/instructions"))["instructions"]
 
     async def list_plans(self) -> list[dict]:
         return await self._call("GET", "/plans")

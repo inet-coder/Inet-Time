@@ -54,7 +54,7 @@ async def current_user(
     try:
         user_id = decode_user_token(token)
     except jwt.PyJWTError as exc:
-        raise HTTPException(401, "Sessiya tugagan — ilovani qayta oching") from exc
+        raise HTTPException(401, "Sessiya tugagan — studiyani qayta oching") from exc
     user = await db.get(User, user_id)
     if user is None or user.is_banned:
         raise HTTPException(403, "Hisob bloklangan")
@@ -67,7 +67,7 @@ async def auth(payload: AuthIn, db: AsyncSession = Depends(get_db)) -> dict:
         tg_user = validate_init_data(payload.init_data, settings.bot_token)
     except InitDataError as exc:
         logger.warning("webapp auth rad etildi: %s", exc)
-        raise HTTPException(401, "Telegram ma'lumotlari tasdiqlanmadi — ilovani bot ichidan oching") from exc
+        raise HTTPException(401, "Telegram ma'lumotlari tasdiqlanmadi — studiyani bot ichidan oching") from exc
 
     user = await db.scalar(select(User).where(User.telegram_user_id == tg_user["id"]))
     if user is None:

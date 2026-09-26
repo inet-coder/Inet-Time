@@ -1,0 +1,41 @@
+# Mini App sahifasi + /api/webapp -> api:8000. Ichki API tashqariga chiqmaydi.
+# SITE_ADDRESS: domen (masalan app.example.uz — Caddy HTTPS sertifikatini o'zi oladi)
+# yoki ":80" (Cloudflare tunnel / lokal sinov — HTTPS'ni tunnel beradi).
+{
+	admin off
+}
+
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	request_body {
+		max_size 15MB
+	}
+
+	handle /api/webapp/* {
+		uri strip_prefix /api
+		reverse_proxy api:8000
+	}
+
+	handle /api/* {
+		respond 404
+	}
+
+	handle {
+		root * /srv
+		# Fayl nomlarida hash bor — abadiy keshlanadi; index.html esa har safar yangidan.
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@page not path /assets/*
+		header @page Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+
+	# X-Frame-Options qo'yilmaydi: Telegram Web Mini App'ni iframe ichida ochadi.
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

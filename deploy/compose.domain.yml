@@ -1,0 +1,7 @@
+# Domen rejimi: Caddy 80/443 portlarda ishlaydi va Let's Encrypt HTTPS sertifikatini o'zi oladi/yangilaydi.
+services:
+  web:
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"

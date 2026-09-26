@@ -8,7 +8,7 @@ from aiogram.types import CallbackQuery, Message
 
 import keyboards as kb
 from api_client import ApiError, api_client
-from catalog import expiry_text, plan_features, plan_status_lines, pro_unlocked
+from catalog import PLAN_ICONS, STUDIO, expiry_text, plan_features, plan_line, pro_unlocked
 from common import db_user_id, money, safe_answer, safe_edit
 from core.settings import settings
 from states import Topup
@@ -16,17 +16,14 @@ from states import Topup
 router = Router(name="billing")
 logger = logging.getLogger(__name__)
 
-PLAN_ICONS = {"free": "🆓", "starter": "⭐", "pro": "🚀"}
-
-
 def _plan_card(code: str, name: str, price_text: str, flags: dict, is_current: bool) -> str:
-    title = f"{PLAN_ICONS.get(code, '💎')} {name} — {price_text}" + ("   ✅ sizda" if is_current else "")
-    return title + "\n" + "\n".join(f"   • {f}" for f in plan_features(flags))
+    title = f"{PLAN_ICONS.get(code, '💎')} {name} — {price_text}" + ("  ✅ sizda" if is_current else "")
+    return f"{title}\n     {plan_features(flags)}"
 
 
 def _price_text(plan: dict) -> str:
     if plan["final_price"] < plan["price"]:
-        return f"{money(plan['final_price'])} (−{plan['discount_percent']}%, avval {money(plan['price'])})"
+        return f"{money(plan['final_price'])} 🔥 −{plan['discount_percent']}%"
     return money(plan["price"])
 
 
@@ -44,10 +41,10 @@ async def show_plans(callback: CallbackQuery) -> None:
         for p in plans
     ]
     text = (
-        "\n".join(plan_status_lines(overview))
-        + f"\n💰 Balans: {money(overview['user']['balance'])}\n\n"
+        f"💎 Tariflar\n\nSizda: {plan_line(overview)} · 💰 {money(overview['user']['balance'])}\n\n"
         + "\n\n".join(cards)
-        + "\n\nTarif balansdan sotib olinadi. Muddat tugasa Bepul tarifga qaytasiz va ortiqcha xizmatlar to'xtaydi."
+        + f"\n\n🎟 Promokod bo'lsa — {STUDIO} → Tarif.\n"
+        "💳 To'lov balansdan. Muddat tugasa — Bepul tarifga qaytasiz."
     )
     await safe_edit(callback, text, kb.plans(plans, current_code))
     await safe_answer(callback)
@@ -66,26 +63,25 @@ async def ask_buy(callback: CallbackQuery) -> None:
     if current is not None and current["code"] != code and current["price"] > plan["price"]:
         await safe_edit(
             callback,
-            f"Sizda yuqoriroq {current['name']} tarifi faol — {expiry_text(overview['plan']['expires_at'])}.\n"
-            f"{plan['name']} olish hozir hech narsa qo'shmaydi.",
+            f"Sizda {current['name']} bor ({expiry_text(overview['plan']['expires_at'])}).\n"
+            f"{plan['name']} undan pastroq — olish shart emas.",
             kb.plans(plans, current["code"]),
         )
     elif balance < plan["final_price"]:
         await safe_edit(
             callback,
-            f"Balans yetarli emas.\n\n{plan['name']}: {money(plan['final_price'])}\nSizda: {money(balance)}\n\n"
-            "Avval balansni to'ldiring.",
+            f"💰 Balans yetmaydi\n\n{plan['name']}: {money(plan['final_price'])}\nSizda: {money(balance)}\n"
+            f"Yetmayapti: {money(plan['final_price'] - balance)}",
             kb.need_topup(),
         )
     else:
         extend = "Muddati" if current is not None and current["code"] == code else "Tarif"
         await safe_edit(
             callback,
-            f"{PLAN_ICONS.get(code, '💎')} {plan['name']} — {plan['duration_days']} kun\n"
-            + "\n".join(f"   • {f}" for f in plan_features(plan["flags"]))
-            + f"\n\n{extend} {plan['duration_days']} kunga {'uzayadi' if extend == 'Muddati' else 'faollashadi'}.\n"
-            f"Balansingizdan {money(plan['final_price'])} yechiladi (qoladi: {money(balance - plan['final_price'])}).\n\n"
-            "Tasdiqlaysizmi?",
+            f"{PLAN_ICONS.get(code, '💎')} {plan['name']} · {plan['duration_days']} kun\n"
+            f"{plan_features(plan['flags'])}\n\n"
+            f"{extend} {plan['duration_days']} kunga {'uzayadi' if extend == 'Muddati' else 'yoqiladi'}.\n"
+            f"💳 {money(plan['final_price'])} yechiladi · qoladi {money(balance - plan['final_price'])}",
             kb.confirm_buy(code),
         )
     await safe_answer(callback)
@@ -104,16 +100,16 @@ async def buy(callback: CallbackQuery) -> None:
 
     overview = await api_client.get_overview(user_id)
     plan, flags = overview["plan"], overview["plan"]["flags"]
-    unlocked = [f"{flags['account_limit']} ta akkaunt ulash", f"bir vaqtda {flags['scheduler_limit']} ta xizmat"]
+    unlocked = [f"{flags['account_limit']} ta akkaunt", f"bir vaqtda {flags['scheduler_limit']} ta xizmat"]
     unlocked += pro_unlocked(flags)
     await safe_edit(
         callback,
-        f"🎉 {plan['name']} tarifi faollashdi!\n⏳ {expiry_text(plan['expires_at'])}\n\n"
-        "Endi sizda:\n" + "\n".join(f"✅ {u}" for u in unlocked) + "\n\n"
-        "Xizmatlarni bosh sahifada yoqing 👇\nMuddat tugashidan 1 kun oldin eslataman.",
+        f"🎉 {plan['name']} yoqildi! {expiry_text(plan['expires_at'])}\n\n"
+        + "\n".join(f"✅ {u}" for u in unlocked)
+        + "\n\nXizmatlarni bosh sahifada yoqing 👇\n⏰ Tugashidan 1 kun oldin eslataman.",
         kb.after_purchase(bool(flags.get("online_service"))),
     )
-    await safe_answer(callback, "🎉 Tarif faollashdi")
+    await safe_answer(callback, "🎉 Tarif yoqildi")
 
 
 # --- Balans ---
@@ -125,7 +121,7 @@ async def show_balance(callback: CallbackQuery, state: FSMContext) -> None:
     user = await api_client.get_user(await db_user_id(callback.from_user))
     await safe_edit(
         callback,
-        f"💰 Balansingiz: {money(user['balance'])}\n\nBalans orqali tariflarni sotib olasiz.",
+        f"💰 Balans: {money(user['balance'])}\n\nTarifni balansdan bir tugma bilan olasiz.",
         kb.balance(),
     )
     await safe_answer(callback)
@@ -134,14 +130,14 @@ async def show_balance(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "topup")
 async def ask_topup_amount(callback: CallbackQuery) -> None:
     amounts = sorted({int(p["final_price"]) for p in await api_client.list_plans()})
-    await safe_edit(callback, "Qancha summaga to'ldiramiz?", kb.topup_amounts(amounts))
+    await safe_edit(callback, "💳 Qancha to'ldiramiz?", kb.topup_amounts(amounts))
     await safe_answer(callback)
 
 
 @router.callback_query(F.data == "topup_custom")
 async def ask_custom_amount(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(Topup.waiting_amount)
-    await safe_edit(callback, "Summani so'mda yuboring (masalan: 100000):", kb.cancel())
+    await safe_edit(callback, "✍️ Summani yuboring, masalan: 100000", kb.cancel())
     await safe_answer(callback)
 
 
@@ -149,7 +145,7 @@ async def ask_custom_amount(callback: CallbackQuery, state: FSMContext) -> None:
 async def custom_amount_received(message: Message, state: FSMContext) -> None:
     digits = re.sub(r"\D", "", message.text or "")
     if not digits or int(digits) < 1000:
-        await message.answer("Kamida 1 000 so'm kiriting:", reply_markup=kb.cancel())
+        await message.answer("Kamida 1 000 so'm yozing:", reply_markup=kb.cancel())
         return
     await state.clear()
     await _create_topup(message.bot, message.chat.id, message.from_user, int(digits))
@@ -165,15 +161,16 @@ async def _create_topup(bot: Bot, chat_id: int, tg_user, amount: int) -> None:
     user_id = await db_user_id(tg_user)
     payment = await api_client.create_topup(user_id, amount)
 
+    rekv = await api_client.payment_instructions()
     instructions = (
-        f"To'lov uchun:\n{settings.payment_instructions}\n\nTo'lov izohiga #{payment['id']} raqamini yozing."
-        if settings.payment_instructions
-        else "Admin siz bilan bog'lanib, to'lovni tasdiqlaydi."
+        f"💳 To'lov rekvizitlari:\n{rekv}\n\n📝 Izohga yozing: #{payment['id']}"
+        if rekv
+        else "👤 Admin siz bilan bog'lanib, to'lovni tasdiqlaydi."
     )
     await bot.send_message(
         chat_id,
-        f"✅ So'rov #{payment['id']} yaratildi: {money(amount)}\n\n{instructions}\n\n"
-        "Tasdiqlangach balansingizga tushadi va sizga xabar beraman.",
+        f"🧾 So'rov #{payment['id']} · {money(amount)}\n\n{instructions}\n\n"
+        "✅ Tasdiqlangach balansga tushadi — xabar beraman.",
         reply_markup=kb.back_home(),
     )
 

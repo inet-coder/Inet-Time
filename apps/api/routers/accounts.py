@@ -13,9 +13,11 @@ from core.telegram.factory import get_adapter
 from core.telegram.mock_adapter import MockAdapter
 from core.telegram.types import LoginState
 from deps import get_db
+from jobs import enqueue
 from schemas import (
     AccountOut,
     CodeSubmit,
+    JobQueuedOut,
     LoginStatusOut,
     MockSimulateScan,
     PasswordSubmit,
@@ -182,21 +184,18 @@ async def list_accounts(user_id: int, db: AsyncSession = Depends(get_db)) -> lis
     return list(result)
 
 
-@router.post("/{account_id}/revoke", response_model=AccountOut)
-async def revoke_account(account_id: int, db: AsyncSession = Depends(get_db)) -> TelegramAccount:
+@router.post("/{account_id}/revoke", response_model=JobQueuedOut)
+async def revoke_account(account_id: int, db: AsyncSession = Depends(get_db)) -> JobQueuedOut:
+    """Session decrypt + Telegram log_out workerga navbatga qo'yiladi (PHASE 6) — API session shifrini ochmaydi."""
     account = await db.get(TelegramAccount, account_id)
     if account is None:
         raise HTTPException(404, "Akkaunt topilmadi")
 
-    session_row = await db.scalar(
-        select(EncryptedSession).where(EncryptedSession.telegram_account_id == account_id)
+    job_id = await enqueue(
+        db,
+        task_name="revoke_account_job",
+        telegram_account_id=account.id,
+        automation_id=None,
+        task_kwargs={"account_id": account.id},
     )
-    if session_row is not None and session_row.revoked_at is None:
-        session_string = crypto.decrypt(session_row.ciphertext, session_row.nonce, session_row.key_version)
-        await get_adapter().revoke(session_string)
-        session_row.revoked_at = datetime.datetime.now(datetime.timezone.utc)
-
-    account.status = TelegramAccountStatus.REVOKED
-    await db.commit()
-    await db.refresh(account)
-    return account
+    return JobQueuedOut(job_id=job_id)

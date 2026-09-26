@@ -1,24 +1,19 @@
-from arq import cron
 from arq.connections import RedisSettings
 
 from core.settings import settings
+from tasks import activate_automation_job, revoke_account_job, run_automation_once, stop_automation_job
 
 
 async def startup(ctx):
-    print("worker ishga tushdi (skeleton)")
+    print(f"worker ishga tushdi (mock={settings.mock_telegram})")
 
 
 async def shutdown(ctx):
     print("worker to'xtadi")
 
 
-async def noop(ctx):
-    return "ok"
-
-
 class WorkerSettings:
-    functions = [noop]
-    cron_jobs = [cron(noop, minute=set(range(0, 60, 5)))]
+    functions = [run_automation_once, activate_automation_job, stop_automation_job, revoke_account_job]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url or "redis://redis:6379")

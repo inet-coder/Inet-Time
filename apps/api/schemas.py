@@ -131,3 +131,19 @@ class AppliedAction(BaseModel):
 
 class RunResult(BaseModel):
     applied: list[AppliedAction]
+
+
+class JobQueuedOut(BaseModel):
+    job_id: str
+    status: str = "PENDING"
+
+
+class JobStatusOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    job_id: str
+    status: str
+    payload: dict
+    error: str | None
+    started_at: datetime.datetime | None
+    finished_at: datetime.datetime | None

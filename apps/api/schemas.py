@@ -7,6 +7,15 @@ class UserCreate(BaseModel):
     first_name: str | None = None
 
 
+class UserGetOrCreate(BaseModel):
+    telegram_user_id: int
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    language_code: str | None = None
+    referral_code: str | None = None
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -23,5 +23,7 @@ class Settings(BaseSettings):
 
     mock_telegram: bool = False
 
+    api_base_url: str = "http://api:8000"
+
 
 settings = Settings()

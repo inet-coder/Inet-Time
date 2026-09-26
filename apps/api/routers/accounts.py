@@ -57,7 +57,13 @@ async def _persist_success(db: AsyncSession, user_id: int, state: LoginState) ->
         db.add(account)
         await db.flush()
     else:
+        if existing.user_id != user_id and existing.status not in (
+            TelegramAccountStatus.REVOKED,
+            TelegramAccountStatus.ERROR,
+        ):
+            raise HTTPException(409, "Bu Telegram akkaunt allaqachon boshqa foydalanuvchiga ulangan")
         account = existing
+        account.user_id = user_id
         account.username = state.username
         account.first_name = state.first_name
         account.last_name = state.last_name

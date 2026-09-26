@@ -6,6 +6,8 @@ javob uzunligi max_completion_tokens bilan cheklangan."""
 import datetime
 import json
 import logging
+import re
+import unicodedata
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
@@ -64,14 +66,27 @@ PRESETS: dict[str, dict[str, str]] = {
 DEFAULT_PRESET = "busy"
 
 # Qoidalar inglizcha — model ularga aniqroq amal qiladi; javob tili esa suhbatdoshniki.
+# "Egasi o'zi javob beradi" faqat kerak bo'lganda aytiladi — aks holda har javob bir xil shablonga aylanadi.
 _REPLY_SYSTEM = (
-    "You auto-reply to Telegram private messages on behalf of {name}. Style: {style}\n"
+    "You auto-reply in Telegram private chats on behalf of {name} while they are away. Style: {style}\n"
     "Rules: reply ONLY in the language of the last incoming message (English -> English, Russian -> Russian, "
-    "Uzbek -> Uzbek), even though this prompt is mixed; 1-2 short sentences; you are an "
-    "auto-reply, not an assistant — never offer help or ask how you can help; never promise anything, agree to "
-    "meetings or money, or share personal info — say {name} will reply personally; if asked whether you are a "
-    "bot, say this is an auto-reply."
+    "Uzbek -> Uzbek); 1-2 short, natural sentences that answer what was actually said (greeting -> greet back, "
+    "'how are you' -> answer briefly and warmly); never repeat your earlier replies; you are not an assistant — "
+    "never offer help. Only when the message needs {name} personally (plans, meetings, money, work, questions only "
+    "they can answer) say {name} will reply later — never promise anything or share personal info. If asked who "
+    "you are or whether you are a bot, say in one short sentence that this is {name}'s auto-reply."
 )
+
+
+def clean_name(raw: str | None) -> str:
+    """Bezakli ismdan oddiy ism: «𝑆𝐴𝑅𝐷𝑂𝑅 🌪🧑‍💻» -> «Sardor», «Ali 14:05» -> «Ali»."""
+    text = unicodedata.normalize("NFKC", raw or "")
+    # Avto ism/soat qo'shgan qism ajratgichdan keyin keladi: «Dilnoza | Juma», «Ali · 14:05».
+    text = re.split(r"\s[|·•—–/]\s?", text)[0]
+    words = re.findall(r"[^\W\d_][\w'’-]*", text)
+    name = " ".join(w for w in words if not any(ch.isdigit() for ch in w))[:40].strip()
+    return name.title() if name.isupper() else name
+
 
 _SUGGEST_FIELDS = {
     "bio": ("Telegram bio", 70),
@@ -211,7 +226,7 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float | 
 
 async def reply(model: str, owner_name: str, preset: str, style: str | None, history: list[tuple[bool, str]]) -> AIResult:
     """history: [(egasi_yozganmi, matn), ...] eskidan yangiga. Oxirgisi — javob beriladigan xabar."""
-    system = _REPLY_SYSTEM.format(name=owner_name or "Egasi", style=style_prompt(preset, style))
+    system = _REPLY_SYSTEM.format(name=clean_name(owner_name) or "the owner", style=style_prompt(preset, style))
     messages = [{"role": "system", "content": system}]
     for mine, text in history[-MAX_CONTEXT_MESSAGES:]:
         messages.append({"role": "assistant" if mine else "user", "content": text[:MAX_CONTEXT_CHARS]})

@@ -29,6 +29,14 @@ class AutomationPriority(str, enum.Enum):
     LOW = "LOW"
 
 
+class SelectionStrategy(str, enum.Enum):
+    """Bir fieldga bir nechta action bo'lganda (Playlist preset) qaysi birini tanlash."""
+
+    NONE = "NONE"
+    SEQUENTIAL = "SEQUENTIAL"
+    RANDOM = "RANDOM"
+
+
 class TriggerType(str, enum.Enum):
     INTERVAL = "INTERVAL"
     SCHEDULE = "SCHEDULE"

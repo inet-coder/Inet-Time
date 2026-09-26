@@ -1,3 +1,5 @@
+import datetime
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -73,3 +75,59 @@ class AccountOut(BaseModel):
     last_name: str | None
     is_premium: bool
     status: str
+
+
+class ActionIn(BaseModel):
+    field: str
+    template: str
+    order_index: int = 0
+
+
+class ScheduleIn(BaseModel):
+    trigger_type: str = "INTERVAL"
+    interval_seconds: int | None = None
+    cron_expr: str | None = None
+    window_start_at: datetime.datetime | None = None
+    window_end_at: datetime.datetime | None = None
+    timezone: str = "UTC"
+
+
+class AutomationCreate(BaseModel):
+    telegram_account_id: int
+    service_code: str
+    priority: str = "NORMAL"
+    restore_on_stop: bool = True
+    selection_strategy: str = "NONE"
+    actions: list[ActionIn]
+    schedule: ScheduleIn
+
+
+class AutomationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    telegram_account_id: int
+    service_id: int
+    status: str
+    priority: str
+    selection_strategy: str
+    restore_on_stop: bool
+    started_at: datetime.datetime | None
+    error_message: str | None
+
+
+class ActivateRequest(BaseModel):
+    resolution: str | None = None
+
+
+class StopRequest(BaseModel):
+    restore: bool | None = None
+
+
+class AppliedAction(BaseModel):
+    field: str
+    value: str
+
+
+class RunResult(BaseModel):
+    applied: list[AppliedAction]

@@ -4,7 +4,7 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Tex
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.db.base import Base
-from core.db.enums import AutomationPriority, AutomationStatus, ProfileField, TriggerType
+from core.db.enums import AutomationPriority, AutomationStatus, ProfileField, SelectionStrategy, TriggerType
 from core.db.mixins import TimestampMixin
 
 
@@ -27,6 +27,10 @@ class Automation(TimestampMixin, Base):
         Enum(AutomationPriority, native_enum=False, length=16), default=AutomationPriority.NORMAL
     )
     restore_on_stop: Mapped[bool] = mapped_column(Boolean, default=True)
+    selection_strategy: Mapped[SelectionStrategy] = mapped_column(
+        Enum(SelectionStrategy, native_enum=False, length=16), default=SelectionStrategy.NONE
+    )
+    last_playlist_index: Mapped[int] = mapped_column(Integer, default=0)
     started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     error_message: Mapped[str | None] = mapped_column(Text)
@@ -39,7 +43,10 @@ class AutomationAction(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     automation_id: Mapped[int] = mapped_column(ForeignKey("automations.id", ondelete="CASCADE"), index=True)
-    field: Mapped[ProfileField] = mapped_column(Enum(ProfileField, native_enum=False, length=16), index=True)
+    field: Mapped[ProfileField] = mapped_column(
+        Enum(ProfileField, native_enum=False, length=16, values_callable=lambda e: [m.value for m in e]),
+        index=True,
+    )
     template: Mapped[str] = mapped_column(Text)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -71,7 +78,9 @@ class ProfileSnapshot(TimestampMixin, Base):
         ForeignKey("telegram_accounts.id", ondelete="CASCADE"), index=True
     )
     automation_id: Mapped[int | None] = mapped_column(ForeignKey("automations.id", ondelete="SET NULL"))
-    field: Mapped[ProfileField] = mapped_column(Enum(ProfileField, native_enum=False, length=16))
+    field: Mapped[ProfileField] = mapped_column(
+        Enum(ProfileField, native_enum=False, length=16, values_callable=lambda e: [m.value for m in e])
+    )
     value: Mapped[str | None] = mapped_column(Text)
     captured_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
     restored: Mapped[bool] = mapped_column(Boolean, default=False)

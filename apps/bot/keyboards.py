@@ -325,3 +325,10 @@ def presence_menu(current: str, online_unlocked: bool) -> InlineKeyboardMarkup:
             rows.append([(("✅ " if mode == current else "") + title, f"presence:{mode}")])
     rows.append([("⬅️ Orqaga", "pro")])
     return _kb(rows)
+
+
+def playlist_packs(packs: list[dict]) -> InlineKeyboardMarkup:
+    buttons = [(p["title"], f"pl_pack:{p['code']}") for p in packs]
+    rows = [buttons[i : i + 3] for i in range(0, len(buttons), 3)]
+    rows.append([("❌ Bekor qilish", "pro")])
+    return _kb(rows)

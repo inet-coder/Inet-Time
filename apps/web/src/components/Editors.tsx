@@ -195,14 +195,45 @@ export function PlaylistEditor({ state, service, active, setOverrides, save, bus
     setItems(copy);
   };
 
+  const [pack, setPack] = useState<string | null>(null);
+
   return (
     <>
+      {service.packs && (
+        <>
+          <label className="label">Tayyor to'plamlar</label>
+          <div className="chips chips--scroll">
+            {service.packs.map((p) => (
+              <button
+                key={p.code}
+                className={`chip-btn ${pack === p.code ? "is-selected" : ""}`}
+                onClick={() => {
+                  setPack(p.code);
+                  setItems(p.items);
+                  setFocus(0);
+                }}
+              >
+                {p.title}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       <label className="label">Matnlar ({filled.length}/10) — navbat bilan bio bo'ladi</label>
       <div className="list">
         {items.map((item, i) => (
           <div key={i} className="list__row">
             <span className="list__num">{i + 1}</span>
-            <input className="input" value={item} placeholder="Bio matni" onFocus={() => setFocus(i)} onChange={(e) => update(i, e.target.value)} />
+            <input
+              className="input"
+              value={item}
+              placeholder="Bio matni"
+              onFocus={() => setFocus(i)}
+              onChange={(e) => {
+                setPack(null);
+                update(i, e.target.value);
+              }}
+            />
             <button className="icon-btn" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Yuqoriga">
               <ArrowUp size={17} />
             </button>

@@ -29,6 +29,7 @@ export type CatalogService = {
   default?: string;
   presets?: string[];
   intervals?: number[];
+  packs?: { code: string; title: string; items: string[] }[];
   unlocked: boolean;
 };
 

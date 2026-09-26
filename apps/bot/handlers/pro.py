@@ -22,6 +22,7 @@ from catalog import (
     unlocking_plan,
 )
 from common import current_account, db_user_id, safe_answer, safe_edit
+from core.catalog import PLAYLIST_PACKS
 from core.settings import settings
 from core.templates import TemplateContext, render
 from states import ProSetup
@@ -173,10 +174,11 @@ async def start_setup(callback: CallbackQuery, state: FSMContext) -> None:
         await state.set_state(ProSetup.playlist_items)
         await safe_edit(
             callback,
-            f"🔁 Bio matnlarini yuboring — har biri yangi qatorda (2–{MAX_ITEMS} ta).\n\n"
-            "Masalan:\nBugun ajoyib kun ☀️\nKod yozyapman 💻\nQahva ichyapman ☕️\n\n"
+            "🔁 Tayyor to'plamni tanlang 👇\n\n"
+            f"Yoki o'z matnlaringizni yuboring — har biri yangi qatorda (2–{MAX_ITEMS} ta):\n"
+            "Bugun ajoyib kun ☀️\nKod yozyapman 💻\nQahva ichyapman ☕️\n\n"
             "💡 {time}, {weekday} ham ishlaydi.",
-            kb.cancel_to_pro(),
+            kb.playlist_packs(PLAYLIST_PACKS),
         )
     elif code == "schedule":
         await safe_edit(callback, "🗓 Vaqtga qarab nima o'zgarsin?", kb.choose_schedule_field())
@@ -236,6 +238,19 @@ async def playlist_items(message: Message, state: FSMContext) -> None:
             return
     await state.update_data(items=items)
     await message.answer(f"✅ {len(items)} ta matn. Qanday tartibda almashsin?", reply_markup=kb.choose_order())
+
+
+@router.callback_query(F.data.startswith("pl_pack:"))
+async def playlist_pack(callback: CallbackQuery, state: FSMContext) -> None:
+    pack = next((p for p in PLAYLIST_PACKS if p["code"] == callback.data.split(":", 1)[1]), None)
+    if pack is None:
+        await safe_answer(callback)
+        return
+    await state.update_data(items=pack["items"])
+    _, _, account = await _load(callback.from_user)
+    preview = "\n".join(f"• {_preview(item, account)}" for item in pack["items"])
+    await safe_edit(callback, f"{pack['title']} to'plami:\n\n{preview}\n\nQanday tartibda almashsin?", kb.choose_order())
+    await safe_answer(callback)
 
 
 @router.callback_query(F.data.startswith("pl_ord:"))

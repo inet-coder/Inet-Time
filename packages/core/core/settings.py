@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     session_encryption_key: str = ""
     jwt_secret: str = ""
     admin_secret: str = ""
+    admin_telegram_ids: str = ""
+    # Balans to'ldirishda foydalanuvchiga ko'rsatiladi (masalan: karta raqami va egasi).
+    payment_instructions: str = ""
+    default_timezone: str = "Asia/Tashkent"
+
+    @property
+    def admin_telegram_id_set(self) -> set[int]:
+        return {int(x) for x in self.admin_telegram_ids.split(",") if x.strip()}
 
     mock_telegram: bool = False
 

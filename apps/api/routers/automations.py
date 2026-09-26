@@ -3,16 +3,24 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.automation_engine import find_conflicts
+from core.entitlements import EntitlementError, check_can_activate
 from core.db.enums import AutomationStatus, ProfileField, TriggerType
 from core.db.models import Automation, AutomationAction, Schedule, Service, TelegramAccount
 from deps import get_db
 from jobs import enqueue
-from schemas import ActivateRequest, AutomationCreate, AutomationOut, JobQueuedOut, StopRequest
+from schemas import ActivateRequest, AutomationCreate, AutomationOut, JobQueuedOut, ServiceOut, StopRequest
 
 router = APIRouter(prefix="/automations", tags=["automations"])
+services_router = APIRouter(prefix="/services", tags=["automations"])
 
 # PHOTO/BIRTHDAY hali FieldAdapter'da implement qilinmagan (BUILD.md: "Kelajakka tayyor").
 _UNSUPPORTED_FIELDS = {ProfileField.PHOTO, ProfileField.BIRTHDAY}
+
+
+@services_router.get("", response_model=list[ServiceOut])
+async def list_services_public(db: AsyncSession = Depends(get_db)) -> list[Service]:
+    result = await db.scalars(select(Service).where(Service.is_active == True))  # noqa: E712
+    return list(result)
 
 
 @router.post("", response_model=AutomationOut)
@@ -126,6 +134,14 @@ async def activate_automation(automation_id: int, payload: ActivateRequest, db: 
     if remaining is None:
         raise HTTPException(409, "Merge'dan keyin hech qanday field qolmadi")
 
+    # Replace natijasida pauza qilinganlar shu tranzaksiyada allaqachon hisobdan chiqqan.
+    account = await db.get(TelegramAccount, automation.telegram_account_id)
+    try:
+        await check_can_activate(db, account.user_id, automation.id)
+    except EntitlementError as exc:
+        await db.rollback()
+        raise HTTPException(402, str(exc)) from exc
+
     automation.status = AutomationStatus.STARTING
     await db.commit()
 
@@ -162,8 +178,8 @@ async def stop_automation(automation_id: int, payload: StopRequest, db: AsyncSes
     automation = await db.get(Automation, automation_id)
     if automation is None:
         raise HTTPException(404, "Automation topilmadi")
-    if automation.status != AutomationStatus.ACTIVE:
-        raise HTTPException(400, "Faqat ACTIVE automation to'xtatilishi mumkin")
+    if automation.status not in (AutomationStatus.ACTIVE, AutomationStatus.ERROR, AutomationStatus.PAUSED):
+        raise HTTPException(400, "Xizmat hali ishga tushmoqda — bir necha soniyadan keyin urinib ko'ring")
 
     restore = payload.restore if payload.restore is not None else automation.restore_on_stop
 

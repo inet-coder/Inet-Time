@@ -9,3 +9,11 @@ class PhoneLogin(StatesGroup):
     waiting_phone = State()
     waiting_code = State()
     waiting_password = State()
+
+
+class EditTemplate(StatesGroup):
+    waiting_text = State()
+
+
+class Topup(StatesGroup):
+    waiting_amount = State()

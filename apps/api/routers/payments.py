@@ -30,11 +30,87 @@ async def list_subscriptions(user_id: int, db: AsyncSession = Depends(get_db)) -
     result = await db.scalars(select(Subscription).where(Subscription.user_id == user_id))
     return list(result)
 
+
 _MAX_SERIALIZATION_RETRIES = 3
 
 
 def _is_serialization_failure(exc: DBAPIError) -> bool:
     return "could not serialize access" in str(exc.orig).lower()
+
+
+async def _extend_or_create_subscription(
+    db: AsyncSession, user_id: int, plan: Plan, now: datetime.datetime
+) -> Subscription:
+    subscription = await db.scalar(
+        select(Subscription).where(
+            Subscription.user_id == user_id,
+            Subscription.plan_id == plan.id,
+            Subscription.status == SubscriptionStatus.ACTIVE,
+        )
+    )
+    if subscription is not None and subscription.expires_at > now:
+        subscription.expires_at += datetime.timedelta(days=plan.duration_days)
+    else:
+        subscription = Subscription(
+            user_id=user_id,
+            plan_id=plan.id,
+            status=SubscriptionStatus.ACTIVE,
+            started_at=now,
+            expires_at=now + datetime.timedelta(days=plan.duration_days),
+        )
+        db.add(subscription)
+    await db.flush()
+    return subscription
+
+
+@subscriptions_router.post("/buy", response_model=SubscriptionOut)
+async def buy_with_balance(payload: PurchaseCreate) -> Subscription:
+    """Tarifni hamyon balansidan darhol sotib olish (admin tasdig'isiz)."""
+    for attempt in range(_MAX_SERIALIZATION_RETRIES):
+        async with async_session() as db:
+            try:
+                await db.execute(text("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"))
+
+                user = await db.get(User, payload.user_id)
+                if user is None:
+                    raise HTTPException(404, "Foydalanuvchi topilmadi")
+                plan = await db.scalar(
+                    select(Plan).where(Plan.code == payload.plan_code, Plan.is_active == True)  # noqa: E712
+                )
+                if plan is None:
+                    raise HTTPException(404, f"Faol tarif topilmadi: {payload.plan_code}")
+
+                balance = await _current_balance(db, user.id)
+                if balance < plan.price:
+                    raise HTTPException(402, f"Balans yetarli emas: {balance:.0f} / {plan.price:.0f} so'm")
+
+                now = datetime.datetime.now(datetime.timezone.utc)
+                subscription = await _extend_or_create_subscription(db, user.id, plan, now)
+                balance -= plan.price
+                db.add(
+                    Transaction(
+                        user_id=user.id,
+                        type=TransactionType.PURCHASE,
+                        amount=-plan.price,
+                        balance_after=balance,
+                        reference_subscription_id=subscription.id,
+                    )
+                )
+                user.balance = balance
+                await record_audit(
+                    db, actor_type=ActorType.USER, actor_id=user.id, action="plan_purchased",
+                    entity_type="subscription", entity_id=subscription.id, meta={"plan": plan.code},
+                )
+                await db.commit()
+                await db.refresh(subscription)
+                return subscription
+            except DBAPIError as exc:
+                await db.rollback()
+                if _is_serialization_failure(exc) and attempt < _MAX_SERIALIZATION_RETRIES - 1:
+                    continue
+                raise HTTPException(409, "Bir vaqtda ko'p yangilanish — qaytadan urinib ko'ring") from exc
+
+    raise HTTPException(409, "Bir vaqtda ko'p yangilanish — qaytadan urinib ko'ring")
 
 
 @router.post("/topup", response_model=PaymentOut)
@@ -122,28 +198,9 @@ async def confirm_payment(
                 now = datetime.datetime.now(datetime.timezone.utc)
                 balance = await _current_balance(db, payment.user_id)
 
-                subscription = None
                 if payment.plan_id is not None:
                     plan = await db.get(Plan, payment.plan_id)
-                    subscription = await db.scalar(
-                        select(Subscription).where(
-                            Subscription.user_id == payment.user_id,
-                            Subscription.plan_id == plan.id,
-                            Subscription.status == SubscriptionStatus.ACTIVE,
-                        )
-                    )
-                    if subscription is not None and subscription.expires_at > now:
-                        subscription.expires_at += datetime.timedelta(days=plan.duration_days)
-                    else:
-                        subscription = Subscription(
-                            user_id=payment.user_id,
-                            plan_id=plan.id,
-                            status=SubscriptionStatus.ACTIVE,
-                            started_at=now,
-                            expires_at=now + datetime.timedelta(days=plan.duration_days),
-                        )
-                        db.add(subscription)
-                    await db.flush()
+                    subscription = await _extend_or_create_subscription(db, payment.user_id, plan, now)
 
                     # Double-entry: tashqaridan pul kirdi (TOPUP), so'ng tarifga sarflandi (PURCHASE) — sof ta'sir 0.
                     balance += payment.amount

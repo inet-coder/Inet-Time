@@ -26,6 +26,8 @@ class UserOut(BaseModel):
     username: str | None
     first_name: str | None
     referral_code: str
+    balance: float
+    is_banned: bool
 
 
 class QrLoginStart(BaseModel):

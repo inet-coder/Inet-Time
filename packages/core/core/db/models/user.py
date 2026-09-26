@@ -1,6 +1,6 @@
 import decimal
 
-from sqlalchemy import Boolean, ForeignKey, Numeric, String
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.db.base import Base
@@ -11,7 +11,7 @@ class User(TimestampMixin, Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    telegram_user_id: Mapped[int | None] = mapped_column(unique=True, index=True)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, index=True)
     username: Mapped[str | None] = mapped_column(String(64))
     first_name: Mapped[str | None] = mapped_column(String(128))
     last_name: Mapped[str | None] = mapped_column(String(128))

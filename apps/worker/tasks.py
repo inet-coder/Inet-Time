@@ -23,6 +23,8 @@ from core.worker_support.backoff import call_with_backoff
 from core.worker_support.lease import AccountBusyError, release_lease, require_lease
 from core.worker_support.lock import profile_lock
 
+UNCHANGED_REAPPLY_SECONDS = 600
+
 
 async def _claim_job(db, job_id: str) -> bool:
     """Idempotency: job faqat PENDING holatda bo'lsa RUNNING'ga o'tadi. Qayta yetkazilsa (arq retry) — o'tkazib yuboriladi."""
@@ -111,7 +113,15 @@ async def run_automation_once(ctx, automation_id: int, job_id: str) -> None:
                         next_index += 1
 
                     rendered = render(chosen.template, tpl_ctx)
+                    # O'zgarmagan qiymatni har daqiqada qayta yubormaymiz (FloodWait xavfi); ONLINE esa
+                    # doim yangilanishi kerak. TTL tufayli qo'lda o'zgartirilgan profil ham vaqti-vaqti bilan tiklanadi.
+                    cache_key = f"last_applied:{automation_id}:{field.value}"
+                    if field != ProfileField.ONLINE:
+                        last = await ctx["redis"].get(cache_key)
+                        if last is not None and (last.decode() if isinstance(last, bytes) else last) == rendered:
+                            continue
                     await call_with_backoff(field_adapter.apply, session_string, field, rendered)
+                    await ctx["redis"].set(cache_key, rendered, ex=UNCHANGED_REAPPLY_SECONDS)
                     applied.append({"field": field.value, "value": rendered})
 
             automation.last_playlist_index = next_index
@@ -256,9 +266,35 @@ async def revoke_account_job(ctx, account_id: int, job_id: str) -> None:
             )
             if session_row is not None and session_row.revoked_at is None:
                 session_string = crypto.decrypt(session_row.ciphertext, session_row.nonce, session_row.key_version)
+                # Log out'dan OLDIN: profil asl holiga qaytariladi (keyin sessiya yaroqsiz bo'ladi).
+                snapshots = list(
+                    await db.scalars(
+                        select(ProfileSnapshot).where(
+                            ProfileSnapshot.telegram_account_id == account.id,
+                            ProfileSnapshot.restored == False,  # noqa: E712
+                        )
+                    )
+                )
+                field_adapter = get_field_adapter()
+                async with profile_lock(ctx["redis"], account.id):
+                    for snap in snapshots:
+                        if snap.value is not None:
+                            try:
+                                await call_with_backoff(field_adapter.apply, session_string, snap.field, snap.value)
+                            except Exception:  # noqa: BLE001 — restore best-effort, uzish baribir bajariladi
+                                pass
+                        snap.restored = True
                 await call_with_backoff(get_adapter().revoke, session_string)
                 session_row.revoked_at = datetime.datetime.now(datetime.timezone.utc)
 
+            await db.execute(
+                update(Automation)
+                .where(
+                    Automation.telegram_account_id == account.id,
+                    Automation.status.not_in((AutomationStatus.CANCELLED, AutomationStatus.COMPLETED)),
+                )
+                .values(status=AutomationStatus.CANCELLED)
+            )
             account.status = TelegramAccountStatus.REVOKED
             await db.commit()
             await _finish_job(db, job_id, WorkerJobStatus.DONE)

@@ -1,4 +1,5 @@
 import datetime
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core import crypto
 from core.db.enums import TelegramAccountStatus
 from core.db.models import EncryptedSession, TelegramAccount, User
+from core.entitlements import EntitlementError, check_can_add_account
 from core.settings import settings
 from core.telegram.enums import LoginStatus
 from core.telegram.factory import get_adapter
@@ -26,6 +28,7 @@ from schemas import (
 )
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
+logger = logging.getLogger(__name__)
 
 # login_id -> qaysi user nomidan login boshlangani. Faqat shu api processi xotirasida;
 # PHASE 6'da worker/lease tizimiga ko'chganda Redisga o'tadi.
@@ -44,6 +47,20 @@ async def _persist_success(db: AsyncSession, user_id: int, state: LoginState) ->
     existing = await db.scalar(
         select(TelegramAccount).where(TelegramAccount.telegram_user_id == state.telegram_user_id)
     )
+    is_new_for_user = (
+        existing is None or existing.user_id != user_id or existing.status == TelegramAccountStatus.REVOKED
+    )
+    if is_new_for_user:
+        try:
+            await check_can_add_account(db, user_id)
+        except EntitlementError as exc:
+            # Telegram tomonida sessiya allaqachon yaratilgan — saqlamaymiz, "osilib" qolmasligi uchun chiqamiz.
+            try:
+                await get_adapter().revoke(state.session_string)
+            except Exception:  # noqa: BLE001
+                pass
+            raise HTTPException(402, str(exc)) from exc
+
     now = datetime.datetime.now(datetime.timezone.utc)
     if existing is None:
         account = TelegramAccount(
@@ -102,7 +119,15 @@ async def _handle_state(login_id: str, state: LoginState, db: AsyncSession) -> L
         user_id = _pending_user_by_login.pop(login_id, None)
         if user_id is None:
             raise HTTPException(500, "login_id uchun boshlang'ich foydalanuvchi topilmadi")
-        account = await _persist_success(db, user_id, state)
+        try:
+            account = await _persist_success(db, user_id, state)
+        except HTTPException as exc:
+            # Keyingi status so'rovlari ham shu xatoni ko'rsin (500 emas).
+            await get_adapter().cleanup(login_id)
+            status = "LIMIT_REACHED" if exc.status_code == 402 else LoginStatus.ERROR.value
+            resp = LoginStatusOut(login_id=login_id, status=status, error=str(exc.detail))
+            _completed[login_id] = resp
+            return resp
         await get_adapter().cleanup(login_id)
         resp = LoginStatusOut(
             login_id=login_id,
@@ -124,9 +149,18 @@ async def _handle_state(login_id: str, state: LoginState, db: AsyncSession) -> L
     )
 
 
+async def _require_account_slot(user_id: int, db: AsyncSession) -> None:
+    """Foydalanuvchi QR skanerlashdan OLDIN limit haqida bilsin (asosiy tekshiruv _persist_success'da)."""
+    try:
+        await check_can_add_account(db, user_id)
+    except EntitlementError as exc:
+        raise HTTPException(402, str(exc)) from exc
+
+
 @router.post("/qr-login/start", response_model=LoginStatusOut)
 async def qr_login_start(payload: QrLoginStart, db: AsyncSession = Depends(get_db)) -> LoginStatusOut:
     await _require_user(payload.user_id, db)
+    await _require_account_slot(payload.user_id, db)
     state = await get_adapter().start_qr_login()
     _pending_user_by_login[state.login_id] = payload.user_id
     return LoginStatusOut(login_id=state.login_id, status=state.status.value, qr_url=state.qr_url)
@@ -141,7 +175,12 @@ async def qr_login_status(login_id: str, db: AsyncSession = Depends(get_db)) -> 
 @router.post("/phone-login/start", response_model=LoginStatusOut)
 async def phone_login_start(payload: PhoneLoginStart, db: AsyncSession = Depends(get_db)) -> LoginStatusOut:
     await _require_user(payload.user_id, db)
-    state = await get_adapter().start_phone_login(payload.phone)
+    await _require_account_slot(payload.user_id, db)
+    try:
+        state = await get_adapter().start_phone_login(payload.phone)
+    except Exception as exc:  # noqa: BLE001 — Telegram xatosi (noto'g'ri raqam, FloodWait) foydalanuvchiga texnik ko'rinmasin
+        logger.warning("phone login start failed: %s", type(exc).__name__)
+        raise HTTPException(400, "Bu raqamga kod yuborib bo'lmadi. Raqamni tekshirib, qaytadan urinib ko'ring.") from exc
     _pending_user_by_login[state.login_id] = payload.user_id
     return LoginStatusOut(login_id=state.login_id, status=state.status.value)
 

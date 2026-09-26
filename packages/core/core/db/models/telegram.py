@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, LargeBinary, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.db.base import Base
@@ -13,7 +13,7 @@ class TelegramAccount(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    telegram_user_id: Mapped[int | None] = mapped_column(unique=True, index=True)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, index=True)
     phone_last4: Mapped[str | None] = mapped_column(String(4))
     phone_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     username: Mapped[str | None] = mapped_column(String(64))

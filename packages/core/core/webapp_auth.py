@@ -23,8 +23,9 @@ class InitDataError(Exception):
 def validate_init_data(init_data: str, bot_token: str, max_age: int = INIT_DATA_MAX_AGE_SECONDS) -> dict:
     """Imzo to'g'ri bo'lsa Telegram foydalanuvchisini (WebAppUser) qaytaradi."""
     fields = dict(parse_qsl(init_data, keep_blank_values=True))
+    # Bot tokeni (HMAC) bilan tekshirishda faqat hash chiqariladi; signature satrda qoladi.
+    # (signature faqat bot tokenisiz, Ed25519 orqali uchinchi tomon tekshiruvida chiqariladi.)
     received_hash = fields.pop("hash", None)
-    fields.pop("signature", None)  # hujjat: hash va signature tekshiruv satriga kirmaydi
     if not received_hash:
         raise InitDataError("hash yo'q")
 

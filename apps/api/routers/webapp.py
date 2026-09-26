@@ -2,6 +2,7 @@
 foydalanuvchi faqat o'z akkauntlari va xizmatlarini ko'radi/o'zgartiradi."""
 
 import datetime
+import logging
 import secrets
 
 import httpx
@@ -23,6 +24,8 @@ from deps import get_db
 from redis_client import get_redis
 from routers import automations as automations_api
 from routers import payments as payments_api
+
+logger = logging.getLogger(__name__)
 from routers.users import get_overview
 from schemas import ActionIn, ActivateRequest, AutomationCreate, MediaUpload, PurchaseCreate, ScheduleIn, StopRequest, TopupCreate
 
@@ -62,6 +65,7 @@ async def auth(payload: AuthIn, db: AsyncSession = Depends(get_db)) -> dict:
     try:
         tg_user = validate_init_data(payload.init_data, settings.bot_token)
     except InitDataError as exc:
+        logger.warning("webapp auth rad etildi: %s", exc)
         raise HTTPException(401, "Telegram ma'lumotlari tasdiqlanmadi — ilovani bot ichidan oching") from exc
 
     user = await db.scalar(select(User).where(User.telegram_user_id == tg_user["id"]))

@@ -1,5 +1,20 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  Crown,
+  Gem,
+  LayoutGrid,
+  LoaderCircle,
+  Lock,
+  ShieldAlert,
+  Smartphone,
+  UserRound,
+  Wallet,
+  Zap,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, authenticate, type ActiveService, type State } from "./api";
 import {
   EmojiEditor,
@@ -13,10 +28,11 @@ import {
 import { PlansView } from "./components/PlansView";
 import { ProfileCard } from "./components/ProfileCard";
 import { ServiceGrid } from "./components/ServiceGrid";
+import { ServiceIcon } from "./icons";
 import { Sheet } from "./components/Sheet";
 import { Timeline } from "./components/Timeline";
 import { buildProfile, nextChangeAt, type Mode, type Overrides } from "./profile";
-import { confirmDialog, haptic, openBot, tg } from "./tg";
+import { confirmDialog, haptic, matchChrome, openBot, tg } from "./tg";
 import { money, whenText } from "./util";
 
 const EDITORS: Record<string, (p: EditorProps) => JSX.Element> = {
@@ -29,6 +45,12 @@ const EDITORS: Record<string, (p: EditorProps) => JSX.Element> = {
 };
 
 type Tab = "profile" | "services" | "plan";
+
+const TABS: [Tab, typeof UserRound, string][] = [
+  ["profile", UserRound, "Profil"],
+  ["services", LayoutGrid, "Xizmatlar"],
+  ["plan", Gem, "Tarif"],
+];
 type Toast = { text: string; kind: "ok" | "err" } | null;
 
 function useToast(): [Toast, (text: string, kind?: "ok" | "err") => void] {
@@ -47,6 +69,7 @@ export function App() {
   useEffect(() => {
     tg?.ready();
     tg?.expand();
+    matchChrome();
     authenticate()
       .then(() => setAuthed(true))
       .catch((e: Error) => setAuthError(e.message));
@@ -55,7 +78,10 @@ export function App() {
   if (authError) {
     return (
       <div className="empty">
-        <div className="empty__icon">🔒</div>
+        <div className="empty__icon">
+          <ShieldAlert size={34} />
+        </div>
+        <h2>Kirish tasdiqlanmadi</h2>
         <p>{authError}</p>
       </div>
     );
@@ -140,10 +166,12 @@ function Main() {
         </select>
       )}
 
+      <Header state={state} title={TABS.find(([k]) => k === tab)![2]} onPlan={() => setTab("plan")} />
+
       {tab === "profile" && <ProfileTab state={state} mode={mode} setMode={setMode} onOpen={setOpenCode} />}
       {tab === "services" && (
         <div className="stack">
-          <p className="hint">Tugmani bosib yoqing, kartani bosib sozlang. Oddiy xizmatlar standart shablon bilan darhol yoqiladi.</p>
+          <p className="hint">Kalitni bosib yoqing, kartani bosib sozlang. Oddiy xizmatlar standart shablon bilan darhol yoqiladi.</p>
           <h3 className="section-title">Asosiy</h3>
           <ServiceGrid
             catalog={state.catalog.filter((c) => !c.flag)}
@@ -151,7 +179,9 @@ function Main() {
             onOpen={setOpenCode}
             onToggle={toggle}
           />
-          <h3 className="section-title">⭐ Pro</h3>
+          <h3 className="section-title section-title--pro">
+            <Crown size={14} /> Pro xizmatlar
+          </h3>
           <ServiceGrid
             catalog={state.catalog.filter((c) => c.flag)}
             services={services}
@@ -180,22 +210,51 @@ function Main() {
         />
       )}
 
-      {toast && <div className={`toast toast--${toast.kind}`}>{toast.text}</div>}
+      {toast && (
+        <div className={`toast toast--${toast.kind}`}>
+          {toast.kind === "ok" ? <CircleCheck size={18} /> : <CircleAlert size={18} />}
+          <span>{toast.text}</span>
+        </div>
+      )}
 
       <nav className="tabbar">
-        {(
-          [
-            ["profile", "👤", "Profil"],
-            ["services", "⚙️", "Xizmatlar"],
-            ["plan", "💎", "Tarif"],
-          ] as [Tab, string, string][]
-        ).map(([key, icon, label]) => (
-          <button key={key} className={tab === key ? "is-active" : ""} onClick={() => setTab(key)}>
-            <span>{icon}</span>
+        {TABS.map(([key, Icon, label]) => (
+          <button
+            key={key}
+            className={tab === key ? "is-active" : ""}
+            onClick={() => {
+              haptic("select");
+              setTab(key);
+            }}
+          >
+            <Icon size={22} strokeWidth={tab === key ? 2.4 : 1.9} />
             {label}
           </button>
         ))}
       </nav>
+    </div>
+  );
+}
+
+function Header({ state, title, onPlan }: { state: State; title: string; onPlan: () => void }) {
+  const isPro = state.plan.code === "pro";
+  return (
+    <header className="header">
+      <h1>{title}</h1>
+      <button className={`plan-pill ${isPro ? "plan-pill--pro" : ""}`} onClick={onPlan}>
+        {isPro ? <Crown size={14} strokeWidth={2.4} /> : <Zap size={14} strokeWidth={2.4} />}
+        {state.plan.name}
+      </button>
+    </header>
+  );
+}
+
+function Stat({ icon, value, label }: { icon: ReactNode; value: ReactNode; label: string }) {
+  return (
+    <div className="stat">
+      <span className="stat__icon">{icon}</span>
+      <span className="stat__value">{value}</span>
+      <span className="stat__label">{label}</span>
     </div>
   );
 }
@@ -205,6 +264,7 @@ function ProfileTab({ state, mode, setMode, onOpen }: { state: State; mode: Mode
   const nextAt = nextChangeAt(state);
   const catalog = Object.fromEntries(state.catalog.map((c) => [c.code, c]));
   const services = state.services ?? [];
+  const active = services.filter((s) => s.status === "ACTIVE").length;
 
   return (
     <div className="stack">
@@ -216,12 +276,18 @@ function ProfileTab({ state, mode, setMode, onOpen }: { state: State; mode: Mode
           Keyingi {nextAt ? `· ${whenText(nextAt, state.timezone)}` : ""}
         </button>
       </div>
-      <section className="card card--flush">
-        <ProfileCard profile={profile} />
+      <section className={`card card--flush profile-wrap ${mode === "next" ? "is-next" : ""}`}>
+        <ProfileCard profile={profile} key={mode} />
       </section>
       <p className="hint center">
         {mode === "now" ? "Boshqalar profilingizni hozir shunday ko'rishadi." : "Keyingi o'zgarishdan keyin profilingiz shunday bo'ladi."}
       </p>
+
+      <div className="stats">
+        <Stat icon={<Zap size={16} />} value={active} label="faol xizmat" />
+        <Stat icon={<Crown size={16} />} value={state.plan.name} label="tarif" />
+        <Stat icon={<Wallet size={16} />} value={money(state.user.balance).replace(" so'm", "")} label="so'm balans" />
+      </div>
 
       <h3 className="section-title">Keyingi o'zgarishlar</h3>
       <section className="card">
@@ -230,29 +296,36 @@ function ProfileTab({ state, mode, setMode, onOpen }: { state: State; mode: Mode
 
       <h3 className="section-title">Faol xizmatlar ({services.length})</h3>
       {services.length === 0 ? (
-        <p className="hint center">Hali xizmat yoqilmagan — «Xizmatlar» bo'limidan tanlang.</p>
+        <div className="card placeholder">
+          <LayoutGrid size={22} />
+          <span>Hali xizmat yoqilmagan — «Xizmatlar» bo'limidan tanlang</span>
+        </div>
       ) : (
         <section className="card card--list">
           {services.map((s) => (
             <button key={s.id} className="list-item" onClick={() => onOpen(s.service_code)}>
-              <span className="list-item__icon">{catalog[s.service_code]?.icon}</span>
+              <ServiceIcon code={s.service_code} size={36} />
               <span className="list-item__body">
                 <span className="list-item__title">{catalog[s.service_code]?.title}</span>
-                <span className="list-item__sub">
-                  {s.status === "ERROR" ? "⚠️ Xatolik — qayta sozlang" : s.status === "STARTING" ? "⏳ Yoqilmoqda…" : previewText(s)}
+                <span className={`list-item__sub ${s.status === "ERROR" ? "is-err" : ""}`}>
+                  {s.status === "ERROR" ? (
+                    <>
+                      <CircleAlert size={13} /> Xatolik — qayta sozlang
+                    </>
+                  ) : s.status === "STARTING" ? (
+                    <>
+                      <LoaderCircle size={13} className="spin" /> Yoqilmoqda
+                    </>
+                  ) : (
+                    previewText(s)
+                  )}
                 </span>
               </span>
-              <span className="list-item__chev">›</span>
+              <ChevronRight size={18} className="list-item__chev" />
             </button>
           ))}
         </section>
       )}
-
-      <div className="card mini-plan">
-        <span>
-          💎 {state.plan.name} · 💰 {money(state.user.balance)}
-        </span>
-      </div>
     </div>
   );
 }
@@ -315,13 +388,19 @@ function ServiceSheet({
   };
 
   return (
-    <Sheet title={`${service.icon} ${service.title}`} onClose={onClose}>
+    <Sheet title={service.title} icon={<ServiceIcon code={code} size={34} />} onClose={onClose}>
       <p className="hint">{service.desc}</p>
       {!service.unlocked ? (
         <div className="stack">
-          <div className="notice">🔒 Bu xizmat Pro tarifda ochiladi.</div>
-          <button className="btn btn--primary" onClick={goPlans}>
-            💎 Tariflarni ko'rish
+          <div className="locked">
+            <span className="locked__icon">
+              <Lock size={22} />
+            </span>
+            <b>Bu xizmat Pro tarifda ochiladi</b>
+            <span className="hint">Pro bilan 5 ta akkaunt, 20 ta xizmat va barcha maxsus imkoniyatlar.</span>
+          </div>
+          <button className="btn btn--gold" onClick={goPlans}>
+            <Crown size={18} /> Pro'ga o'tish
           </button>
         </div>
       ) : (
@@ -345,7 +424,9 @@ function ServiceSheet({
 function NoAccount({ state }: { state: State }) {
   return (
     <div className="empty">
-      <div className="empty__icon">📱</div>
+      <div className="empty__icon">
+        <Smartphone size={34} />
+      </div>
       <h2>Akkaunt ulanmagan</h2>
       <p>Avval botda Telegram akkauntingizni ulang — telefon raqam yoki QR kod orqali.</p>
       <button className="btn btn--primary" onClick={() => openBot(state.bot_username)}>

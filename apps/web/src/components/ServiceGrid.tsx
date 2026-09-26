@@ -1,10 +1,6 @@
+import { CircleAlert, Crown, LoaderCircle } from "lucide-react";
 import type { ActiveService, CatalogService } from "../api";
-
-const STATUS: Record<string, { text: string; cls: string }> = {
-  ACTIVE: { text: "Faol", cls: "chip--ok" },
-  STARTING: { text: "Yoqilmoqda…", cls: "chip--wait" },
-  ERROR: { text: "Xatolik", cls: "chip--err" },
-};
+import { ServiceIcon } from "../icons";
 
 type Props = {
   catalog: CatalogService[];
@@ -13,16 +9,39 @@ type Props = {
   onToggle: (code: string, active: ActiveService | undefined) => void;
 };
 
+function Status({ active }: { active: ActiveService }) {
+  if (active.status === "ERROR")
+    return (
+      <span className="status status--err">
+        <CircleAlert size={13} /> Xatolik
+      </span>
+    );
+  if (active.status === "STARTING")
+    return (
+      <span className="status status--wait">
+        <LoaderCircle size={13} className="spin" /> Yoqilmoqda
+      </span>
+    );
+  return (
+    <span className="status status--ok">
+      <i className="pulse" /> Ishlayapti
+    </span>
+  );
+}
+
 export function ServiceGrid({ catalog, services, onOpen, onToggle }: Props) {
   return (
     <div className="grid">
       {catalog.map((svc) => {
         const active = services.find((s) => s.service_code === svc.code);
-        const status = active ? STATUS[active.status] : null;
         return (
-          <div key={svc.code} className={`card service ${active ? "is-active" : ""} ${svc.unlocked ? "" : "is-locked"}`} onClick={() => onOpen(svc.code)}>
+          <div
+            key={svc.code}
+            className={`card service ${active ? "is-active" : ""} ${svc.unlocked ? "" : "is-locked"}`}
+            onClick={() => onOpen(svc.code)}
+          >
             <div className="service__top">
-              <span className="service__icon">{svc.icon}</span>
+              <ServiceIcon code={svc.code} />
               {svc.unlocked ? (
                 <button
                   className={`switch ${active ? "is-on" : ""}`}
@@ -35,11 +54,13 @@ export function ServiceGrid({ catalog, services, onOpen, onToggle }: Props) {
                   <i />
                 </button>
               ) : (
-                <span className="chip chip--pro">PRO</span>
+                <span className="pro-badge">
+                  <Crown size={11} strokeWidth={2.5} /> PRO
+                </span>
               )}
             </div>
             <div className="service__title">{svc.title}</div>
-            <div className="service__desc">{status ? <span className={`chip ${status.cls}`}>{status.text}</span> : svc.desc}</div>
+            <div className="service__desc">{active ? <Status active={active} /> : svc.desc}</div>
           </div>
         );
       })}

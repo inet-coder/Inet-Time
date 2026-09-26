@@ -7,6 +7,7 @@ export type ProfileView = {
   photo: string | null;
   online: boolean;
   username: string | null;
+  premium: boolean;
 };
 
 export type Mode = "now" | "next";
@@ -37,6 +38,7 @@ export function buildProfile(state: State, mode: Mode, overrides: Overrides = {}
     photo: pick("photo", null),
     online: "online" in overrides ? overrides.online === "true" : !!byField("online"),
     username: account.username,
+    premium: account.is_premium,
   };
 }
 

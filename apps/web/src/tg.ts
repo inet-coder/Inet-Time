@@ -2,6 +2,7 @@
 type Haptic = {
   impactOccurred: (style: "light" | "medium" | "heavy") => void;
   notificationOccurred: (type: "success" | "error" | "warning") => void;
+  selectionChanged: () => void;
 };
 
 type TelegramWebApp = {
@@ -15,6 +16,7 @@ type TelegramWebApp = {
   HapticFeedback?: Haptic;
   BackButton: { show: () => void; hide: () => void; onClick: (cb: () => void) => void; offClick: (cb: () => void) => void };
   setHeaderColor?: (color: string) => void;
+  setBackgroundColor?: (color: string) => void;
   version: string;
 };
 
@@ -26,11 +28,19 @@ declare global {
 
 export const tg: TelegramWebApp | undefined = window.Telegram?.WebApp;
 
-export function haptic(kind: "light" | "success" | "error" = "light") {
+export function haptic(kind: "light" | "select" | "success" | "error" = "light") {
   const h = tg?.HapticFeedback;
   if (!h) return;
   if (kind === "light") h.impactOccurred("light");
+  else if (kind === "select") h.selectionChanged();
   else h.notificationOccurred(kind);
+}
+
+// Telegram sarlavhasi va foni ilova foni bilan bir xil bo'lsin — ilova "ichida" tugallangan ko'rinadi.
+export function matchChrome() {
+  if (!tg || !versionAtLeast(tg.version, "6.1")) return;
+  tg.setHeaderColor?.("secondary_bg_color");
+  tg.setBackgroundColor?.("secondary_bg_color");
 }
 
 function versionAtLeast(version: string, min: string): boolean {

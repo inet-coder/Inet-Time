@@ -1,4 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowUp,
+  CircleAlert,
+  Eye,
+  FileText,
+  ImagePlus,
+  Info,
+  ListOrdered,
+  LoaderCircle,
+  Plus,
+  Shuffle,
+  Star,
+  Type,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, emojiUrl, mediaUrl, type ActiveService, type CatalogService, type State } from "../api";
 import type { Overrides } from "../profile";
 import { openBot } from "../tg";
@@ -43,7 +58,7 @@ function IntervalPicker({ options, value, onChange }: { options: number[]; value
   );
 }
 
-function Segmented<T extends string>({ options, value, onChange }: { options: [T, string][]; value: T; onChange: (v: T) => void }) {
+function Segmented<T extends string>({ options, value, onChange }: { options: [T, ReactNode][]; value: T; onChange: (v: T) => void }) {
   return (
     <div className="segmented">
       {options.map(([v, label]) => (
@@ -55,26 +70,49 @@ function Segmented<T extends string>({ options, value, onChange }: { options: [T
   );
 }
 
+function ErrorLine({ children }: { children: ReactNode }) {
+  return (
+    <div className="preview preview--err">
+      <CircleAlert size={16} className="preview__icon" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
 function PreviewLine({ preview }: { preview: Preview | null }) {
   if (!preview) return null;
-  if (!preview.ok) return <div className="preview preview--err">⚠️ {preview.error}</div>;
+  if (!preview.ok) return <ErrorLine>{preview.error}</ErrorLine>;
+  const pct = Math.min(100, ((preview.length ?? 0) / preview.limit) * 100);
   return (
     <div className="preview">
-      <div>
-        <span className="hint">Hozir:</span> {preview.now}
-      </div>
-      {preview.later !== preview.now && (
-        <div>
-          <span className="hint">1 daqiqadan keyin:</span> {preview.later}
-        </div>
-      )}
-      <div className="meter">
-        <i style={{ width: `${Math.min(100, ((preview.length ?? 0) / preview.limit) * 100)}%` }} />
-        <span>
+      <div className="preview__head">
+        <Eye size={14} /> Natija
+        <span className={`preview__count ${pct > 90 ? "is-near" : ""}`}>
           {preview.length}/{preview.limit}
         </span>
       </div>
+      <div className="preview__row">
+        <span className="preview__tag">Hozir</span>
+        <span>{preview.now}</span>
+      </div>
+      {preview.later !== preview.now && (
+        <div className="preview__row">
+          <span className="preview__tag preview__tag--muted">+1 daq</span>
+          <span>{preview.later}</span>
+        </div>
+      )}
+      <div className="meter">
+        <i style={{ width: `${pct}%` }} />
+      </div>
     </div>
+  );
+}
+
+function AddButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button className="btn btn--ghost" onClick={onClick}>
+      <Plus size={18} /> {children}
+    </button>
   );
 }
 
@@ -107,7 +145,7 @@ export function TemplateEditor({ state, service, active, setOverrides, save, bus
       <div className="chips chips--scroll">
         {state.variables.map((v) => (
           <button key={v.key} className="chip-btn" onClick={() => insert(v.key)}>
-            + {v.label}
+            <Plus size={13} strokeWidth={2.5} /> {v.label}
           </button>
         ))}
       </div>
@@ -164,22 +202,25 @@ export function PlaylistEditor({ state, service, active, setOverrides, save, bus
             <span className="list__num">{i + 1}</span>
             <input className="input" value={item} placeholder="Bio matni" onFocus={() => setFocus(i)} onChange={(e) => update(i, e.target.value)} />
             <button className="icon-btn" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Yuqoriga">
-              ↑
+              <ArrowUp size={17} />
             </button>
             <button className="icon-btn" onClick={() => setItems(items.filter((_, j) => j !== i))} disabled={items.length <= 2} aria-label="O'chirish">
-              ✕
+              <X size={17} />
             </button>
           </div>
         ))}
       </div>
-      {items.length < 10 && (
-        <button className="btn btn--ghost" onClick={() => setItems([...items, ""])}>
-          + Matn qo'shish
-        </button>
-      )}
+      {items.length < 10 && <AddButton onClick={() => setItems([...items, ""])}>Matn qo'shish</AddButton>}
       <PreviewLine preview={preview} />
       <label className="label">Tartib</label>
-      <Segmented options={[["SEQUENTIAL", "➡️ Ketma-ket"], ["RANDOM", "🎲 Tasodifiy"]]} value={order} onChange={setOrder} />
+      <Segmented
+        options={[
+          ["SEQUENTIAL", <><ListOrdered size={16} /> Ketma-ket</>],
+          ["RANDOM", <><Shuffle size={16} /> Tasodifiy</>],
+        ]}
+        value={order}
+        onChange={setOrder}
+      />
       <label className="label">Qanchada bir almashsin</label>
       <IntervalPicker options={intervals} value={intervalSec} onChange={setIntervalSec} />
       <button
@@ -253,7 +294,14 @@ export function ScheduleEditor({ state, active, setOverrides, save, busy }: Edit
   return (
     <>
       <label className="label">Nima o'zgarsin</label>
-      <Segmented options={[["bio", "📝 Bio"], ["name", "✏️ Ism"]]} value={field} onChange={setField} />
+      <Segmented
+        options={[
+          ["bio", <><FileText size={16} /> Bio</>],
+          ["name", <><Type size={16} /> Ism</>],
+        ]}
+        value={field}
+        onChange={setField}
+      />
       <label className="label">Jadval ({state.timezone} vaqti bilan)</label>
       <div className="list">
         {slots.map((slot, i) => (
@@ -261,18 +309,14 @@ export function ScheduleEditor({ state, active, setOverrides, save, busy }: Edit
             <TimeSelect value={slot.at_time} onChange={(at_time) => update(i, { at_time })} />
             <input className="input" value={slot.template} placeholder="Matn" onChange={(e) => update(i, { template: e.target.value })} />
             <button className="icon-btn" onClick={() => setSlots(slots.filter((_, j) => j !== i))} disabled={slots.length <= 2} aria-label="O'chirish">
-              ✕
+              <X size={17} />
             </button>
           </div>
         ))}
       </div>
-      <p className="hint">Belgilangan qator — hozir amal qiladigani. Har vaqtda matn o'zgaradi va keyingi vaqtgacha turadi.</p>
-      {slots.length < 10 && (
-        <button className="btn btn--ghost" onClick={() => setSlots([...slots, { at_time: "12:00", template: "" }])}>
-          + Vaqt qo'shish
-        </button>
-      )}
-      {!valid && <div className="preview preview--err">Kamida 2 ta vaqt, matnlar to'ldirilgan va vaqtlar takrorlanmagan bo'lsin.</div>}
+      <p className="hint">Yashil qator — hozir amal qiladigani. Har vaqtda matn o'zgaradi va keyingi vaqtgacha turadi.</p>
+      {slots.length < 10 && <AddButton onClick={() => setSlots([...slots, { at_time: "12:00", template: "" }])}>Vaqt qo'shish</AddButton>}
+      {!valid && <ErrorLine>Kamida 2 ta vaqt, matnlar to'ldirilgan va vaqtlar takrorlanmagan bo'lsin.</ErrorLine>}
       <PreviewLine preview={preview} />
       <button
         className="btn btn--primary"
@@ -331,15 +375,11 @@ export function PhotoEditor({ service, active, setOverrides, save, busy }: Edito
             <img src={mediaUrl(id)} alt="" />
             <span className="photos__num">{i + 1}</span>
             <button className="photos__remove" onClick={() => setPhotos(photos.filter((p) => p !== id))} aria-label="O'chirish">
-              ✕
+              <X size={14} />
             </button>
             {i > 0 && (
-              <button
-                className="photos__first"
-                onClick={() => setPhotos([id, ...photos.filter((p) => p !== id)])}
-                aria-label="Birinchi qilish"
-              >
-                ★
+              <button className="photos__first" onClick={() => setPhotos([id, ...photos.filter((p) => p !== id)])} aria-label="Birinchi qilish">
+                <Star size={13} />
               </button>
             )}
           </div>
@@ -347,11 +387,12 @@ export function PhotoEditor({ service, active, setOverrides, save, busy }: Edito
         {photos.length < 10 && (
           <label className="photos__add">
             <input type="file" accept="image/*" multiple onChange={(e) => onFiles(e.target.files)} hidden />
-            {uploading ? `Yuklanmoqda… (${uploading})` : "+ Rasm"}
+            {uploading ? <LoaderCircle size={24} className="spin" /> : <ImagePlus size={24} />}
+            <span>{uploading ? `Yuklanmoqda (${uploading})` : "Rasm qo'shish"}</span>
           </label>
         )}
       </div>
-      {error && <div className="preview preview--err">⚠️ {error}</div>}
+      {error && <ErrorLine>{error}</ErrorLine>}
       {photos.length > 1 && (
         <>
           <label className="label">Qanchada bir almashsin</label>
@@ -388,7 +429,12 @@ export function EmojiEditor({ state, service, active, setOverrides, save, busy }
   }, [emojis, setOverrides]);
 
   if (!state.account!.is_premium) {
-    return <div className="notice">⚠️ Bu akkauntda Telegram Premium yo'q — emoji status faqat Premium akkauntlarda ishlaydi.</div>;
+    return (
+      <div className="notice notice--warn">
+        <CircleAlert size={18} />
+        <span>Bu akkauntda Telegram Premium yo'q — emoji status faqat Premium akkauntlarda ishlaydi.</span>
+      </div>
+    );
   }
   return (
     <>
@@ -398,15 +444,15 @@ export function EmojiEditor({ state, service, active, setOverrides, save, busy }
           <div key={id} className="emojis__item">
             <img src={emojiUrl(id)} alt="" />
             <button onClick={() => setEmojis(emojis.filter((_, j) => j !== i))} aria-label="O'chirish">
-              ✕
+              <X size={12} strokeWidth={3} />
             </button>
           </div>
         ))}
+        <button className="emojis__item emojis__add" onClick={() => openBot(state.bot_username, "emoji")} aria-label="Emoji qo'shish">
+          <Plus size={22} />
+        </button>
       </div>
-      <button className="btn btn--ghost" onClick={() => openBot(state.bot_username, "emoji")}>
-        ➕ Emoji qo'shish (botda)
-      </button>
-      <p className="hint">Premium emojini faqat Telegram chatida yuborish mumkin — bot ochiladi, emojilarni yuboring.</p>
+      <p className="hint">Premium emojini faqat Telegram chatida yuborish mumkin — «+» bosilganda bot ochiladi, emojilarni o'sha yerga yuboring.</p>
       {emojis.length > 1 && (
         <>
           <label className="label">Qanchada bir almashsin</label>
@@ -441,8 +487,11 @@ export function OnlineEditor({ active, setOverrides, save, busy }: EditorProps) 
   return (
     <>
       <div className="notice">
-        Akkauntingiz doim «online» ko'rinadi. Telefoningizda Telegram'ni yopsangiz holat qisqa vaqtga o'zgarishi mumkin; boshqalar
-        buni faqat maxfiylik sozlamalaringiz ruxsat bersa ko'radi.
+        <Info size={18} />
+        <span>
+          Akkauntingiz doim «online» ko'rinadi. Telefoningizda Telegram'ni yopsangiz holat qisqa vaqtga o'zgarishi mumkin; boshqalar buni
+          faqat maxfiylik sozlamalaringiz ruxsat bersa ko'radi.
+        </span>
       </div>
       {!active && (
         <button className="btn btn--primary" disabled={busy} onClick={() => save({ items: [{ template: "true" }] })}>

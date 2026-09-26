@@ -1,26 +1,35 @@
+import { Check, CircleCheck, Crown, Layers, Lock, Sparkles, Star, Users, Wallet, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { api, type Flags, type State } from "../api";
+import { ServiceIcon } from "../icons";
 import { confirmDialog, haptic } from "../tg";
 import { daysLeft, money } from "../util";
 
-const PRO_FEATURES: [string, string][] = [
-  ["online_service", "🟢 24/7 Online"],
-  ["playlist_service", "🔁 Bio playlist"],
-  ["schedule_service", "🗓 Jadval"],
-  ["emoji_service", "😀 Emoji status"],
-  ["photo_service", "🖼 Rasm almashtirish"],
+const PRO_FEATURES: [string, string, string][] = [
+  ["online_service", "online", "24/7 Online"],
+  ["playlist_service", "playlist", "Bio playlist"],
+  ["schedule_service", "schedule", "Jadval"],
+  ["emoji_service", "emoji", "Emoji status"],
+  ["photo_service", "photo", "Rasm almashtirish"],
 ];
 
 const FREE_FLAGS: Flags = { account_limit: 1, scheduler_limit: 1 };
 
+const PLAN_ICONS: Record<string, LucideIcon> = { free: Sparkles, starter: Star, pro: Crown };
+
 function Features({ flags }: { flags: Flags }) {
   return (
     <ul className="features">
-      <li>👤 {flags.account_limit} ta akkaunt</li>
-      <li>⚙️ bir vaqtda {flags.scheduler_limit} ta xizmat</li>
-      {PRO_FEATURES.map(([flag, label]) => (
+      <li>
+        <Users size={16} className="features__icon" /> {flags.account_limit} ta akkaunt
+      </li>
+      <li>
+        <Layers size={16} className="features__icon" /> bir vaqtda {flags.scheduler_limit} ta xizmat
+      </li>
+      {PRO_FEATURES.map(([flag, , label]) => (
         <li key={flag} className={flags[flag] ? "" : "is-off"}>
-          {flags[flag] ? label : `🔒 ${label.split(" ").slice(1).join(" ")}`}
+          {flags[flag] ? <Check size={16} className="features__icon features__icon--ok" /> : <Lock size={15} className="features__icon" />}
+          {label}
         </li>
       ))}
     </ul>
@@ -32,8 +41,9 @@ function Usage({ label, used, limit }: { label: string; used: number; limit: num
     <div className="usage">
       <div className="usage__head">
         <span>{label}</span>
-        <span>
-          {used}/{limit}
+        <span className="usage__num">
+          {used}
+          <small>/{limit}</small>
         </span>
       </div>
       <div className="bar">
@@ -53,6 +63,7 @@ export function PlansView({ state, refresh, toast }: Props) {
   const flags = state.plan.flags;
   const left = daysLeft(state.plan.expires_at);
   const balance = state.user.balance;
+  const HeroIcon = PLAN_ICONS[state.plan.code] ?? Star;
 
   const buy = async (code: string, name: string, price: number) => {
     if (balance < price) {
@@ -65,7 +76,7 @@ export function PlansView({ state, refresh, toast }: Props) {
     try {
       await api.buy(code);
       haptic("success");
-      toast(`🎉 ${name} faollashdi!`);
+      toast(`${name} faollashdi!`);
       refresh();
     } catch (e) {
       haptic("error");
@@ -90,9 +101,17 @@ export function PlansView({ state, refresh, toast }: Props) {
 
   return (
     <div className="stack">
-      <section className="card plan-hero">
-        <div className="plan-hero__label">Sizning tarifingiz</div>
-        <div className="plan-hero__name">{state.plan.name}</div>
+      <section className={`plan-hero plan-hero--${state.plan.code}`}>
+        <div className="plan-hero__glow" />
+        <div className="plan-hero__top">
+          <div>
+            <div className="plan-hero__label">Sizning tarifingiz</div>
+            <div className="plan-hero__name">{state.plan.name}</div>
+          </div>
+          <span className="plan-hero__icon">
+            <HeroIcon size={26} strokeWidth={2} />
+          </span>
+        </div>
         {state.plan.expires_at ? (
           <>
             <div className="plan-hero__sub">
@@ -103,38 +122,56 @@ export function PlansView({ state, refresh, toast }: Props) {
             </div>
           </>
         ) : (
-          <div className="plan-hero__sub">Pullik tarif yo'q</div>
+          <div className="plan-hero__sub">Pro bilan barcha xizmatlar ochiladi</div>
         )}
+        <div className="plan-hero__services">
+          {PRO_FEATURES.map(([flag, code]) => (
+            <span key={flag} className={flags[flag] ? "" : "is-off"}>
+              <ServiceIcon code={code} size={30} />
+            </span>
+          ))}
+        </div>
       </section>
 
       <section className="card">
         <Usage label="Faol xizmatlar" used={state.usage.automations} limit={Number(flags.scheduler_limit)} />
         <Usage label="Akkauntlar" used={state.usage.accounts} limit={Number(flags.account_limit)} />
-        <Features flags={flags} />
       </section>
 
       <h3 className="section-title">Tariflar</h3>
       <section className={`card plan ${state.plan.code === "free" ? "is-current" : ""}`}>
         <div className="plan__head">
-          <span className="plan__name">🆓 Bepul</span>
+          <span className="plan__name">
+            <Sparkles size={18} /> Bepul
+          </span>
           <span className="plan__price">tekin</span>
         </div>
+        {state.plan.code === "free" && <span className="plan__current">Joriy tarif</span>}
         <Features flags={FREE_FLAGS} />
       </section>
       {state.plans.map((p) => {
         const isCurrent = p.code === state.plan.code;
         const lower = current && p.price < current.price;
+        const Icon = PLAN_ICONS[p.code] ?? Star;
         return (
           <section key={p.code} className={`card plan ${isCurrent ? "is-current" : ""} ${p.code === "pro" ? "plan--pro" : ""}`}>
+            {p.code === "pro" && <span className="plan__ribbon">Eng ko'p imkoniyat</span>}
             <div className="plan__head">
-              <span className="plan__name">{p.code === "pro" ? "🚀" : "⭐"} {p.name}</span>
+              <span className="plan__name">
+                <Icon size={18} /> {p.name}
+              </span>
               <span className="plan__price">
                 {money(p.price)} <small>/ {p.duration_days} kun</small>
               </span>
             </div>
+            {isCurrent && <span className="plan__current">Joriy tarif</span>}
             <Features flags={p.flags} />
-            <button className="btn btn--primary" disabled={busy || !!lower} onClick={() => buy(p.code, p.name, p.price)}>
-              {lower ? "Sizda yuqoriroq tarif bor" : isCurrent ? "Uzaytirish" : "Olish"}
+            <button
+              className={`btn ${p.code === "pro" ? "btn--gold" : "btn--primary"}`}
+              disabled={busy || !!lower}
+              onClick={() => buy(p.code, p.name, p.price)}
+            >
+              {lower ? "Sizda yuqoriroq tarif bor" : isCurrent ? "Uzaytirish" : `${p.name} olish`}
             </button>
           </section>
         );
@@ -144,7 +181,15 @@ export function PlansView({ state, refresh, toast }: Props) {
         Balans
       </h3>
       <section className="card">
-        <div className="balance">{money(balance)}</div>
+        <div className="balance">
+          <span className="balance__icon">
+            <Wallet size={22} />
+          </span>
+          <div>
+            <div className="balance__label">Hisobingizda</div>
+            <div className="balance__value">{money(balance)}</div>
+          </div>
+        </div>
         <p className="hint">Balansni to'ldirasiz, keyin tarifni bir tugma bilan olasiz. So'rovni admin tasdiqlaydi.</p>
         <div className="chips">
           {[...new Set(state.plans.map((p) => p.price))].map((price) => (
@@ -166,20 +211,23 @@ export function PlansView({ state, refresh, toast }: Props) {
           </button>
         </div>
         {instructions && (
-          <div className="notice">
-            ✅ So'rov #{instructions.id} yuborildi.
-            <br />
-            {instructions.text ? (
-              <>
-                To'lov uchun: {instructions.text}
-                <br />
-                Izohga #{instructions.id} ni yozing.
-              </>
-            ) : (
-              "Admin siz bilan bog'lanib, to'lovni tasdiqlaydi."
-            )}
-            <br />
-            Tasdiqlangach botda xabar olasiz.
+          <div className="notice notice--ok">
+            <CircleCheck size={18} />
+            <span>
+              So'rov #{instructions.id} yuborildi.
+              <br />
+              {instructions.text ? (
+                <>
+                  To'lov uchun: {instructions.text}
+                  <br />
+                  Izohga #{instructions.id} ni yozing.
+                </>
+              ) : (
+                "Admin siz bilan bog'lanib, to'lovni tasdiqlaydi."
+              )}
+              <br />
+              Tasdiqlangach botda xabar olasiz.
+            </span>
           </div>
         )}
       </section>

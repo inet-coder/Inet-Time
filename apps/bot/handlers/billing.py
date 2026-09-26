@@ -8,7 +8,7 @@ from aiogram.types import CallbackQuery, Message
 
 import keyboards as kb
 from api_client import ApiError, api_client
-from catalog import expiry_text, plan_features, plan_status_lines
+from catalog import expiry_text, plan_features, plan_status_lines, pro_unlocked
 from common import db_user_id, money, safe_answer, safe_edit
 from core.entitlements import FREE_PLAN
 from core.settings import settings
@@ -99,8 +99,7 @@ async def buy(callback: CallbackQuery) -> None:
     overview = await api_client.get_overview(user_id)
     plan, flags = overview["plan"], overview["plan"]["flags"]
     unlocked = [f"{flags['account_limit']} ta akkaunt ulash", f"bir vaqtda {flags['scheduler_limit']} ta xizmat"]
-    if flags.get("online_service"):
-        unlocked.append("🟢 24/7 Online")
+    unlocked += pro_unlocked(flags)
     await safe_edit(
         callback,
         f"🎉 {plan['name']} tarifi faollashdi!\n⏳ {expiry_text(plan['expires_at'])}\n\n"

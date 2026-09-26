@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.enums import AutomationStatus, ProfileField, SubscriptionStatus, TelegramAccountStatus
-from core.db.models import Automation, AutomationAction, Plan, Subscription, TelegramAccount
+from core.db.models import Automation, AutomationAction, Plan, Service, Subscription, TelegramAccount
 
 FREE_PLAN = {
     "code": "free",
@@ -94,17 +94,45 @@ async def get_entitlement(db: AsyncSession, user_id: int) -> Entitlement:
     )
 
 
+# Xizmat kodi -> uni ochadigan tarif flag'i (va foydalanuvchiga ko'rsatiladigan nomi).
+SERVICE_FLAGS = {
+    "online": ("online_service", "24/7 Online"),
+    "playlist": ("playlist_service", "Bio playlist"),
+    "schedule": ("schedule_service", "Jadval"),
+    "emoji": ("emoji_service", "Emoji status"),
+    "photo": ("photo_service", "Rasm almashtirish"),
+}
+# Boshqa xizmat kodi orqali yaratilsa ham (masalan API'dan "combo") shu fieldlar Pro'siz ishlamaydi.
+FIELD_FLAGS = {
+    ProfileField.ONLINE: SERVICE_FLAGS["online"],
+    ProfileField.EMOJI_STATUS: SERVICE_FLAGS["emoji"],
+    ProfileField.PHOTO: SERVICE_FLAGS["photo"],
+}
+
+
+def missing_flag(ent: Entitlement, service_code: str, fields: set[ProfileField]) -> str | None:
+    """Tarif bu xizmatga ruxsat bermasa — xizmat nomini qaytaradi."""
+    required = [SERVICE_FLAGS[service_code]] if service_code in SERVICE_FLAGS else []
+    required += [FIELD_FLAGS[f] for f in fields if f in FIELD_FLAGS]
+    for flag, title in required:
+        if not ent.flags.get(flag):
+            return title
+    return None
+
+
 async def check_can_activate(db: AsyncSession, user_id: int, automation_id: int) -> None:
     ent = await get_entitlement(db, user_id)
     if ent.automations_used >= ent.scheduler_limit:
         raise EntitlementError(
             f"{ent.plan_name} tarifida bir vaqtda {ent.scheduler_limit} ta xizmat ishlashi mumkin."
         )
+    service_code = await db.scalar(
+        select(Service.code).join(Automation, Automation.service_id == Service.id).where(Automation.id == automation_id)
+    )
     fields = set(await db.scalars(select(AutomationAction.field).where(AutomationAction.automation_id == automation_id)))
-    if ProfileField.ONLINE in fields and not ent.flags.get("online_service"):
-        raise EntitlementError("24/7 Online faqat Pro tarifda mavjud.")
-    if ProfileField.EMOJI_STATUS in fields and not ent.flags.get("emoji_service"):
-        raise EntitlementError("Emoji status faqat Pro tarifda mavjud.")
+    title = missing_flag(ent, service_code, fields)
+    if title is not None:
+        raise EntitlementError(f"{title} faqat Pro tarifda mavjud.")
 
 
 async def check_can_add_account(db: AsyncSession, user_id: int) -> None:

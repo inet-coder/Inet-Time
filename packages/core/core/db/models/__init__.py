@@ -9,6 +9,7 @@ from core.db.models.billing import (
     Subscription,
     Transaction,
 )
+from core.db.models.media import MediaFile
 from core.db.models.system import Notification, SystemSetting, WorkerJob
 from core.db.models.telegram import EncryptedSession, TelegramAccount
 from core.db.models.user import User
@@ -34,4 +35,5 @@ __all__ = [
     "SystemSetting",
     "Notification",
     "WorkerJob",
+    "MediaFile",
 ]

@@ -25,5 +25,15 @@ class MockFieldAdapter(FieldAdapter):
 
     async def apply(self, session_string: str, field: ProfileField, value: str) -> None:
         if field in (ProfileField.PHOTO, ProfileField.BIRTHDAY):
-            raise NotImplementedError(f"{field.value} field hali implement qilinmagan (Kelajakka tayyor)")
+            raise NotImplementedError(f"{field.value} uchun apply emas, upload_photo ishlatiladi")
         self._profile(session_string)[field.value] = value
+
+    async def upload_photo(self, session_string: str, data: bytes) -> dict:
+        photos = self._profile(session_string).setdefault("photos", [])  # type: ignore[arg-type]
+        ref = {"id": len(photos) + 1, "access_hash": 0, "file_reference": "", "size": len(data)}
+        photos.append(ref)
+        return ref
+
+    async def delete_photo(self, session_string: str, ref: dict) -> None:
+        photos = self._profile(session_string).get("photos", [])
+        self._profile(session_string)["photos"] = [p for p in photos if p["id"] != ref["id"]]  # type: ignore[assignment]

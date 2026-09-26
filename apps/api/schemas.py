@@ -83,6 +83,13 @@ class ActionIn(BaseModel):
     field: str
     template: str
     order_index: int = 0
+    at_time: str | None = None
+
+
+class MediaUpload(BaseModel):
+    user_id: int
+    data_b64: str
+    mime: str = "image/jpeg"
 
 
 class ScheduleIn(BaseModel):

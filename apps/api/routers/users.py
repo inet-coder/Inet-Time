@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.enums import AutomationStatus, TelegramAccountStatus
-from core.db.models import Automation, AutomationAction, Referral, Service, TelegramAccount, User
+from core.db.models import Automation, AutomationAction, Referral, Schedule, Service, TelegramAccount, User
 from core.entitlements import get_entitlement
 from deps import get_db
 from schemas import UserCreate, UserGetOrCreate, UserOut
@@ -86,28 +86,38 @@ async def get_overview(user_id: int, db: AsyncSession = Depends(get_db)) -> dict
     )
     rows = (
         await db.execute(
-            select(Automation, Service.code, AutomationAction.field, AutomationAction.template)
+            select(Automation, Service.code, Schedule.interval_seconds, AutomationAction)
             .join(Service, Service.id == Automation.service_id)
             .join(AutomationAction, AutomationAction.automation_id == Automation.id)
+            .outerjoin(Schedule, Schedule.automation_id == Automation.id)
             .where(
                 Automation.telegram_account_id.in_([a.id for a in accounts] or [0]),
                 Automation.status.in_(_SHOWN_AUTOMATION_STATUSES),
             )
-            .order_by(Automation.id)
+            .order_by(Automation.id, AutomationAction.order_index)
         )
     ).all()
-    by_account: dict[int, list[dict]] = {}
-    for automation, service_code, field, template in rows:
-        by_account.setdefault(automation.telegram_account_id, []).append(
+    automations: dict[int, dict] = {}
+    for automation, service_code, interval_seconds, action in rows:
+        item = automations.setdefault(
+            automation.id,
             {
                 "id": automation.id,
+                "account_id": automation.telegram_account_id,
                 "service_code": service_code,
                 "status": automation.status.value,
-                "field": field.value,
-                "template": template,
+                "field": action.field.value,
+                "template": action.template,
+                "selection_strategy": automation.selection_strategy.value,
+                "interval_seconds": interval_seconds,
                 "error_message": automation.error_message,
-            }
+                "actions": [],
+            },
         )
+        item["actions"].append({"field": action.field.value, "template": action.template, "at_time": action.at_time})
+    by_account: dict[int, list[dict]] = {}
+    for item in automations.values():
+        by_account.setdefault(item.pop("account_id"), []).append(item)
 
     return {
         "user": {

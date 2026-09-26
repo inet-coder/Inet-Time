@@ -1,6 +1,6 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from catalog import SERVICES, STATUS_ICONS
+from catalog import PRO_SERVICES, SERVICES, STATUS_ICONS, interval_text
 
 
 def _kb(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
@@ -21,20 +21,17 @@ def home_no_account(admin: bool) -> InlineKeyboardMarkup:
     return _kb(rows)
 
 
-def home(live: dict[str, dict], plan_flags: dict, multi_account: bool, admin: bool) -> InlineKeyboardMarkup:
+def _status_icon(live: dict[str, dict], code: str) -> str:
+    return STATUS_ICONS.get(live[code]["status"], "✅") if code in live else "❌"
+
+
+def home(live: dict[str, dict], multi_account: bool, admin: bool) -> InlineKeyboardMarkup:
     def svc_button(code: str) -> tuple[str, str]:
-        meta = SERVICES[code]
-        if code in live:
-            icon = STATUS_ICONS.get(live[code]["status"], "✅")
-        elif meta.get("pro_flag") and not plan_flags.get(meta["pro_flag"]):
-            icon = "🔒"
-        else:
-            icon = "❌"
-        return f"{meta['title']} {icon}", f"svc:{code}"
+        return f"{SERVICES[code]['title']} {_status_icon(live, code)}", f"svc:{code}"
 
     rows = [
         [svc_button("clock_name"), svc_button("auto_bio")],
-        [svc_button("auto_name"), svc_button("online")],
+        [svc_button("auto_name"), ("⭐ Pro xizmatlar", "pro")],
         [("💎 Tariflar", "plans"), ("💰 Balans", "bal")],
         [("🤝 Taklif qilish", "ref"), ("⚙️ Akkaunt", "acc")],
     ]
@@ -53,22 +50,78 @@ def cancel() -> InlineKeyboardMarkup:
     return _kb([[("❌ Bekor qilish", "home")]])
 
 
+def _back_for(code: str) -> tuple[str, str]:
+    return ("⬅️ Orqaga", "pro") if code in PRO_SERVICES else ("⬅️ Orqaga", "home")
+
+
 def service_on(code: str, automation_id: int) -> InlineKeyboardMarkup:
     rows = [[("⏹ O'chirish", f"svc_off:{automation_id}")]]
     if SERVICES[code]["field"] != "online":
         rows.append([("✏️ Shablonni o'zgartirish", f"svc_tpl:{code}")])
-    rows.append([("⬅️ Orqaga", "home")])
+    rows.append([_back_for(code)])
     return _kb(rows)
 
 
 def service_off(code: str, locked: bool) -> InlineKeyboardMarkup:
     if locked:
-        return _kb([[("💎 Pro tarifni olish", "plans")], [("⬅️ Orqaga", "home")]])
+        return _kb([[("💎 Pro tarifni olish", "plans")], [_back_for(code)]])
     rows = [[("✅ Yoqish", f"svc_on:{code}")]]
     if SERVICES[code]["field"] != "online":
         rows.append([("✏️ O'z shablonim bilan yoqish", f"svc_tpl:{code}")])
-    rows.append([("⬅️ Orqaga", "home")])
+    rows.append([_back_for(code)])
     return _kb(rows)
+
+
+# --- Pro xizmatlar ---
+
+
+def pro_menu(live: dict[str, dict], flags: dict) -> InlineKeyboardMarkup:
+    rows = []
+    for code, meta in PRO_SERVICES.items():
+        icon = _status_icon(live, code) if flags.get(meta["flag"]) or code in live else "🔒"
+        target = "svc:online" if code == "online" else f"pro:{code}"
+        rows.append([(f"{meta['title']} {icon}", target)])
+    rows.append([("⬅️ Bosh sahifa", "home")])
+    return _kb(rows)
+
+
+def pro_service_on(code: str, automation_id: int) -> InlineKeyboardMarkup:
+    return _kb(
+        [
+            [("⏹ O'chirish", f"svc_off:{automation_id}")],
+            [("✏️ Qayta sozlash", f"pro_set:{code}")],
+            [("⬅️ Orqaga", "pro")],
+        ]
+    )
+
+
+def pro_service_off(code: str, locked: bool) -> InlineKeyboardMarkup:
+    if locked:
+        return _kb([[("💎 Pro tarifni olish", "plans")], [("⬅️ Orqaga", "pro")]])
+    return _kb([[("⚙️ Sozlash va yoqish", f"pro_set:{code}")], [("⬅️ Orqaga", "pro")]])
+
+
+def choose_order() -> InlineKeyboardMarkup:
+    return _kb([[("➡️ Ketma-ket", "pl_ord:SEQUENTIAL"), ("🎲 Tasodifiy", "pl_ord:RANDOM")], [("❌ Bekor qilish", "pro")]])
+
+
+def choose_interval(prefix: str, seconds_list: list[int]) -> InlineKeyboardMarkup:
+    buttons = [(f"har {interval_text(s)}", f"{prefix}:{s}") for s in seconds_list]
+    rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+    rows.append([("❌ Bekor qilish", "pro")])
+    return _kb(rows)
+
+
+def choose_schedule_field() -> InlineKeyboardMarkup:
+    return _kb([[("📝 Bio", "sc_field:bio"), ("✏️ Ism", "sc_field:name")], [("❌ Bekor qilish", "pro")]])
+
+
+def photo_collecting(count: int) -> InlineKeyboardMarkup:
+    return _kb([[(f"✅ Tayyor ({count} ta rasm)", "ph_done")], [("❌ Bekor qilish", "pro")]])
+
+
+def cancel_to_pro() -> InlineKeyboardMarkup:
+    return _kb([[("❌ Bekor qilish", "pro")]])
 
 
 def upsell() -> InlineKeyboardMarkup:

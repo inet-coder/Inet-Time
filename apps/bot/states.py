@@ -17,3 +17,10 @@ class EditTemplate(StatesGroup):
 
 class Topup(StatesGroup):
     waiting_amount = State()
+
+
+class ProSetup(StatesGroup):
+    playlist_items = State()
+    schedule_lines = State()
+    emoji_items = State()
+    photo_collecting = State()

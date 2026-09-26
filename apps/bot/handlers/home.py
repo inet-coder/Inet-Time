@@ -7,12 +7,15 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 import keyboards as kb
 from api_client import ApiError, api_client
 from catalog import (
+    BASIC_SERVICES,
+    PRO_SERVICES,
     SERVICES,
     STATUS_ICONS,
     TEMPLATE_HELP,
     UPDATE_INTERVAL_SECONDS,
     plan_features,
     plan_status_lines,
+    pro_unlocked,
 )
 from common import current_account, db_user_id, is_admin, money, safe_answer, safe_edit, select_account
 from core.settings import settings
@@ -72,18 +75,23 @@ async def build_home(tg_user_id: int, user_id: int) -> tuple[str, InlineKeyboard
     live = {a["service_code"]: a for a in account["automations"]}
     flags = overview["plan"]["flags"]
     lines = [f"👤 Akkaunt: {_account_label(account)}", plan_block, balance_line, "", "Xizmatlar:"]
-    for code, meta in SERVICES.items():
-        automation = live.get(code)
+    for code in BASIC_SERVICES:
+        meta, automation = SERVICES[code], live.get(code)
         if automation is not None:
             status = STATUS_ICONS.get(automation["status"], "✅")
-            value = "" if meta["field"] == "online" else f" → «{_preview(automation['template'], account)}»"
-            lines.append(f"{status} {meta['title']}{value}")
-        elif meta.get("pro_flag") and not flags.get(meta["pro_flag"]):
-            lines.append(f"🔒 {meta['title']} (Pro)")
+            lines.append(f"{status} {meta['title']} → «{_preview(automation['template'], account)}»")
         else:
             lines.append(f"❌ {meta['title']}")
-    lines.append("\nXizmatni yoqish/o'chirish uchun tugmasini bosing 👇")
-    return "\n".join(lines), kb.home(live, flags, len(overview["accounts"]) > 1, admin)
+
+    active_pro = [f"{STATUS_ICONS.get(live[c]['status'], '✅')} {m['title']}" for c, m in PRO_SERVICES.items() if c in live]
+    if active_pro:
+        lines.append("\n⭐ Pro xizmatlar:\n" + "\n".join(active_pro))
+    elif pro_unlocked(flags):
+        lines.append("\n⭐ Pro xizmatlar: hali yoqilmagan")
+    else:
+        lines.append("\n⭐ Pro xizmatlar: 🔒 Pro tarifda (playlist, jadval, emoji, rasm, 24/7 online)")
+    lines.append("\nYoqish/o'chirish uchun tugmani bosing 👇")
+    return "\n".join(lines), kb.home(live, len(overview["accounts"]) > 1, admin)
 
 
 async def send_home(bot: Bot, chat_id: int, tg_user_id: int, user_id: int) -> None:
@@ -155,7 +163,9 @@ async def _enable(callback: CallbackQuery, code: str, template: str) -> str | No
     meta = SERVICES[code]
     replaced = [a for a in account["automations"] if a["field"] == meta["field"] and a["service_code"] != code]
     try:
-        await api_client.enable_service(account["id"], code, meta["field"], template, UPDATE_INTERVAL_SECONDS)
+        await api_client.enable_service(
+            account["id"], code, [{"field": meta["field"], "template": template}], UPDATE_INTERVAL_SECONDS
+        )
     except ApiError as exc:
         if exc.status_code == 402:
             await safe_edit(
@@ -216,7 +226,9 @@ async def template_received(message: Message, state: FSMContext) -> None:
         return
 
     try:
-        await api_client.enable_service(account["id"], code, meta["field"], template, UPDATE_INTERVAL_SECONDS)
+        await api_client.enable_service(
+            account["id"], code, [{"field": meta["field"], "template": template}], UPDATE_INTERVAL_SECONDS
+        )
     except ApiError as exc:
         if exc.status_code == 402:
             await state.clear()

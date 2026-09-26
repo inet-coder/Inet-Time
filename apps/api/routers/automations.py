@@ -1,26 +1,75 @@
+import base64
+import binascii
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.automation_engine import find_conflicts
+from core.db.enums import AutomationStatus, ProfileField, SelectionStrategy, TriggerType
+from core.db.models import Automation, AutomationAction, MediaFile, Schedule, Service, TelegramAccount, User
 from core.entitlements import EntitlementError, check_can_activate
-from core.db.enums import AutomationStatus, ProfileField, TriggerType
-from core.db.models import Automation, AutomationAction, Schedule, Service, TelegramAccount
 from deps import get_db
 from jobs import enqueue
-from schemas import ActivateRequest, AutomationCreate, AutomationOut, JobQueuedOut, ServiceOut, StopRequest
+from schemas import (
+    ActivateRequest,
+    AutomationCreate,
+    AutomationOut,
+    JobQueuedOut,
+    MediaUpload,
+    ServiceOut,
+    StopRequest,
+)
 
 router = APIRouter(prefix="/automations", tags=["automations"])
 services_router = APIRouter(prefix="/services", tags=["automations"])
+media_router = APIRouter(prefix="/media", tags=["automations"])
 
-# PHOTO/BIRTHDAY hali FieldAdapter'da implement qilinmagan (BUILD.md: "Kelajakka tayyor").
-_UNSUPPORTED_FIELDS = {ProfileField.PHOTO, ProfileField.BIRTHDAY}
+# BIRTHDAY hali FieldAdapter'da implement qilinmagan (BUILD.md: "Kelajakka tayyor").
+_UNSUPPORTED_FIELDS = {ProfileField.BIRTHDAY}
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+_MAX_MEDIA_BYTES = 5 * 1024 * 1024
 
 
 @services_router.get("", response_model=list[ServiceOut])
 async def list_services_public(db: AsyncSession = Depends(get_db)) -> list[Service]:
     result = await db.scalars(select(Service).where(Service.is_active == True))  # noqa: E712
     return list(result)
+
+
+@media_router.post("")
+async def upload_media(payload: MediaUpload, db: AsyncSession = Depends(get_db)) -> dict:
+    if await db.get(User, payload.user_id) is None:
+        raise HTTPException(404, "Foydalanuvchi topilmadi")
+    try:
+        data = base64.b64decode(payload.data_b64, validate=True)
+    except binascii.Error as exc:
+        raise HTTPException(400, "Rasm noto'g'ri formatda") from exc
+    if not data or len(data) > _MAX_MEDIA_BYTES:
+        raise HTTPException(400, "Rasm hajmi 5 MB dan oshmasligi kerak")
+    media = MediaFile(user_id=payload.user_id, mime=payload.mime, data=data)
+    db.add(media)
+    await db.commit()
+    return {"id": media.id}
+
+
+async def _validate_actions(db: AsyncSession, account: TelegramAccount, payload: AutomationCreate, fields: list) -> None:
+    if payload.selection_strategy == SelectionStrategy.BY_TIME.value:
+        bad = [a.at_time for a in payload.actions if not a.at_time or not _TIME_RE.match(a.at_time)]
+        if bad:
+            raise HTTPException(400, "Jadvaldagi har bir vaqt HH:MM ko'rinishida bo'lishi kerak")
+    if ProfileField.EMOJI_STATUS in fields:
+        if not account.is_premium:
+            raise HTTPException(400, "Emoji status faqat Telegram Premium akkauntlarda ishlaydi")
+        if any(not a.template.isdigit() for a in payload.actions):
+            raise HTTPException(400, "Emoji status uchun Premium emoji kerak")
+    for action_in, field in zip(payload.actions, fields):
+        if field != ProfileField.PHOTO:
+            continue
+        media = await db.get(MediaFile, int(action_in.template)) if action_in.template.isdigit() else None
+        if media is None or media.user_id != account.user_id:
+            raise HTTPException(400, "Rasm topilmadi")
 
 
 @router.post("", response_model=AutomationOut)
@@ -40,6 +89,7 @@ async def create_automation(payload: AutomationCreate, db: AsyncSession = Depend
     unsupported = [f.value for f in fields if f in _UNSUPPORTED_FIELDS]
     if unsupported:
         raise HTTPException(400, f"Hali implement qilinmagan field(lar): {', '.join(unsupported)}")
+    await _validate_actions(db, account, payload, fields)
 
     automation = Automation(
         telegram_account_id=account.id,
@@ -59,6 +109,7 @@ async def create_automation(payload: AutomationCreate, db: AsyncSession = Depend
                 field=field,
                 template=action_in.template,
                 order_index=action_in.order_index,
+                at_time=action_in.at_time,
             )
         )
 

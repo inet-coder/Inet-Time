@@ -35,6 +35,8 @@ class SelectionStrategy(str, enum.Enum):
     NONE = "NONE"
     SEQUENTIAL = "SEQUENTIAL"
     RANDOM = "RANDOM"
+    # Har action'da at_time (HH:MM) bor; hozirgi mahalliy vaqtga mos oxirgi action tanlanadi (Jadval xizmati).
+    BY_TIME = "BY_TIME"
 
 
 class TriggerType(str, enum.Enum):

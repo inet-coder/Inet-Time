@@ -40,6 +40,46 @@ SERVICES = {
     },
 }
 
+BASIC_SERVICES = ("clock_name", "auto_bio", "auto_name")
+
+# Pro bo'limi. "online" oddiy (bitta shablonli) xizmat — SERVICES'dagi ekran orqali ishlaydi;
+# qolganlari sozlash bosqichlari bo'lgan murakkab xizmatlar (handlers/pro.py).
+PRO_SERVICES = {
+    "online": {"title": "🟢 24/7 Online", "flag": "online_service"},
+    "playlist": {
+        "title": "🔁 Bio playlist",
+        "flag": "playlist_service",
+        "desc": "Bir nechta bio matnini yozasiz — ular navbat bilan yoki tasodifiy almashib turadi.",
+    },
+    "schedule": {
+        "title": "🗓 Jadval",
+        "flag": "schedule_service",
+        "desc": "Bio yoki ism belgilangan vaqtlarda o'zgaradi. Masalan:\n09:00 Ishdaman 💼\n18:00 Uydaman 🏠",
+    },
+    "emoji": {
+        "title": "😀 Emoji status",
+        "flag": "emoji_service",
+        "desc": (
+            "Ismingiz yonidagi emoji status avtomatik o'rnatiladi yoki bir nechtasi navbat bilan almashadi.\n"
+            "Faqat Telegram Premium'i bor akkauntlarda ishlaydi."
+        ),
+    },
+    "photo": {
+        "title": "🖼 Rasm almashtirish",
+        "flag": "photo_service",
+        "desc": (
+            "Yuborgan rasmlaringiz navbat bilan profil rasmingiz bo'ladi.\n"
+            "O'chirsangiz — asl rasmingiz qaytadi."
+        ),
+    },
+}
+
+INTERVAL_CHOICES = {
+    "playlist": [600, 1800, 3600, 10800, 86400],
+    "emoji": [600, 3600, 10800, 86400],
+    "photo": [3600, 21600, 86400],
+}
+
 TEMPLATE_HELP = (
     "O'zgaruvchilar:\n"
     "{first_name} — ism, {last_name} — familiya, {name} — to'liq ism, {username}\n"
@@ -49,13 +89,26 @@ TEMPLATE_HELP = (
 STATUS_ICONS = {"ACTIVE": "✅", "STARTING": "⏳", "ERROR": "⚠️"}
 
 
+def interval_text(seconds: int) -> str:
+    if seconds % 86400 == 0:
+        return f"{seconds // 86400} kun"
+    if seconds % 3600 == 0:
+        return f"{seconds // 3600} soat"
+    return f"{seconds // 60} daqiqa"
+
+
+def pro_unlocked(flags: dict) -> list[str]:
+    return [meta["title"] for meta in PRO_SERVICES.values() if flags.get(meta["flag"])]
+
+
 def plan_features(flags: dict) -> list[str]:
     """Tarif flag'larini foydalanuvchi tushunadigan ro'yxatga aylantiradi."""
     features = [
         f"{flags.get('account_limit', 1)} ta akkaunt ulash",
         f"bir vaqtda {flags.get('scheduler_limit', 1)} ta xizmat",
     ]
-    features.append("🟢 24/7 Online" if flags.get("online_service") else "🔒 24/7 Online yo'q")
+    unlocked = pro_unlocked(flags)
+    features.append("⭐ " + ", ".join(unlocked) if unlocked else "🔒 Pro xizmatlar yo'q")
     return features
 
 

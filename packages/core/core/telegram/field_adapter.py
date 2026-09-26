@@ -6,7 +6,7 @@ from core.db.enums import ProfileField
 class FieldAdapter(ABC):
     """Bitta profil maydonini o'qish/yangilash. Session hech qachon qaytarilmaydi/loglanmaydi.
 
-    PHOTO va BIRTHDAY hozircha implement qilinmagan ("Kelajakka tayyor" — BUILD.md).
+    PHOTO alohida metodlar orqali (baytlar kerak); BIRTHDAY hozircha implement qilinmagan.
     """
 
     @abstractmethod
@@ -14,3 +14,11 @@ class FieldAdapter(ABC):
 
     @abstractmethod
     async def apply(self, session_string: str, field: ProfileField, value: str) -> None: ...
+
+    @abstractmethod
+    async def upload_photo(self, session_string: str, data: bytes) -> dict:
+        """Yangi profil rasmi qo'yadi; keyin o'chirish uchun rasm ma'lumotini qaytaradi."""
+
+    @abstractmethod
+    async def delete_photo(self, session_string: str, ref: dict) -> None:
+        """Biz qo'ygan rasmni o'chiradi — foydalanuvchining oldingi (asl) rasmi yana ko'rinadi."""

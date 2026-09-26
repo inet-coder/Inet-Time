@@ -49,6 +49,8 @@ class AutomationAction(TimestampMixin, Base):
     )
     template: Mapped[str] = mapped_column(Text)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
+    # Faqat BY_TIME strategiyasi uchun: "HH:MM" (automation timezone'ida).
+    at_time: Mapped[str | None] = mapped_column(String(5))
 
 
 class Schedule(TimestampMixin, Base):

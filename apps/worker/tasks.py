@@ -1,5 +1,7 @@
 import datetime
+import json
 import random
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, update
 
@@ -11,6 +13,7 @@ from core.db.models import (
     Automation,
     AutomationAction,
     EncryptedSession,
+    MediaFile,
     ProfileSnapshot,
     Schedule,
     TelegramAccount,
@@ -58,6 +61,47 @@ async def _get_session_string(db, account: TelegramAccount) -> str:
     if session_row is None or session_row.revoked_at is not None:
         raise RuntimeError("Akkaunt sessiyasi mavjud emas yoki bekor qilingan")
     return crypto.decrypt(session_row.ciphertext, session_row.nonce, session_row.key_version)
+
+
+def _choose_by_time(actions: list[AutomationAction], tz: str) -> AutomationAction:
+    """Jadval: hozirgi mahalliy vaqtdan oldingi eng oxirgi slot; birinchi slotdan oldin — kechagi oxirgisi."""
+    timed = sorted((a for a in actions if a.at_time), key=lambda a: a.at_time)
+    if not timed:
+        return actions[0]
+    now = datetime.datetime.now(ZoneInfo(tz)).strftime("%H:%M")
+    past = [a for a in timed if a.at_time <= now]
+    return past[-1] if past else timed[-1]
+
+
+def _photo_ref_key(automation_id: int) -> str:
+    return f"photo_ref:{automation_id}"
+
+
+async def _apply_photo(ctx, db, session_string: str, automation_id: int, media_id: int) -> None:
+    """Yangi rasmni qo'yadi va oldin biz qo'ygan rasmni o'chiradi — profilda bizdan faqat bitta rasm qoladi."""
+    media = await db.get(MediaFile, media_id)
+    if media is None:
+        raise RuntimeError("Rasm topilmadi")
+    field_adapter = get_field_adapter()
+    new_ref = await call_with_backoff(field_adapter.upload_photo, session_string, media.data)
+    old = await ctx["redis"].get(_photo_ref_key(automation_id))
+    await ctx["redis"].set(_photo_ref_key(automation_id), json.dumps(new_ref))
+    if old:
+        try:
+            await call_with_backoff(field_adapter.delete_photo, session_string, json.loads(old))
+        except Exception:  # noqa: BLE001 — eski rasmni o'chira olmasak ham yangisi qo'yilgan
+            pass
+
+
+async def _cleanup_photo(ctx, session_string: str, automation_id: int, restore: bool) -> None:
+    """Xizmat to'xtaganda: restore bo'lsa biz qo'ygan rasm o'chiriladi va asl rasm yana ko'rinadi."""
+    old = await ctx["redis"].get(_photo_ref_key(automation_id))
+    if old and restore:
+        try:
+            await call_with_backoff(get_field_adapter().delete_photo, session_string, json.loads(old))
+        except Exception:  # noqa: BLE001
+            pass
+    await ctx["redis"].delete(_photo_ref_key(automation_id), f"last_applied:{automation_id}:{ProfileField.PHOTO.value}")
 
 
 async def run_automation_once(ctx, automation_id: int, job_id: str) -> None:
@@ -108,20 +152,27 @@ async def run_automation_once(ctx, automation_id: int, job_id: str) -> None:
                         chosen = field_actions[0]
                     elif automation.selection_strategy == SelectionStrategy.RANDOM:
                         chosen = random.choice(field_actions)
+                    elif automation.selection_strategy == SelectionStrategy.BY_TIME:
+                        chosen = _choose_by_time(field_actions, tz)
                     else:
                         chosen = field_actions[next_index % len(field_actions)]
                         next_index += 1
 
                     rendered = render(chosen.template, tpl_ctx)
                     # O'zgarmagan qiymatni har daqiqada qayta yubormaymiz (FloodWait xavfi); ONLINE esa
-                    # doim yangilanishi kerak. TTL tufayli qo'lda o'zgartirilgan profil ham vaqti-vaqti bilan tiklanadi.
+                    # doim yangilanishi kerak. TTL tufayli qo'lda o'zgartirilgan profil ham vaqti-vaqti bilan tiklanadi;
+                    # rasm esa faqat boshqasiga almashganda qayta yuklanadi.
                     cache_key = f"last_applied:{automation_id}:{field.value}"
                     if field != ProfileField.ONLINE:
                         last = await ctx["redis"].get(cache_key)
                         if last is not None and (last.decode() if isinstance(last, bytes) else last) == rendered:
                             continue
-                    await call_with_backoff(field_adapter.apply, session_string, field, rendered)
-                    await ctx["redis"].set(cache_key, rendered, ex=UNCHANGED_REAPPLY_SECONDS)
+                    if field == ProfileField.PHOTO:
+                        await _apply_photo(ctx, db, session_string, automation_id, int(rendered))
+                        await ctx["redis"].set(cache_key, rendered)
+                    else:
+                        await call_with_backoff(field_adapter.apply, session_string, field, rendered)
+                        await ctx["redis"].set(cache_key, rendered, ex=UNCHANGED_REAPPLY_SECONDS)
                     applied.append({"field": field.value, "value": rendered})
 
             automation.last_playlist_index = next_index
@@ -211,13 +262,14 @@ async def stop_automation_job(ctx, automation_id: int, job_id: str, restore: boo
         try:
             await require_lease(ctx["redis"], account.id)
 
+            own_fields = set(
+                await db.scalars(select(AutomationAction.field).where(AutomationAction.automation_id == automation_id))
+            )
+            session_string = await _get_session_string(db, account) if restore else ""
+            if ProfileField.PHOTO in own_fields:
+                await _cleanup_photo(ctx, session_string, automation_id, restore)
+
             if restore:
-                own_fields = set(
-                    await db.scalars(
-                        select(AutomationAction.field).where(AutomationAction.automation_id == automation_id)
-                    )
-                )
-                session_string = await _get_session_string(db, account)
                 field_adapter = get_field_adapter()
                 snapshots = list(
                     await db.scalars(
@@ -284,6 +336,11 @@ async def revoke_account_job(ctx, account_id: int, job_id: str) -> None:
                             except Exception:  # noqa: BLE001 — restore best-effort, uzish baribir bajariladi
                                 pass
                         snap.restored = True
+                    account_automation_ids = list(
+                        await db.scalars(select(Automation.id).where(Automation.telegram_account_id == account.id))
+                    )
+                    for automation_id in account_automation_ids:
+                        await _cleanup_photo(ctx, session_string, automation_id, restore=True)
                 await call_with_backoff(get_adapter().revoke, session_string)
                 session_row.revoked_at = datetime.datetime.now(datetime.timezone.utc)
 

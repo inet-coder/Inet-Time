@@ -8,18 +8,19 @@ from redis.asyncio import Redis
 from sqlalchemy import select, update
 
 from core.db.base import async_session
-from core.db.enums import AutomationStatus, ProfileField, SubscriptionStatus, TriggerType
+from core.db.enums import AutomationStatus, SubscriptionStatus, TriggerType
 from core.db.models import (
     Automation,
     AutomationAction,
     Notification,
     Plan,
     Schedule,
+    Service,
     Subscription,
     TelegramAccount,
     User,
 )
-from core.entitlements import Entitlement, get_entitlement
+from core.entitlements import Entitlement, get_entitlement, missing_flag
 from core.job_dispatch import enqueue_job
 from core.notify import send_telegram
 from core.scheduling import compute_next_run, is_due
@@ -36,27 +37,29 @@ async def enforce_limits_after_expiry(pool, db, user_id: int) -> tuple[Entitleme
     """Obuna tugagach yangi (odatda Bepul) tarif limitidan ortiq xizmatlar to'xtatiladi —
     eng yangilari birinchi, profil asl holiga qaytariladi (restore). (yangi tarif, to'xtatilganlar soni)."""
     ent = await get_entitlement(db, user_id)
-    live = list(
-        await db.scalars(
-            select(Automation)
+    live = (
+        await db.execute(
+            select(Automation, Service.code)
             .join(TelegramAccount, TelegramAccount.id == Automation.telegram_account_id)
+            .join(Service, Service.id == Automation.service_id)
             .where(TelegramAccount.user_id == user_id, Automation.status == AutomationStatus.ACTIVE)
             .order_by(Automation.started_at.desc())
         )
-    )
-    online_ids = set(
-        await db.scalars(
-            select(AutomationAction.automation_id).where(
-                AutomationAction.automation_id.in_([a.id for a in live] or [0]),
-                AutomationAction.field == ProfileField.ONLINE,
+    ).all()
+    fields_by_automation: dict[int, set] = {}
+    for automation_id, field in (
+        await db.execute(
+            select(AutomationAction.automation_id, AutomationAction.field).where(
+                AutomationAction.automation_id.in_([a.id for a, _ in live] or [0])
             )
         )
-    )
+    ).all():
+        fields_by_automation.setdefault(automation_id, set()).add(field)
 
     to_stop = []
     kept = 0
-    for automation in reversed(live):  # eng eskilari saqlanadi
-        if automation.id in online_ids and not ent.flags.get("online_service"):
+    for automation, service_code in reversed(live):  # eng eskilari saqlanadi
+        if missing_flag(ent, service_code, fields_by_automation.get(automation.id, set())):
             to_stop.append(automation)
         elif kept < ent.scheduler_limit:
             kept += 1

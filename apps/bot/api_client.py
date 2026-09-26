@@ -1,3 +1,5 @@
+import base64
+
 import httpx
 
 from core.settings import settings
@@ -77,15 +79,24 @@ class ApiClient:
 
     # --- xizmatlar ---
 
-    async def enable_service(self, account_id: int, service_code: str, field: str, template: str, interval_seconds: int) -> dict:
-        """Yaratadi va faollashtiradi. Shu fieldni band qilgan boshqa xizmat avtomatik almashtiriladi."""
+    async def enable_service(
+        self,
+        account_id: int,
+        service_code: str,
+        actions: list[dict],
+        interval_seconds: int,
+        selection_strategy: str = "NONE",
+    ) -> dict:
+        """Yaratadi va faollashtiradi. Shu fieldni band qilgan boshqa xizmat avtomatik almashtiriladi.
+        actions: [{"field", "template", "order_index"?, "at_time"?}]"""
         automation = await self._call(
             "POST",
             "/automations",
             json={
                 "telegram_account_id": account_id,
                 "service_code": service_code,
-                "actions": [{"field": field, "template": template}],
+                "selection_strategy": selection_strategy,
+                "actions": [{"order_index": i, **a} for i, a in enumerate(actions)],
                 "schedule": {
                     "trigger_type": "INTERVAL",
                     "interval_seconds": interval_seconds,
@@ -94,6 +105,12 @@ class ApiClient:
             },
         )
         return await self._call("POST", f"/automations/{automation['id']}/activate", json={"resolution": "replace"})
+
+    async def upload_media(self, user_id: int, data: bytes) -> int:
+        result = await self._call(
+            "POST", "/media", json={"user_id": user_id, "data_b64": base64.b64encode(data).decode("ascii")}
+        )
+        return result["id"]
 
     async def stop_service(self, automation_id: int, restore: bool = True) -> dict:
         return await self._call("POST", f"/automations/{automation_id}/stop", json={"restore": restore})

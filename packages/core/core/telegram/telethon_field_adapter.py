@@ -10,8 +10,8 @@ _UNSUPPORTED = (ProfileField.PHOTO, ProfileField.BIRTHDAY)
 
 class TelethonFieldAdapter(FieldAdapter):
     """Rasmiy Telethon hujjatidan tasdiqlangan chaqiriqlar:
-    account.UpdateProfileRequest, account.UpdateStatusRequest,
-    account.UpdateEmojiStatusRequest, users.GetFullUserRequest."""
+    account.UpdateProfileRequest, account.UpdateStatusRequest, account.UpdateEmojiStatusRequest,
+    users.GetFullUserRequest, photos.UploadProfilePhotoRequest, photos.DeletePhotosRequest."""
 
     def _client(self, session_string: str) -> TelegramClient:
         return TelegramClient(StringSession(session_string), settings.telegram_api_id, settings.telegram_api_hash)
@@ -62,5 +62,27 @@ class TelethonFieldAdapter(FieldAdapter):
                 await client(functions.account.UpdateEmojiStatusRequest(emoji_status=status))
             else:
                 raise ValueError(f"Qo'llab-quvvatlanmaydigan field: {field}")
+        finally:
+            await client.disconnect()
+
+    async def upload_photo(self, session_string: str, data: bytes) -> dict:
+        client = self._client(session_string)
+        await client.connect()
+        try:
+            uploaded = await client.upload_file(data, file_name="photo.jpg")
+            result = await client(functions.photos.UploadProfilePhotoRequest(file=uploaded))
+            photo = result.photo
+            return {"id": photo.id, "access_hash": photo.access_hash, "file_reference": photo.file_reference.hex()}
+        finally:
+            await client.disconnect()
+
+    async def delete_photo(self, session_string: str, ref: dict) -> None:
+        client = self._client(session_string)
+        await client.connect()
+        try:
+            input_photo = types.InputPhoto(
+                id=ref["id"], access_hash=ref["access_hash"], file_reference=bytes.fromhex(ref["file_reference"])
+            )
+            await client(functions.photos.DeletePhotosRequest(id=[input_photo]))
         finally:
             await client.disconnect()

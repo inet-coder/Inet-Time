@@ -7,7 +7,7 @@ from aiogram.types import BotCommand, ErrorEvent
 
 from api_client import api_client
 from core.settings import settings
-from handlers import add_account, admin, billing, home, start
+from handlers import add_account, admin, billing, home, pro, start
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("bot")
@@ -17,7 +17,8 @@ dp.include_router(start.router)
 dp.include_router(add_account.router)
 dp.include_router(billing.router)
 dp.include_router(admin.router)
-dp.include_router(home.router)
+dp.include_router(pro.router)
+dp.include_router(home.router)  # oxirida: holatsiz xabarlar uchun fallback shu yerda
 
 
 @dp.errors()

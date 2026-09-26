@@ -1,4 +1,4 @@
-import type { ActiveService, State } from "./api";
+import type { ActiveService, Plan, State } from "./api";
 
 export type ProfileView = {
   name: string;
@@ -54,4 +54,10 @@ export function nextChangeAt(state: State): string | null {
     .map((s) => s.preview.next_at as string)
     .sort();
   return times[0] ?? null;
+}
+
+// Xizmatni ochadigan eng arzon tarif — "PRO" o'rniga aniq nom ko'rsatish uchun.
+export function unlockingPlan(state: State, flag: string | null): Plan | undefined {
+  if (!flag) return undefined;
+  return state.plans.filter((p) => p.flags[flag]).sort((a, b) => a.final_price - b.final_price)[0];
 }

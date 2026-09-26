@@ -35,3 +35,17 @@ export async function fileToJpegBase64(file: File, maxSide = 1280): Promise<stri
   canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL("image/jpeg", 0.88).split(",")[1];
 }
+
+export function dateText(iso: string | null): string {
+  return iso ? new Date(iso).toLocaleDateString("ru-RU") : "";
+}
+
+// <input type="date"> qiymati (YYYY-MM-DD) <-> ISO. Tanlangan kun oxirigacha amal qiladi (Toshkent vaqti).
+export function toDateInput(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("sv-SE", { timeZone: "Asia/Tashkent" });
+}
+
+export function fromDateInput(value: string): string | null {
+  return value ? `${value}T23:59:59+05:00` : null;
+}

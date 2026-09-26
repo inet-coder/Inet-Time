@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from core.settings import settings
-from routers import accounts, admin, admin_auth, automations, jobs, payments, users, webapp
+from routers import accounts, admin, admin_auth, automations, jobs, payments, users, webapp, webapp_admin
 
 app = FastAPI(title="Userbots API")
 app.include_router(users.router)
@@ -16,6 +16,7 @@ app.include_router(payments.subscriptions_router)
 app.include_router(admin_auth.router)
 app.include_router(admin.router)
 app.include_router(webapp.router)
+app.include_router(webapp_admin.router)
 
 
 @app.get("/health")

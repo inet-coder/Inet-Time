@@ -3,6 +3,8 @@ from core.db.models.automation import Automation, AutomationAction, ProfileSnaps
 from core.db.models.billing import (
     Payment,
     Plan,
+    PromoCode,
+    PromoRedemption,
     Referral,
     ReferralTransaction,
     Service,
@@ -19,6 +21,8 @@ __all__ = [
     "TelegramAccount",
     "EncryptedSession",
     "Plan",
+    "PromoCode",
+    "PromoRedemption",
     "Subscription",
     "Service",
     "Payment",

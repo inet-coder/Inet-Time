@@ -8,21 +8,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from admin_deps import require_permission
 from core.audit import record_audit
+from core.billing import FREE_CODE, PromoError, paid_plans, plan_price, plan_public, quote
 from core.db.base import async_session
 from core.db.enums import ActorType, PaymentMethod, PaymentStatus, SubscriptionStatus, TransactionType
-from core.db.models import AdminUser, Payment, Plan, Subscription, Transaction, User
+from core.db.models import AdminUser, Payment, Plan, PromoRedemption, Subscription, Transaction, User
 from deps import get_db
-from schemas import PaymentOut, PlanOut, PurchaseCreate, RejectPaymentAdmin, SubscriptionOut, TopupCreate
+from schemas import PaymentOut, PurchaseCreate, RejectPaymentAdmin, SubscriptionOut, TopupCreate
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 plans_router = APIRouter(prefix="/plans", tags=["payments"])
 subscriptions_router = APIRouter(prefix="/subscriptions", tags=["payments"])
 
 
-@plans_router.get("", response_model=list[PlanOut])
-async def list_plans(db: AsyncSession = Depends(get_db)) -> list[Plan]:
-    result = await db.scalars(select(Plan).where(Plan.is_active == True))  # noqa: E712
-    return list(result)
+@plans_router.get("")
+async def list_plans(db: AsyncSession = Depends(get_db)) -> list[dict]:
+    """Sotib olinadigan (pullik, faol) tariflar; final_price — aksiya chegirmasi bilan."""
+    return [{"id": p.id, **plan_public(p)} for p in await paid_plans(db)]
 
 
 @subscriptions_router.get("", response_model=list[SubscriptionOut])
@@ -39,8 +40,9 @@ def _is_serialization_failure(exc: DBAPIError) -> bool:
 
 
 async def _extend_or_create_subscription(
-    db: AsyncSession, user_id: int, plan: Plan, now: datetime.datetime
+    db: AsyncSession, user_id: int, plan: Plan, now: datetime.datetime, days: int | None = None
 ) -> Subscription:
+    days = plan.duration_days if days is None else days
     subscription = await db.scalar(
         select(Subscription).where(
             Subscription.user_id == user_id,
@@ -49,14 +51,14 @@ async def _extend_or_create_subscription(
         )
     )
     if subscription is not None and subscription.expires_at > now:
-        subscription.expires_at += datetime.timedelta(days=plan.duration_days)
+        subscription.expires_at += datetime.timedelta(days=days)
     else:
         subscription = Subscription(
             user_id=user_id,
             plan_id=plan.id,
             status=SubscriptionStatus.ACTIVE,
             started_at=now,
-            expires_at=now + datetime.timedelta(days=plan.duration_days),
+            expires_at=now + datetime.timedelta(days=days),
         )
         db.add(subscription)
     await db.flush()
@@ -77,29 +79,44 @@ async def buy_with_balance(payload: PurchaseCreate) -> Subscription:
                 plan = await db.scalar(
                     select(Plan).where(Plan.code == payload.plan_code, Plan.is_active == True)  # noqa: E712
                 )
-                if plan is None:
+                if plan is None or plan.code == FREE_CODE:
                     raise HTTPException(404, f"Faol tarif topilmadi: {payload.plan_code}")
 
-                balance = await _current_balance(db, user.id)
-                if balance < plan.price:
-                    raise HTTPException(402, f"Balans yetarli emas: {balance:.0f} / {plan.price:.0f} so'm")
-
                 now = datetime.datetime.now(datetime.timezone.utc)
+                # Narx shu tranzaksiya ichida hisoblanadi: aksiya/promokod o'zgarsa ham eskisi qo'llanmaydi.
+                try:
+                    q = await quote(db, user.id, plan, payload.promo_code, now)
+                except PromoError as exc:
+                    raise HTTPException(400, str(exc)) from exc
+
+                balance = await _current_balance(db, user.id)
+                if balance < q.final:
+                    raise HTTPException(402, f"Balans yetarli emas: {balance:.0f} / {q.final:.0f} so'm")
+
                 subscription = await _extend_or_create_subscription(db, user.id, plan, now)
-                balance -= plan.price
+                balance -= q.final
                 db.add(
                     Transaction(
                         user_id=user.id,
                         type=TransactionType.PURCHASE,
-                        amount=-plan.price,
+                        amount=-q.final,
                         balance_after=balance,
                         reference_subscription_id=subscription.id,
                     )
                 )
                 user.balance = balance
+                if q.promo is not None:
+                    q.promo.used_count += 1
+                    db.add(
+                        PromoRedemption(
+                            promo_id=q.promo.id, user_id=user.id, subscription_id=subscription.id,
+                            plan_code=plan.code, discount=q.promo_discount,
+                        )
+                    )
                 await record_audit(
                     db, actor_type=ActorType.USER, actor_id=user.id, action="plan_purchased",
-                    entity_type="subscription", entity_id=subscription.id, meta={"plan": plan.code},
+                    entity_type="subscription", entity_id=subscription.id,
+                    meta={"plan": plan.code, "paid": str(q.final), "promo": q.promo.code if q.promo else None},
                 )
                 await db.commit()
                 await db.refresh(subscription)
@@ -141,13 +158,13 @@ async def create_purchase(payload: PurchaseCreate, db: AsyncSession = Depends(ge
     if user is None:
         raise HTTPException(404, "Foydalanuvchi topilmadi")
     plan = await db.scalar(select(Plan).where(Plan.code == payload.plan_code, Plan.is_active == True))  # noqa: E712
-    if plan is None:
+    if plan is None or plan.code == FREE_CODE:
         raise HTTPException(404, f"Faol tarif topilmadi: {payload.plan_code}")
 
     payment = Payment(
         user_id=user.id,
         plan_id=plan.id,
-        amount=plan.price,
+        amount=plan_price(plan),
         currency="UZS",
         method=PaymentMethod.MANUAL_ADMIN,
         status=PaymentStatus.PENDING,
@@ -256,8 +273,6 @@ async def confirm_payment(
                 if _is_serialization_failure(exc) and attempt < _MAX_SERIALIZATION_RETRIES - 1:
                     continue
                 raise HTTPException(409, "Bir vaqtda ko'p yangilanish — qaytadan urinib ko'ring") from exc
-
-    raise HTTPException(409, "Bir vaqtda ko'p yangilanish — qaytadan urinib ko'ring")
 
     raise HTTPException(409, "Bir vaqtda ko'p yangilanish — qaytadan urinib ko'ring")
 

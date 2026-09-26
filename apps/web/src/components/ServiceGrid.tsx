@@ -5,6 +5,7 @@ import { ServiceIcon } from "../icons";
 type Props = {
   catalog: CatalogService[];
   services: ActiveService[];
+  lockLabel: (svc: CatalogService) => string;
   onOpen: (code: string) => void;
   onToggle: (code: string, active: ActiveService | undefined) => void;
 };
@@ -29,7 +30,7 @@ function Status({ active }: { active: ActiveService }) {
   );
 }
 
-export function ServiceGrid({ catalog, services, onOpen, onToggle }: Props) {
+export function ServiceGrid({ catalog, services, lockLabel, onOpen, onToggle }: Props) {
   return (
     <div className="grid">
       {catalog.map((svc) => {
@@ -55,7 +56,7 @@ export function ServiceGrid({ catalog, services, onOpen, onToggle }: Props) {
                 </button>
               ) : (
                 <span className="pro-badge">
-                  <Crown size={11} strokeWidth={2.5} /> PRO
+                  <Crown size={11} strokeWidth={2.5} /> {lockLabel(svc)}
                 </span>
               )}
             </div>

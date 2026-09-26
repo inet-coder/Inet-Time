@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.db.enums import AutomationStatus, ProfileField, SubscriptionStatus, TelegramAccountStatus
 from core.db.models import Automation, AutomationAction, Plan, Service, Subscription, TelegramAccount
 
+# Zaxira: bazada "free" tarif qatori bo'lmasa (migratsiyadan oldin). Asl qiymatlar admin paneldan sozlanadi.
 FREE_PLAN = {
     "code": "free",
     "name": "Bepul",
@@ -56,6 +57,7 @@ async def get_entitlement(db: AsyncSession, user_id: int) -> Entitlement:
                 Subscription.user_id == user_id,
                 Subscription.status == SubscriptionStatus.ACTIVE,
                 Subscription.expires_at > now,
+                Plan.code != FREE_PLAN["code"],
             )
             .order_by(Plan.price.desc())
             .limit(1)
@@ -75,11 +77,12 @@ async def get_entitlement(db: AsyncSession, user_id: int) -> Entitlement:
     )
 
     if row is None:
+        free = await db.scalar(select(Plan).where(Plan.code == FREE_PLAN["code"]))
         return Entitlement(
             plan_code=FREE_PLAN["code"],
-            plan_name=FREE_PLAN["name"],
+            plan_name=free.name if free else FREE_PLAN["name"],
             expires_at=None,
-            flags=FREE_PLAN["flags"],
+            flags=free.flags if free else FREE_PLAN["flags"],
             accounts_used=accounts_used,
             automations_used=automations_used,
         )
@@ -132,7 +135,7 @@ async def check_can_activate(db: AsyncSession, user_id: int, automation_id: int)
     fields = set(await db.scalars(select(AutomationAction.field).where(AutomationAction.automation_id == automation_id)))
     title = missing_flag(ent, service_code, fields)
     if title is not None:
-        raise EntitlementError(f"{title} faqat Pro tarifda mavjud.")
+        raise EntitlementError(f"{title} {ent.plan_name} tarifida yo'q — tarifni yangilang.")
 
 
 async def check_can_add_account(db: AsyncSession, user_id: int) -> None:

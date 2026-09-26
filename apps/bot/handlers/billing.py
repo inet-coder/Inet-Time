@@ -10,7 +10,6 @@ import keyboards as kb
 from api_client import ApiError, api_client
 from catalog import expiry_text, plan_features, plan_status_lines, pro_unlocked
 from common import db_user_id, money, safe_answer, safe_edit
-from core.entitlements import FREE_PLAN
 from core.settings import settings
 from states import Topup
 
@@ -25,6 +24,12 @@ def _plan_card(code: str, name: str, price_text: str, flags: dict, is_current: b
     return title + "\n" + "\n".join(f"   • {f}" for f in plan_features(flags))
 
 
+def _price_text(plan: dict) -> str:
+    if plan["final_price"] < plan["price"]:
+        return f"{money(plan['final_price'])} (−{plan['discount_percent']}%, avval {money(plan['price'])})"
+    return money(plan["price"])
+
+
 @router.callback_query(F.data == "plans")
 async def show_plans(callback: CallbackQuery) -> None:
     user_id = await db_user_id(callback.from_user)
@@ -32,9 +37,10 @@ async def show_plans(callback: CallbackQuery) -> None:
     plans = await api_client.list_plans()
     current_code = overview["plan"]["code"]
 
-    cards = [_plan_card("free", FREE_PLAN["name"], "tekin", FREE_PLAN["flags"], current_code == "free")]
+    free = overview["free_plan"]
+    cards = [_plan_card("free", free["name"], "tekin", free["flags"], current_code == "free")]
     cards += [
-        _plan_card(p["code"], p["name"], f"{money(p['price'])} / {p['duration_days']} kun", p["flags"], current_code == p["code"])
+        _plan_card(p["code"], p["name"], f"{_price_text(p)} / {p['duration_days']} kun", p["flags"], current_code == p["code"])
         for p in plans
     ]
     text = (
@@ -64,10 +70,10 @@ async def ask_buy(callback: CallbackQuery) -> None:
             f"{plan['name']} olish hozir hech narsa qo'shmaydi.",
             kb.plans(plans, current["code"]),
         )
-    elif balance < plan["price"]:
+    elif balance < plan["final_price"]:
         await safe_edit(
             callback,
-            f"Balans yetarli emas.\n\n{plan['name']}: {money(plan['price'])}\nSizda: {money(balance)}\n\n"
+            f"Balans yetarli emas.\n\n{plan['name']}: {money(plan['final_price'])}\nSizda: {money(balance)}\n\n"
             "Avval balansni to'ldiring.",
             kb.need_topup(),
         )
@@ -78,7 +84,7 @@ async def ask_buy(callback: CallbackQuery) -> None:
             f"{PLAN_ICONS.get(code, '💎')} {plan['name']} — {plan['duration_days']} kun\n"
             + "\n".join(f"   • {f}" for f in plan_features(plan["flags"]))
             + f"\n\n{extend} {plan['duration_days']} kunga {'uzayadi' if extend == 'Muddati' else 'faollashadi'}.\n"
-            f"Balansingizdan {money(plan['price'])} yechiladi (qoladi: {money(balance - plan['price'])}).\n\n"
+            f"Balansingizdan {money(plan['final_price'])} yechiladi (qoladi: {money(balance - plan['final_price'])}).\n\n"
             "Tasdiqlaysizmi?",
             kb.confirm_buy(code),
         )
@@ -127,7 +133,7 @@ async def show_balance(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "topup")
 async def ask_topup_amount(callback: CallbackQuery) -> None:
-    amounts = sorted({int(p["price"]) for p in await api_client.list_plans()})
+    amounts = sorted({int(p["final_price"]) for p in await api_client.list_plans()})
     await safe_edit(callback, "Qancha summaga to'ldiramiz?", kb.topup_amounts(amounts))
     await safe_answer(callback)
 

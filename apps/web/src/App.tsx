@@ -9,13 +9,14 @@ import {
   LoaderCircle,
   Lock,
   ShieldAlert,
+  ShieldCheck,
   Smartphone,
   UserRound,
   Wallet,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, authenticate, type ActiveService, type State } from "./api";
+import { api, authenticate, type ActiveService, type CatalogService, type State } from "./api";
 import {
   EmojiEditor,
   OnlineEditor,
@@ -25,13 +26,14 @@ import {
   TemplateEditor,
   type EditorProps,
 } from "./components/Editors";
+import { AdminView } from "./components/AdminView";
 import { PlansView } from "./components/PlansView";
 import { ProfileCard } from "./components/ProfileCard";
 import { ServiceGrid } from "./components/ServiceGrid";
 import { ServiceIcon } from "./icons";
 import { Sheet } from "./components/Sheet";
 import { Timeline } from "./components/Timeline";
-import { buildProfile, nextChangeAt, type Mode, type Overrides } from "./profile";
+import { buildProfile, nextChangeAt, unlockingPlan, type Mode, type Overrides } from "./profile";
 import { confirmDialog, haptic, matchChrome, openBot, tg } from "./tg";
 import { money, whenText } from "./util";
 
@@ -44,12 +46,13 @@ const EDITORS: Record<string, (p: EditorProps) => JSX.Element> = {
   online: OnlineEditor,
 };
 
-type Tab = "profile" | "services" | "plan";
+type Tab = "profile" | "services" | "plan" | "admin";
 
 const TABS: [Tab, typeof UserRound, string][] = [
   ["profile", UserRound, "Profil"],
   ["services", LayoutGrid, "Xizmatlar"],
   ["plan", Gem, "Tarif"],
+  ["admin", ShieldCheck, "Admin"],
 ];
 type Toast = { text: string; kind: "ok" | "err" } | null;
 
@@ -119,9 +122,9 @@ function Main() {
   }, [refetch, queryClient]);
 
   if (!state) return <Loader />;
-  if (!state.account) return <NoAccount state={state} />;
 
   const services = state.services ?? [];
+  const lockLabel = (svc: CatalogService) => (unlockingPlan(state, svc.flag)?.name ?? "PRO").toUpperCase();
   const toggle = async (code: string, active: ActiveService | undefined) => {
     haptic();
     const meta = state.catalog.find((c) => c.code === code)!;
@@ -156,7 +159,7 @@ function Main() {
 
   return (
     <div className="app">
-      {state.accounts.length > 1 && (
+      {state.account && state.accounts.length > 1 && (
         <select className="account-select" value={state.account.id} onChange={(e) => setAccountId(Number(e.target.value))}>
           {state.accounts.map((a) => (
             <option key={a.id} value={a.id}>
@@ -168,29 +171,37 @@ function Main() {
 
       <Header state={state} title={TABS.find(([k]) => k === tab)![2]} onPlan={() => setTab("plan")} />
 
-      {tab === "profile" && <ProfileTab state={state} mode={mode} setMode={setMode} onOpen={setOpenCode} />}
-      {tab === "services" && (
+      {!state.account && (tab === "profile" || tab === "services") && <NoAccount state={state} />}
+      {state.account && tab === "profile" && <ProfileTab state={state} mode={mode} setMode={setMode} onOpen={setOpenCode} />}
+      {state.account && tab === "services" && (
         <div className="stack">
           <p className="hint">Kalitni bosib yoqing, kartani bosib sozlang. Oddiy xizmatlar standart shablon bilan darhol yoqiladi.</p>
-          <h3 className="section-title">Asosiy</h3>
+          <h3 className="section-title">Sizda mavjud</h3>
           <ServiceGrid
-            catalog={state.catalog.filter((c) => !c.flag)}
+            catalog={state.catalog.filter((c) => c.unlocked)}
             services={services}
+            lockLabel={lockLabel}
             onOpen={setOpenCode}
             onToggle={toggle}
           />
-          <h3 className="section-title section-title--pro">
-            <Crown size={14} /> Pro xizmatlar
-          </h3>
-          <ServiceGrid
-            catalog={state.catalog.filter((c) => c.flag)}
-            services={services}
-            onOpen={setOpenCode}
-            onToggle={toggle}
-          />
+          {state.catalog.some((c) => !c.unlocked) && (
+            <>
+              <h3 className="section-title section-title--pro">
+                <Crown size={14} /> Tarifni yangilab oching
+              </h3>
+              <ServiceGrid
+                catalog={state.catalog.filter((c) => !c.unlocked)}
+                services={services}
+                lockLabel={lockLabel}
+                onOpen={setOpenCode}
+                onToggle={toggle}
+              />
+            </>
+          )}
         </div>
       )}
       {tab === "plan" && <PlansView state={state} refresh={refresh} toast={showToast} />}
+      {tab === "admin" && state.is_admin && <AdminView toast={showToast} />}
 
       {openCode && (
         <ServiceSheet
@@ -218,7 +229,7 @@ function Main() {
       )}
 
       <nav className="tabbar">
-        {TABS.map(([key, Icon, label]) => (
+        {TABS.filter(([key]) => key !== "admin" || state.is_admin).map(([key, Icon, label]) => (
           <button
             key={key}
             className={tab === key ? "is-active" : ""}
@@ -354,6 +365,7 @@ function ServiceSheet({
 }) {
   const service = state.catalog.find((c) => c.code === code)!;
   const active = (state.services ?? []).find((s) => s.service_code === code);
+  const unlock = unlockingPlan(state, service.flag);
   const [overrides, setOverridesState] = useState<Overrides>({});
   const [busy, setBusy] = useState(false);
   const setOverrides = useCallback((o: Overrides) => setOverridesState(o), []);
@@ -396,11 +408,16 @@ function ServiceSheet({
             <span className="locked__icon">
               <Lock size={22} />
             </span>
-            <b>Bu xizmat Pro tarifda ochiladi</b>
-            <span className="hint">Pro bilan 5 ta akkaunt, 20 ta xizmat va barcha maxsus imkoniyatlar.</span>
+            <b>Bu xizmat {unlock?.name ?? "yuqoriroq"} tarifida ochiladi</b>
+            {unlock && (
+              <span className="hint">
+                {unlock.name}: {String(unlock.flags.account_limit)} ta akkaunt, bir vaqtda {String(unlock.flags.scheduler_limit)} ta xizmat —{" "}
+                {money(unlock.final_price)} / {unlock.duration_days} kun
+              </span>
+            )}
           </div>
           <button className="btn btn--gold" onClick={goPlans}>
-            <Crown size={18} /> Pro'ga o'tish
+            <Crown size={18} /> Tariflarni ko'rish
           </button>
         </div>
       ) : (

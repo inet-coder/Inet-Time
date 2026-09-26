@@ -13,8 +13,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.billing import PLAN_FEATURES, PromoError, paid_plans, payment_instructions, plan_public, quote
 from core.catalog import FIELD_LIMITS, SERVICE_CATALOG, SERVICE_CODES, TEMPLATE_VARIABLES
-from core.db.models import Automation, MediaFile, Plan, ProfileSnapshot, Schedule, TelegramAccount, User
+from core.db.models import Automation, MediaFile, ProfileSnapshot, Schedule, TelegramAccount, User
 from core.notify import send_telegram
 from core.preview import automation_preview
 from core.settings import settings
@@ -24,10 +25,10 @@ from deps import get_db
 from redis_client import get_redis
 from routers import automations as automations_api
 from routers import payments as payments_api
-
-logger = logging.getLogger(__name__)
 from routers.users import get_overview
 from schemas import ActionIn, ActivateRequest, AutomationCreate, MediaUpload, PurchaseCreate, ScheduleIn, StopRequest, TopupCreate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webapp", tags=["webapp"])
 
@@ -119,7 +120,7 @@ def _ctx(account: dict | TelegramAccount) -> TemplateContext:
 @router.get("/state")
 async def state(account_id: int | None = None, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)) -> dict:
     overview = await get_overview(user.id, db)
-    plans = list(await db.scalars(select(Plan).where(Plan.is_active == True).order_by(Plan.price)))  # noqa: E712
+    plans = await paid_plans(db)
     flags = overview["plan"]["flags"]
     catalog = [{**s, "unlocked": s["flag"] is None or bool(flags.get(s["flag"]))} for s in SERVICE_CATALOG]
 
@@ -127,15 +128,15 @@ async def state(account_id: int | None = None, user: User = Depends(current_user
         "user": overview["user"],
         "plan": overview["plan"],
         "usage": overview["usage"],
-        "plans": [
-            {"code": p.code, "name": p.name, "price": float(p.price), "duration_days": p.duration_days, "flags": p.flags}
-            for p in plans
-        ],
+        "plans": [plan_public(p) for p in plans],
+        "free_plan": overview["free_plan"],
+        "features": PLAN_FEATURES,
+        "is_admin": user.telegram_user_id in settings.admin_telegram_id_set,
         "catalog": catalog,
         "variables": TEMPLATE_VARIABLES,
         "limits": FIELD_LIMITS,
         "timezone": settings.default_timezone,
-        "payment_instructions": settings.payment_instructions,
+        "payment_instructions": await payment_instructions(db),
         "bot_username": await _bot_username(),
         "accounts": [{k: a[k] for k in ("id", "username", "first_name", "status", "is_premium")} for a in overview["accounts"]],
     }
@@ -315,9 +316,27 @@ async def get_emoji(emoji_id: str, user: User = Depends(current_user)) -> Respon
 # --- Tarif va balans ---
 
 
+class BuyIn(BaseModel):
+    promo_code: str | None = None
+
+
+@router.post("/plans/{plan_code}/quote")
+async def quote_plan(plan_code: str, payload: BuyIn, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    """Promokodni tekshirish va yakuniy narxni ko'rsatish (hech narsa yechilmaydi)."""
+    plan = next((p for p in await paid_plans(db) if p.code == plan_code), None)
+    if plan is None:
+        raise HTTPException(404, "Tarif topilmadi")
+    try:
+        q = await quote(db, user.id, plan, payload.promo_code)
+    except PromoError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, **q.public()}
+
+
 @router.post("/plans/{plan_code}/buy")
-async def buy_plan(plan_code: str, user: User = Depends(current_user)) -> dict:
-    subscription = await payments_api.buy_with_balance(PurchaseCreate(user_id=user.id, plan_code=plan_code))
+async def buy_plan(plan_code: str, payload: BuyIn | None = None, user: User = Depends(current_user)) -> dict:
+    promo = payload.promo_code if payload else None
+    subscription = await payments_api.buy_with_balance(PurchaseCreate(user_id=user.id, plan_code=plan_code, promo_code=promo))
     return {"ok": True, "expires_at": subscription.expires_at.isoformat()}
 
 
@@ -338,4 +357,4 @@ async def topup(payload: TopupIn, user: User = Depends(current_user), db: AsyncS
             f"💳 Yangi to'ldirish so'rovi #{payment.id} (Mini App)\n👤 {who} (id {user.telegram_user_id})\nSumma: {amount_text} so'm",
             buttons=[[("✅ Tasdiqlash", f"adm_ok:{payment.id}"), ("❌ Rad etish", f"adm_no:{payment.id}")]],
         )
-    return {"ok": True, "payment_id": payment.id, "instructions": settings.payment_instructions}
+    return {"ok": True, "payment_id": payment.id, "instructions": await payment_instructions(db)}

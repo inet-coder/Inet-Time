@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.billing import get_free_plan, plan_public
 from core.db.enums import AutomationStatus, TelegramAccountStatus
 from core.db.models import Automation, AutomationAction, Referral, Schedule, Service, TelegramAccount, User
-from core.entitlements import get_entitlement
+from core.entitlements import FREE_PLAN, get_entitlement
 from deps import get_db
 from schemas import UserCreate, UserGetOrCreate, UserOut
 
@@ -118,6 +119,7 @@ async def get_overview(user_id: int, db: AsyncSession = Depends(get_db)) -> dict
     by_account: dict[int, list[dict]] = {}
     for item in automations.values():
         by_account.setdefault(item.pop("account_id"), []).append(item)
+    free = await get_free_plan(db)
 
     return {
         "user": {
@@ -133,6 +135,7 @@ async def get_overview(user_id: int, db: AsyncSession = Depends(get_db)) -> dict
             "flags": ent.flags,
         },
         "usage": {"accounts": ent.accounts_used, "automations": ent.automations_used},
+        "free_plan": plan_public(free) if free else {**FREE_PLAN, "price": 0, "final_price": 0, "description": None},
         "accounts": [
             {
                 "id": a.id,

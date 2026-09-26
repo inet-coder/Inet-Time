@@ -1,12 +1,12 @@
 import datetime
 import decimal
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.db.base import Base
 from core.db.enums import PaymentMethod, PaymentStatus, SubscriptionStatus, TransactionType
-from core.db.mixins import TimestampMixin
+from core.db.mixins import CreatedAtMixin, TimestampMixin
 
 
 class Plan(TimestampMixin, Base):
@@ -20,6 +20,12 @@ class Plan(TimestampMixin, Base):
     # tarif flag'lari: account_limit, max_bio_items, scheduler_limit, online_service, emoji_service, ...
     flags: Mapped[dict] = mapped_column(JSON, default=dict)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    badge: Mapped[str | None] = mapped_column(String(64))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    # Tarifning o'z chegirmasi (aksiya): discount_until o'tgach avtomatik tugaydi; None — muddatsiz.
+    discount_percent: Mapped[int] = mapped_column(Integer, default=0)
+    discount_until: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Subscription(TimestampMixin, Base):
@@ -102,3 +108,34 @@ class ReferralTransaction(TimestampMixin, Base):
     referral_id: Mapped[int] = mapped_column(ForeignKey("referrals.id", ondelete="CASCADE"), index=True)
     transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id", ondelete="CASCADE"))
     amount: Mapped[decimal.Decimal] = mapped_column(Numeric(14, 2))
+
+
+class PromoCode(TimestampMixin, Base):
+    """Tarif xaridi uchun promokod: foiz yoki qat'iy summa chegirma."""
+
+    __tablename__ = "promo_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    discount_percent: Mapped[int | None] = mapped_column(Integer)
+    discount_amount: Mapped[decimal.Decimal | None] = mapped_column(Numeric(14, 2))
+    # Bo'sh ro'yxat — barcha pullik tariflarga amal qiladi.
+    plan_codes: Mapped[list] = mapped_column(JSON, default=list)
+    max_uses: Mapped[int | None] = mapped_column(Integer)
+    used_count: Mapped[int] = mapped_column(Integer, default=0)
+    valid_until: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    note: Mapped[str | None] = mapped_column(String(255))
+
+
+class PromoRedemption(CreatedAtMixin, Base):
+    __tablename__ = "promo_redemptions"
+    # Bir foydalanuvchi bitta promokodni bir marta ishlatadi.
+    __table_args__ = (UniqueConstraint("promo_id", "user_id", name="uq_promo_redemption_user"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    promo_id: Mapped[int] = mapped_column(ForeignKey("promo_codes.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    subscription_id: Mapped[int | None] = mapped_column(ForeignKey("subscriptions.id", ondelete="SET NULL"))
+    plan_code: Mapped[str] = mapped_column(String(32))
+    discount: Mapped[decimal.Decimal] = mapped_column(Numeric(14, 2))

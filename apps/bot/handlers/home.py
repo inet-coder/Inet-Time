@@ -145,7 +145,7 @@ async def _render_service(callback: CallbackQuery, code: str, note: str = "") ->
         if meta["field"] != "online":
             text += f"\n\nNamuna: «{_preview(meta['default'], account)}»"
         if locked:
-            text += "\n\n🔒 Bu xizmat faqat Pro tarifda mavjud."
+            text += f"\n\n🔒 Bu xizmat {overview['plan']['name']} tarifida yo'q — tarifni yangilang."
         markup = kb.service_off(code, locked)
 
     await safe_edit(callback, text + note, markup)

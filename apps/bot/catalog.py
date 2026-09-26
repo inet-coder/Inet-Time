@@ -108,7 +108,7 @@ def plan_features(flags: dict) -> list[str]:
         f"bir vaqtda {flags.get('scheduler_limit', 1)} ta xizmat",
     ]
     unlocked = pro_unlocked(flags)
-    features.append("⭐ " + ", ".join(unlocked) if unlocked else "🔒 Pro xizmatlar yo'q")
+    features.append("⭐ " + ", ".join(unlocked) if unlocked else "🔒 qo'shimcha xizmatlar yo'q")
     return features
 
 

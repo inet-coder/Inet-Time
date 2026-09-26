@@ -166,6 +166,7 @@ class TopupCreate(BaseModel):
 class PurchaseCreate(BaseModel):
     user_id: int
     plan_code: str
+    promo_code: str | None = None
 
 
 class PaymentOut(BaseModel):

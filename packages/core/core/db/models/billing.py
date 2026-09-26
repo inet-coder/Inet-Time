@@ -55,6 +55,7 @@ class Payment(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id"))
     subscription_id: Mapped[int | None] = mapped_column(ForeignKey("subscriptions.id"))
     amount: Mapped[decimal.Decimal] = mapped_column(Numeric(14, 2))
     currency: Mapped[str] = mapped_column(String(8), default="UZS")

@@ -147,3 +147,59 @@ class JobStatusOut(BaseModel):
     error: str | None
     started_at: datetime.datetime | None
     finished_at: datetime.datetime | None
+
+
+class TopupCreate(BaseModel):
+    user_id: int
+    amount: float
+
+
+class PurchaseCreate(BaseModel):
+    user_id: int
+    plan_code: str
+
+
+class PaymentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    plan_id: int | None
+    subscription_id: int | None
+    amount: float
+    currency: str
+    method: str
+    status: str
+    confirmed_at: datetime.datetime | None
+    confirmed_by_admin_id: int | None
+
+
+class ConfirmPayment(BaseModel):
+    admin_id: int
+
+
+class RejectPayment(BaseModel):
+    admin_id: int
+    reason: str | None = None
+
+
+class PlanOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name: str
+    price: float
+    duration_days: int
+    flags: dict
+
+
+class SubscriptionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    plan_id: int
+    status: str
+    started_at: datetime.datetime
+    expires_at: datetime.datetime

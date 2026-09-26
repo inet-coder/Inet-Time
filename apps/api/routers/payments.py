@@ -6,10 +6,13 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.enums import PaymentMethod, PaymentStatus, SubscriptionStatus, TransactionType
+from admin_deps import require_permission
+from core.audit import record_audit
+from core.db.base import async_session
+from core.db.enums import ActorType, PaymentMethod, PaymentStatus, SubscriptionStatus, TransactionType
 from core.db.models import AdminUser, Payment, Plan, Subscription, Transaction, User
 from deps import get_db
-from schemas import ConfirmPayment, PaymentOut, PlanOut, PurchaseCreate, RejectPayment, SubscriptionOut, TopupCreate
+from schemas import PaymentOut, PlanOut, PurchaseCreate, RejectPaymentAdmin, SubscriptionOut, TopupCreate
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 plans_router = APIRouter(prefix="/plans", tags=["payments"])
@@ -98,109 +101,117 @@ async def _current_balance(db: AsyncSession, user_id: int) -> decimal.Decimal:
 
 
 @router.post("/{payment_id}/confirm", response_model=PaymentOut)
-async def confirm_payment(payment_id: int, payload: ConfirmPayment, db: AsyncSession = Depends(get_db)) -> Payment:
+async def confirm_payment(
+    payment_id: int,
+    admin: AdminUser = Depends(require_permission("payments")),
+) -> Payment:
+    # `db` (Depends(get_db)) auth tekshiruvi uchun ishlatilgan bo'lardi — SET TRANSACTION
+    # ISOLATION LEVEL esa tranzaksiyadagi birinchi buyruq bo'lishi shart, shuning uchun
+    # pul harakati uchun butunlay yangi session ochiladi.
     for attempt in range(_MAX_SERIALIZATION_RETRIES):
-        try:
-            # SET TRANSACTION ISOLATION LEVEL tranzaksiyadagi birinchi buyruq bo'lishi shart —
-            # shuning uchun admin tekshiruvi ham shu SET'dan keyin, har urinishda qayta bajariladi.
-            await db.execute(text("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"))
+        async with async_session() as db:
+            try:
+                await db.execute(text("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"))
 
-            admin = await db.get(AdminUser, payload.admin_id)
-            if admin is None:
-                raise HTTPException(404, "Admin topilmadi")
+                payment = await db.get(Payment, payment_id)
+                if payment is None:
+                    raise HTTPException(404, "To'lov topilmadi")
+                if payment.status != PaymentStatus.PENDING:
+                    raise HTTPException(400, "Faqat PENDING to'lov tasdiqlanishi mumkin")
 
-            payment = await db.get(Payment, payment_id)
-            if payment is None:
-                raise HTTPException(404, "To'lov topilmadi")
-            if payment.status != PaymentStatus.PENDING:
-                raise HTTPException(400, "Faqat PENDING to'lov tasdiqlanishi mumkin")
+                now = datetime.datetime.now(datetime.timezone.utc)
+                balance = await _current_balance(db, payment.user_id)
 
-            now = datetime.datetime.now(datetime.timezone.utc)
-            balance = await _current_balance(db, payment.user_id)
-
-            subscription = None
-            if payment.plan_id is not None:
-                plan = await db.get(Plan, payment.plan_id)
-                subscription = await db.scalar(
-                    select(Subscription).where(
-                        Subscription.user_id == payment.user_id,
-                        Subscription.plan_id == plan.id,
-                        Subscription.status == SubscriptionStatus.ACTIVE,
+                subscription = None
+                if payment.plan_id is not None:
+                    plan = await db.get(Plan, payment.plan_id)
+                    subscription = await db.scalar(
+                        select(Subscription).where(
+                            Subscription.user_id == payment.user_id,
+                            Subscription.plan_id == plan.id,
+                            Subscription.status == SubscriptionStatus.ACTIVE,
+                        )
                     )
-                )
-                if subscription is not None and subscription.expires_at > now:
-                    subscription.expires_at += datetime.timedelta(days=plan.duration_days)
+                    if subscription is not None and subscription.expires_at > now:
+                        subscription.expires_at += datetime.timedelta(days=plan.duration_days)
+                    else:
+                        subscription = Subscription(
+                            user_id=payment.user_id,
+                            plan_id=plan.id,
+                            status=SubscriptionStatus.ACTIVE,
+                            started_at=now,
+                            expires_at=now + datetime.timedelta(days=plan.duration_days),
+                        )
+                        db.add(subscription)
+                    await db.flush()
+
+                    # Double-entry: tashqaridan pul kirdi (TOPUP), so'ng tarifga sarflandi (PURCHASE) — sof ta'sir 0.
+                    balance += payment.amount
+                    db.add(
+                        Transaction(
+                            user_id=payment.user_id,
+                            type=TransactionType.TOPUP,
+                            amount=payment.amount,
+                            balance_after=balance,
+                            reference_payment_id=payment.id,
+                        )
+                    )
+                    balance -= payment.amount
+                    db.add(
+                        Transaction(
+                            user_id=payment.user_id,
+                            type=TransactionType.PURCHASE,
+                            amount=-payment.amount,
+                            balance_after=balance,
+                            reference_payment_id=payment.id,
+                            reference_subscription_id=subscription.id,
+                        )
+                    )
+                    payment.subscription_id = subscription.id
                 else:
-                    subscription = Subscription(
-                        user_id=payment.user_id,
-                        plan_id=plan.id,
-                        status=SubscriptionStatus.ACTIVE,
-                        started_at=now,
-                        expires_at=now + datetime.timedelta(days=plan.duration_days),
+                    balance += payment.amount
+                    db.add(
+                        Transaction(
+                            user_id=payment.user_id,
+                            type=TransactionType.TOPUP,
+                            amount=payment.amount,
+                            balance_after=balance,
+                            reference_payment_id=payment.id,
+                        )
                     )
-                    db.add(subscription)
-                await db.flush()
 
-                # Double-entry: tashqaridan pul kirdi (TOPUP), so'ng tarifga sarflandi (PURCHASE) — sof ta'sir 0.
-                balance += payment.amount
-                db.add(
-                    Transaction(
-                        user_id=payment.user_id,
-                        type=TransactionType.TOPUP,
-                        amount=payment.amount,
-                        balance_after=balance,
-                        reference_payment_id=payment.id,
-                    )
+                payment.status = PaymentStatus.PAID
+                payment.confirmed_at = now
+                payment.confirmed_by_admin_id = admin.id
+
+                user = await db.get(User, payment.user_id)
+                user.balance = balance
+
+                await record_audit(
+                    db, actor_type=ActorType.ADMIN, actor_id=admin.id, action="payment_confirmed",
+                    entity_type="payment", entity_id=payment.id, meta={"amount": str(payment.amount)},
                 )
-                balance -= payment.amount
-                db.add(
-                    Transaction(
-                        user_id=payment.user_id,
-                        type=TransactionType.PURCHASE,
-                        amount=-payment.amount,
-                        balance_after=balance,
-                        reference_payment_id=payment.id,
-                        reference_subscription_id=subscription.id,
-                    )
-                )
-                payment.subscription_id = subscription.id
-            else:
-                balance += payment.amount
-                db.add(
-                    Transaction(
-                        user_id=payment.user_id,
-                        type=TransactionType.TOPUP,
-                        amount=payment.amount,
-                        balance_after=balance,
-                        reference_payment_id=payment.id,
-                    )
-                )
+                await db.commit()
+                await db.refresh(payment)
+                return payment
+            except DBAPIError as exc:
+                await db.rollback()
+                if _is_serialization_failure(exc) and attempt < _MAX_SERIALIZATION_RETRIES - 1:
+                    continue
+                raise HTTPException(409, "Bir vaqtda ko'p yangilanish — qaytadan urinib ko'ring") from exc
 
-            payment.status = PaymentStatus.PAID
-            payment.confirmed_at = now
-            payment.confirmed_by_admin_id = admin.id
-
-            user = await db.get(User, payment.user_id)
-            user.balance = balance
-
-            await db.commit()
-            await db.refresh(payment)
-            return payment
-        except DBAPIError as exc:
-            await db.rollback()
-            if _is_serialization_failure(exc) and attempt < _MAX_SERIALIZATION_RETRIES - 1:
-                continue
-            raise HTTPException(409, "Bir vaqtda ko'p yangilanish — qaytadan urinib ko'ring") from exc
+    raise HTTPException(409, "Bir vaqtda ko'p yangilanish — qaytadan urinib ko'ring")
 
     raise HTTPException(409, "Bir vaqtda ko'p yangilanish — qaytadan urinib ko'ring")
 
 
 @router.post("/{payment_id}/reject", response_model=PaymentOut)
-async def reject_payment(payment_id: int, payload: RejectPayment, db: AsyncSession = Depends(get_db)) -> Payment:
-    admin = await db.get(AdminUser, payload.admin_id)
-    if admin is None:
-        raise HTTPException(404, "Admin topilmadi")
-
+async def reject_payment(
+    payment_id: int,
+    payload: RejectPaymentAdmin,
+    admin: AdminUser = Depends(require_permission("payments")),
+    db: AsyncSession = Depends(get_db),
+) -> Payment:
     payment = await db.get(Payment, payment_id)
     if payment is None:
         raise HTTPException(404, "To'lov topilmadi")
@@ -210,6 +221,10 @@ async def reject_payment(payment_id: int, payload: RejectPayment, db: AsyncSessi
     payment.status = PaymentStatus.CANCELLED
     payment.confirmed_at = datetime.datetime.now(datetime.timezone.utc)
     payment.confirmed_by_admin_id = admin.id
+    await record_audit(
+        db, actor_type=ActorType.ADMIN, actor_id=admin.id, action="payment_rejected",
+        entity_type="payment", entity_id=payment.id, meta={"reason": payload.reason},
+    )
     await db.commit()
     await db.refresh(payment)
     return payment

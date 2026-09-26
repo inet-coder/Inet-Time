@@ -9,6 +9,9 @@ dependencies = [
     "cryptography>=43.0",
     "telethon>=1.36",
     "croniter>=2.0",
+    "bcrypt>=4.2",
+    "pyjwt>=2.9",
+    "pyotp>=2.9",
 ]
 
 [build-system]

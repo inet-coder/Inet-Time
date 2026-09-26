@@ -174,13 +174,6 @@ class PaymentOut(BaseModel):
     confirmed_by_admin_id: int | None
 
 
-class ConfirmPayment(BaseModel):
-    admin_id: int
-
-
-class RejectPayment(BaseModel):
-    admin_id: int
-    reason: str | None = None
 
 
 class PlanOut(BaseModel):
@@ -203,3 +196,97 @@ class SubscriptionOut(BaseModel):
     status: str
     started_at: datetime.datetime
     expires_at: datetime.datetime
+
+
+class AdminLogin(BaseModel):
+    username: str
+    password: str
+    totp_code: str | None = None
+
+
+class AdminTokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class AdminMeOut(BaseModel):
+    id: int
+    username: str
+    role_name: str
+    is_2fa_enabled: bool
+
+
+class Admin2faSetupOut(BaseModel):
+    secret: str
+    provisioning_uri: str
+
+
+class Admin2faVerify(BaseModel):
+    code: str
+
+
+class AdminUserView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    telegram_user_id: int | None
+    username: str | None
+    first_name: str | None
+    balance: float
+    is_banned: bool
+
+
+class SubscriptionExtend(BaseModel):
+    days: int
+
+
+class BalanceAdjust(BaseModel):
+    amount: float
+    reason: str
+
+
+class ServiceToggle(BaseModel):
+    is_active: bool
+
+
+class ServiceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name: str
+    is_active: bool
+
+
+class AuditLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    actor_type: str
+    actor_id: int | None
+    action: str
+    entity_type: str | None
+    entity_id: int | None
+    meta: dict
+    created_at: datetime.datetime
+
+
+class RejectPaymentAdmin(BaseModel):
+    reason: str | None = None
+
+
+class SystemSettingIn(BaseModel):
+    value: dict
+
+
+class SystemSettingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    value: dict
+
+
+class WorkerLeaseOut(BaseModel):
+    telegram_account_id: int
+    worker_id: str
+    ttl_seconds: int

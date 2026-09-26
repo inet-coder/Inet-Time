@@ -36,3 +36,31 @@ def decrypt(ciphertext: bytes, nonce: bytes, key_version: int) -> str:
 def generate_key() -> str:
     """Yangi SESSION_ENCRYPTION_KEY qiymati (base64, 32 bayt) — .env uchun."""
     return base64.b64encode(os.urandom(32)).decode("ascii")
+
+
+_NONCE_LEN = 12
+
+
+def pack(ciphertext: bytes, nonce: bytes, key_version: int) -> bytes:
+    """Uchtasini bitta BLOB ustunda saqlash uchun (masalan admin_users.totp_secret_encrypted).
+    Ajratuvchi belgi ishlatilmaydi — nonce uzunligi doim 12 bayt bo'lgani uchun xavfsiz."""
+    if len(nonce) != _NONCE_LEN:
+        raise ValueError("nonce 12 bayt bo'lishi kerak")
+    return key_version.to_bytes(4, "big") + nonce + ciphertext
+
+
+def unpack(blob: bytes) -> tuple[bytes, bytes, int]:
+    key_version = int.from_bytes(blob[:4], "big")
+    nonce = blob[4 : 4 + _NONCE_LEN]
+    ciphertext = blob[4 + _NONCE_LEN :]
+    return ciphertext, nonce, key_version
+
+
+def encrypt_packed(plaintext: str) -> bytes:
+    ciphertext, nonce, key_version = encrypt(plaintext)
+    return pack(ciphertext, nonce, key_version)
+
+
+def decrypt_packed(blob: bytes) -> str:
+    ciphertext, nonce, key_version = unpack(blob)
+    return decrypt(ciphertext, nonce, key_version)

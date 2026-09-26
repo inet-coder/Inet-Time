@@ -14,7 +14,14 @@ class TelethonFieldAdapter(FieldAdapter):
     users.GetFullUserRequest, photos.UploadProfilePhotoRequest, photos.DeletePhotosRequest."""
 
     def _client(self, session_string: str) -> TelegramClient:
-        return TelegramClient(StringSession(session_string), settings.telegram_api_id, settings.telegram_api_hash)
+        return TelegramClient(
+            StringSession(session_string),
+            settings.telegram_api_id,
+            settings.telegram_api_hash,
+            # Qisqa ulanish yangilanishlarni (updates) olmasin — aks holda ular listener'ga yetib bormaydi
+            # (bitta sessiya ikki ulanishda bo'lsa, Telegram ularni faqat bittasiga yuboradi).
+            receive_updates=False,
+        )
 
     async def get_current_value(self, session_string: str, field: ProfileField) -> str | None:
         if field in _UNSUPPORTED:

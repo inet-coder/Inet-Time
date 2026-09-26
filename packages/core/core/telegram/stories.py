@@ -38,7 +38,14 @@ class Peer:
 
 
 def _client(session_string: str) -> TelegramClient:
-    return TelegramClient(StringSession(session_string), settings.telegram_api_id, settings.telegram_api_hash)
+    return TelegramClient(
+            StringSession(session_string),
+            settings.telegram_api_id,
+            settings.telegram_api_hash,
+            # Qisqa ulanish yangilanishlarni (updates) olmasin — aks holda ular listener'ga yetib bormaydi
+            # (bitta sessiya ikki ulanishda bo'lsa, Telegram ularni faqat bittasiga yuboradi).
+            receive_updates=False,
+        )
 
 
 def _kind(media) -> str:

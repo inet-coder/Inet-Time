@@ -32,6 +32,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("listener")
 
 SYNC_SECONDS = 20
+CATCH_UP_SECONDS = 15
 DEBOUNCE_SECONDS = 4
 COOLDOWN_SECONDS = 20
 AWAY_SECONDS = 600
@@ -151,10 +152,19 @@ class Listener:
 
         @client.on(events.NewMessage(incoming=True, func=lambda e: e.is_private))
         async def on_incoming(event):
+            logger.info("akkaunt %s: shaxsiy xabar keldi (chat %s)", account_id, event.chat_id)
             await self._schedule(state, event)
 
         self.accounts[account_id] = state
         logger.info("AI avto-javob yoqildi: akkaunt %s", account_id)
+
+    async def catch_up(self) -> None:
+        """Zaxira: biror sabab bilan kelmay qolgan yangilanishlarni Telegram'dan o'zimiz so'rab olamiz."""
+        for state in list(self.accounts.values()):
+            try:
+                await state.client.catch_up()
+            except (RPCError, OSError) as exc:
+                logger.warning("catch_up xatosi (akkaunt %s): %s", state.account_id, exc)
 
     async def stop(self, account_id: int) -> None:
         state = self.accounts.pop(account_id, None)
@@ -253,8 +263,17 @@ class Listener:
             return True
         return False
 
+    async def catch_up_loop(self) -> None:
+        while True:
+            await asyncio.sleep(CATCH_UP_SECONDS)
+            try:
+                await self.catch_up()
+            except Exception:  # noqa: BLE001
+                logger.exception("catch_up siklida xato")
+
     async def run(self) -> None:
         logger.info("listener ishga tushdi")
+        asyncio.create_task(self.catch_up_loop())
         while True:
             try:
                 if await self.is_leader():

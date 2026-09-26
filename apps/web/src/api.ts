@@ -284,6 +284,9 @@ export type AdminAI = {
   usage: { today: Usage; month: Usage };
 };
 
+export type Pack = { code?: string; title: string; items: string[] };
+export type PacksAdmin = { packs: Pack[]; is_default: boolean; max_items: number; item_max_len: number };
+
 const A = "/webapp/admin";
 
 export const adminApi = {
@@ -306,6 +309,9 @@ export const adminApi = {
   ai: () => request<AdminAI>("GET", `${A}/ai`),
   saveAi: (model: string, enabled: boolean) => request<AdminAI>("PUT", `${A}/ai`, { model, enabled }),
   testAi: () => request<{ ok: boolean; reply?: string; model?: string; ms?: number; error?: string }>("POST", `${A}/ai/test`),
+  packs: () => request<PacksAdmin>("GET", `${A}/packs`),
+  savePacks: (packs: Pack[]) => request<PacksAdmin>("PUT", `${A}/packs`, { packs }),
+  resetPacks: () => request<PacksAdmin>("DELETE", `${A}/packs`),
   paymentSettings: () => request<{ instructions: string }>("GET", `${A}/settings/payment`),
   savePaymentSettings: (instructions: string) => request<{ instructions: string }>("PUT", `${A}/settings/payment`, { instructions }),
 };

@@ -17,6 +17,7 @@ from core.billing import PLAN_FEATURES, PromoError, paid_plans, payment_instruct
 from core.catalog import FIELD_LIMITS, SERVICE_CATALOG, SERVICE_CODES, TEMPLATE_VARIABLES
 from core.db.models import AccountAI, Automation, MediaFile, ProfileSnapshot, Schedule, TelegramAccount, User
 from core.notify import send_telegram
+from core.playlist_packs import get_packs
 from core.preview import automation_preview
 from core.settings import settings
 from core.templates import TemplateContext, render
@@ -123,7 +124,11 @@ async def state(account_id: int | None = None, user: User = Depends(current_user
     overview = await get_overview(user.id, db)
     plans = await paid_plans(db)
     flags = overview["plan"]["flags"]
-    catalog = [{**s, "unlocked": s["flag"] is None or bool(flags.get(s["flag"]))} for s in SERVICE_CATALOG]
+    packs = await get_packs(db)
+    catalog = [
+        {**s, "unlocked": s["flag"] is None or bool(flags.get(s["flag"])), **({"packs": packs} if s["kind"] == "playlist" else {})}
+        for s in SERVICE_CATALOG
+    ]
 
     base = {
         "user": overview["user"],

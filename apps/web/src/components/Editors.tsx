@@ -173,6 +173,12 @@ export function TemplateEditor({ state, service, active, setOverrides, save, bus
 
 // --- Bio playlist ---
 
+// Playlistda ko'pi bilan 10 ta: to'plam katta bo'lsa — har bosishda tasodifiy 10 tasi.
+function pickItems(items: string[]): string[] {
+  if (items.length <= 10) return items;
+  return [...items].sort(() => Math.random() - 0.5).slice(0, 10);
+}
+
 export function PlaylistEditor({ state, service, active, setOverrides, save, busy }: EditorProps) {
   const [items, setItems] = useState<string[]>(active ? active.actions.map((a) => a.template) : ["", ""]);
   const [order, setOrder] = useState<"SEQUENTIAL" | "RANDOM">(active?.selection_strategy === "RANDOM" ? "RANDOM" : "SEQUENTIAL");
@@ -209,7 +215,7 @@ export function PlaylistEditor({ state, service, active, setOverrides, save, bus
                 className={`chip-btn ${pack === p.code ? "is-selected" : ""}`}
                 onClick={() => {
                   setPack(p.code);
-                  setItems(p.items);
+                  setItems(pickItems(p.items));
                   setFocus(0);
                 }}
               >

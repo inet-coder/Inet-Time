@@ -5,6 +5,9 @@ import {
   Check,
   Bot,
   ChevronRight,
+  ListMusic,
+  RotateCcw,
+  Trash2,
   CreditCard,
   Gift,
   Layers,
@@ -30,6 +33,7 @@ import {
   type AdminUserRow,
   type Feature,
   type LimitMeta,
+  type Pack,
   type PlanInput,
   type Promo,
   type PromoInput,
@@ -40,13 +44,14 @@ import { dateText, fromDateInput, money, toDateInput } from "../util";
 import { Sheet } from "./Sheet";
 
 type Toast = (text: string, kind?: "ok" | "err") => void;
-type Section = "home" | "payments" | "plans" | "promos" | "users" | "ai" | "settings";
+type Section = "home" | "payments" | "plans" | "promos" | "packs" | "users" | "ai" | "settings";
 
 const SECTIONS: [Section, typeof Zap, string][] = [
   ["home", LayoutDashboard, "Umumiy"],
   ["payments", CreditCard, "To'lovlar"],
   ["plans", Layers, "Tariflar"],
   ["promos", Ticket, "Promokodlar"],
+  ["packs", ListMusic, "Playlistlar"],
   ["users", Users, "Foydalanuvchilar"],
   ["ai", Bot, "AI"],
   ["settings", Settings, "Sozlamalar"],
@@ -686,6 +691,142 @@ function Promos({ toast }: { toast: Toast }) {
   );
 }
 
+// --- Playlist to'plamlari ---
+
+function PackEditor({
+  pack,
+  maxItems,
+  maxLen,
+  onSave,
+  onDelete,
+  onClose,
+}: {
+  pack: Pack | null;
+  maxItems: number;
+  maxLen: number;
+  onSave: (pack: Pack) => Promise<boolean>;
+  onDelete?: () => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState(pack?.title ?? "");
+  const [text, setText] = useState((pack?.items ?? []).join("\n"));
+  const [busy, setBusy] = useState(false);
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const long = lines.filter((l) => l.length > maxLen);
+  const valid = title.trim() && lines.length >= 2 && lines.length <= maxItems && long.length === 0;
+
+  const save = async () => {
+    setBusy(true);
+    const ok = await onSave({ code: pack?.code, title: title.trim(), items: lines });
+    setBusy(false);
+    if (ok) onClose();
+  };
+
+  return (
+    <Sheet title={pack ? pack.title : "Yangi to'plam"} onClose={onClose}>
+      <Field label="Nomi" hint="Boshida emoji bo'lsa chiroyli: 😂 Hazil">
+        <input className="input" maxLength={40} value={title} onChange={(e) => setTitle(e.target.value)} />
+      </Field>
+      <Field
+        label={`Matnlar (${lines.length}/${maxItems}) — har biri yangi qatorda`}
+        hint={`Har matn ${maxLen} belgigacha. {time}, {weekday}, {newyear_days} kabi o'zgaruvchilar ishlaydi. 10 tadan ko'p bo'lsa, foydalanuvchiga tasodifiy 10 tasi tushadi.`}
+      >
+        <textarea className="input pack-textarea" rows={12} value={text} onChange={(e) => setText(e.target.value)} />
+      </Field>
+      {long.length > 0 && (
+        <div className="preview preview--err">
+          <span>
+            Juda uzun ({long.length} ta): «{long[0].slice(0, 40)}…» — {long[0].length}/{maxLen}
+          </span>
+        </div>
+      )}
+      <button className="btn btn--primary" disabled={busy || !valid} onClick={save}>
+        Saqlash
+      </button>
+      {onDelete && (
+        <button
+          className="btn btn--danger"
+          disabled={busy}
+          onClick={async () => {
+            if (await confirmDialog(`«${pack?.title}» o'chirilsinmi?`)) {
+              setBusy(true);
+              if (await onDelete()) onClose();
+              setBusy(false);
+            }
+          }}
+        >
+          <Trash2 size={16} /> O'chirish
+        </button>
+      )}
+    </Sheet>
+  );
+}
+
+function PacksAdmin({ toast }: { toast: Toast }) {
+  const { data } = useQuery({ queryKey: ["admin", "packs"], queryFn: adminApi.packs });
+  const refresh = useRefresh();
+  const [editing, setEditing] = useState<number | "new" | null>(null);
+  if (!data) return <div className="spinner spinner--center" />;
+
+  const persist = (packs: Pack[], ok: string) =>
+    run(toast, () => adminApi.savePacks(packs), ok).then((done) => {
+      if (done) refresh();
+      return done;
+    });
+
+  return (
+    <div className="stack">
+      <p className="hint">
+        Foydalanuvchilar Bio playlist sozlaganda shu to'plamlardan birini bir bosishda tanlaydi.
+        {data.is_default ? " Hozir standart to'plamlar." : " To'plamlar siz tomondan o'zgartirilgan."}
+      </p>
+      <button className="btn btn--primary" style={{ marginTop: 0 }} onClick={() => setEditing("new")}>
+        <Plus size={18} /> Yangi to'plam
+      </button>
+      {data.packs.map((pack, i) => (
+        <button key={pack.code ?? i} className="card pack-card" onClick={() => setEditing(i)}>
+          <div className="pack-card__head">
+            <b>{pack.title}</b>
+            <span className="tag">{pack.items.length} ta</span>
+          </div>
+          <span className="hint">{pack.items.slice(0, 2).join(" · ")}</span>
+        </button>
+      ))}
+      {!data.is_default && (
+        <button
+          className="btn btn--ghost"
+          onClick={async () => {
+            if (await confirmDialog("Barcha to'plamlar standart holatga qaytarilsinmi? O'zgarishlaringiz o'chadi.")) {
+              if (await run(toast, adminApi.resetPacks, "Standart to'plamlar qaytarildi")) refresh();
+            }
+          }}
+        >
+          <RotateCcw size={16} /> Standartga qaytarish
+        </button>
+      )}
+      {editing !== null && (
+        <PackEditor
+          pack={editing === "new" ? null : data.packs[editing]}
+          maxItems={data.max_items}
+          maxLen={data.item_max_len}
+          onClose={() => setEditing(null)}
+          onSave={(pack) =>
+            persist(
+              editing === "new" ? [...data.packs, pack] : data.packs.map((p, j) => (j === editing ? pack : p)),
+              `${pack.title} saqlandi`,
+            )
+          }
+          onDelete={
+            editing === "new" || data.packs.length <= 1
+              ? undefined
+              : () => persist(data.packs.filter((_, j) => j !== editing), "To'plam o'chirildi")
+          }
+        />
+      )}
+    </div>
+  );
+}
+
 // --- Foydalanuvchilar ---
 
 function UserSheet({ user: initial, onClose, toast }: { user: AdminUserRow; onClose: () => void; toast: Toast }) {
@@ -982,6 +1123,7 @@ export function AdminView({ toast }: { toast: Toast }) {
       {section === "payments" && <Payments toast={toast} />}
       {section === "plans" && <Plans toast={toast} />}
       {section === "promos" && <Promos toast={toast} />}
+      {section === "packs" && <PacksAdmin toast={toast} />}
       {section === "users" && <UsersAdmin toast={toast} />}
       {section === "ai" && <AIAdmin toast={toast} />}
       {section === "settings" && <SettingsAdmin toast={toast} />}

@@ -22,7 +22,7 @@ from catalog import (
     unlocking_plan,
 )
 from common import current_account, db_user_id, safe_answer, safe_edit
-from core.catalog import PLAYLIST_PACKS
+from core.playlist_packs import pick_items
 from core.settings import settings
 from core.templates import TemplateContext, render
 from states import ProSetup
@@ -178,7 +178,7 @@ async def start_setup(callback: CallbackQuery, state: FSMContext) -> None:
             f"Yoki o'z matnlaringizni yuboring — har biri yangi qatorda (2–{MAX_ITEMS} ta):\n"
             "Bugun ajoyib kun ☀️\nKod yozyapman 💻\nQahva ichyapman ☕️\n\n"
             "💡 {time}, {weekday} ham ishlaydi.",
-            kb.playlist_packs(PLAYLIST_PACKS),
+            kb.playlist_packs(await api_client.playlist_packs()),
         )
     elif code == "schedule":
         await safe_edit(callback, "🗓 Vaqtga qarab nima o'zgarsin?", kb.choose_schedule_field())
@@ -242,13 +242,15 @@ async def playlist_items(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("pl_pack:"))
 async def playlist_pack(callback: CallbackQuery, state: FSMContext) -> None:
-    pack = next((p for p in PLAYLIST_PACKS if p["code"] == callback.data.split(":", 1)[1]), None)
+    packs = await api_client.playlist_packs()
+    pack = next((p for p in packs if p["code"] == callback.data.split(":", 1)[1]), None)
     if pack is None:
-        await safe_answer(callback)
+        await safe_answer(callback, "To'plam topilmadi — qaytadan tanlang", show_alert=True)
         return
-    await state.update_data(items=pack["items"])
+    items = pick_items(pack)
+    await state.update_data(items=items)
     _, _, account = await _load(callback.from_user)
-    preview = "\n".join(f"• {_preview(item, account)}" for item in pack["items"])
+    preview = "\n".join(f"• {_preview(item, account)}" for item in items)
     await safe_edit(callback, f"{pack['title']} to'plami:\n\n{preview}\n\nQanday tartibda almashsin?", kb.choose_order())
     await safe_answer(callback)
 

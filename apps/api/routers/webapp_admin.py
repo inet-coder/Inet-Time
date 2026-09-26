@@ -13,6 +13,15 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core import ai
+from core.playlist_packs import (
+    DEFAULT_PACKS,
+    ITEM_MAX_LEN,
+    MAX_PACK_ITEMS,
+    MAX_PACKS,
+)
+from core.playlist_packs import SETTING_KEY as PACKS_KEY
+from core.playlist_packs import get_packs, slugify
+from core.templates import TemplateContext, render
 from core.audit import record_audit
 from core.billing import FREE_CODE, PAYMENT_SETTING_KEY, PLAN_FEATURES, PLAN_LIMITS, normalize_code, payment_instructions
 from core.db.enums import ActorType, AutomationStatus, PaymentStatus, SubscriptionStatus, TransactionType
@@ -597,3 +606,73 @@ async def test_ai(admin: User = Depends(current_admin), db: AsyncSession = Depen
     await ai.log_usage(db, admin.id, "test", result)
     ms = int((datetime.datetime.now() - started).total_seconds() * 1000)
     return {"ok": True, "reply": result.text, "model": result.model, "ms": ms}
+
+
+# --- Playlist to'plamlari ---
+
+
+class PackIn(BaseModel):
+    code: str | None = None
+    title: str = Field(min_length=1, max_length=40)
+    items: list[str]
+
+
+class PacksIn(BaseModel):
+    packs: list[PackIn]
+
+
+def _check_item(text: str) -> str | None:
+    """Xato matni yoki None. Namuna kontekst bilan render qilinadi — noma'lum o'zgaruvchi va uzunlik tekshiriladi."""
+    ctx = TemplateContext(first_name="Sardor", username="user", timezone=settings.default_timezone, birthday="2000-10-08")
+    try:
+        rendered = render(text, ctx)
+    except ValueError as exc:
+        return str(exc)
+    if len(rendered) > ITEM_MAX_LEN:
+        return f"juda uzun ({len(rendered)}/{ITEM_MAX_LEN})"
+    return None
+
+
+@router.get("/packs")
+async def list_packs(admin: User = Depends(current_admin), db: AsyncSession = Depends(get_db)) -> dict:
+    row = await db.scalar(select(SystemSetting).where(SystemSetting.key == PACKS_KEY))
+    return {"packs": await get_packs(db), "is_default": row is None, "max_items": MAX_PACK_ITEMS, "item_max_len": ITEM_MAX_LEN}
+
+
+@router.put("/packs")
+async def save_packs(payload: PacksIn, admin: User = Depends(current_admin), db: AsyncSession = Depends(get_db)) -> dict:
+    if not 1 <= len(payload.packs) <= MAX_PACKS:
+        raise HTTPException(400, f"1–{MAX_PACKS} ta to'plam bo'lsin")
+    taken: set[str] = set()
+    packs = []
+    for pack in payload.packs:
+        items = [i.strip() for i in pack.items if i.strip()]
+        if not 2 <= len(items) <= MAX_PACK_ITEMS:
+            raise HTTPException(400, f"«{pack.title}»: 2–{MAX_PACK_ITEMS} ta matn bo'lsin")
+        for item in items:
+            error = _check_item(item)
+            if error:
+                raise HTTPException(400, f"«{pack.title}» → «{item}»: {error}")
+        code = pack.code if pack.code and re.fullmatch(r"[a-z0-9_]{1,32}", pack.code) and pack.code not in taken else slugify(pack.title, taken)
+        taken.add(code)
+        packs.append({"code": code, "title": pack.title.strip(), "items": items})
+    row = await db.scalar(select(SystemSetting).where(SystemSetting.key == PACKS_KEY))
+    if row is None:
+        row = SystemSetting(key=PACKS_KEY, value={})
+        db.add(row)
+    row.value = {"packs": packs}
+    await record_audit(
+        db, actor_type=ActorType.ADMIN, actor_id=None, action="playlist_packs_updated", entity_type="system_setting",
+        entity_id=None, meta={"by_telegram_id": admin.telegram_user_id, "count": len(packs)},
+    )
+    await db.commit()
+    return await list_packs(admin, db)
+
+
+@router.delete("/packs")
+async def reset_packs(admin: User = Depends(current_admin), db: AsyncSession = Depends(get_db)) -> dict:
+    row = await db.scalar(select(SystemSetting).where(SystemSetting.key == PACKS_KEY))
+    if row is not None:
+        await db.delete(row)
+        await db.commit()
+    return {"packs": DEFAULT_PACKS, "is_default": True, "max_items": MAX_PACK_ITEMS, "item_max_len": ITEM_MAX_LEN}

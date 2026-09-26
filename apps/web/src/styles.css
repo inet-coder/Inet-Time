@@ -2269,3 +2269,26 @@ svg {
   height: 20px;
   border-width: 2px;
 }
+
+/* --- Admin: playlist to'plamlari --- */
+.pack-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+}
+.pack-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.pack-card .hint {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pack-textarea {
+  font-size: 14px;
+  line-height: 1.5;
+}

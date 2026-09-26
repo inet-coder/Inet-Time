@@ -21,118 +21,6 @@ TEMPLATE_VARIABLES = [
     {"key": "{daypart}", "label": "☀️ Xayrli tong/kech"},
 ]
 
-# Bio playlist uchun tayyor to'plamlar — bir bosishda to'ldiriladi. Har matn ≤ 70 belgi (Telegram bio chegarasi).
-PLAYLIST_PACKS = [
-    {
-        "code": "fun",
-        "title": "😂 Hazil",
-        "items": [
-            "Wi-Fi paroli: avval salom bering 😏",
-            "Bu bio hozircha yuklanmoqda... ⏳",
-            "Dangasalik bo'yicha jahon chempioni 🏆",
-            "Dushanbadan boshlayman. Qaysi dushanba — noma'lum 📅",
-            "Aqlli ko'rinish uchun ko'zoynak taqqanman 🤓",
-            "Oshni sevaman, oshga ham shuni ayting 🍚",
-        ],
-    },
-    {
-        "code": "coder",
-        "title": "💻 Dasturchi",
-        "items": [
-            "while (alive) { code(); coffee++; } ☕️",
-            "Ishlayapti — tegmang! 🙏",
-            "Bug emas, bu feature 🐞✨",
-            "git commit -m 'oxirgi tuzatish' (7-marta) 😅",
-            "Kodim ishladi, lekin nega — bilmayman 🤷‍♂️",
-            "Stack Overflow — ikkinchi uyim 🏠",
-        ],
-    },
-    {
-        "code": "mood",
-        "title": "☕️ Kayfiyat",
-        "items": [
-            "Hozir: qahva + musiqa 🎧☕️",
-            "Bugun ajoyib kun bo'ladi ☀️",
-            "Rejim: jim va samarali 🔕",
-            "Kayfiyat: shokolad kerak 🍫",
-            "Yomg'ir, choy va kitob 🌧📖",
-            "Hamma narsa yaxshi bo'ladi ✨",
-        ],
-    },
-    {
-        "code": "work",
-        "title": "💼 Ish",
-        "items": [
-            "Hozir uchrashuvdaman, keyinroq yozaman 📞",
-            "Loyiha ustida ishlayapman 🚀",
-            "Dedlayn yaqin, men esa tinchman 😌",
-            "Emaildan ko'ra Telegram tezroq ⚡️",
-            "Ish vaqti: 9:00–18:00 🕘",
-            "Bugun samarali kun 📈",
-        ],
-    },
-    {
-        "code": "student",
-        "title": "🎓 Talaba",
-        "items": [
-            "Sessiya yaqin, uyqu uzoq 📚😴",
-            "Konspekt kimda bor? 🙋",
-            "Imtihondan keyin odam bo'laman 🎓",
-            "Stipendiya kuni — bayram kuni 💸",
-            "Kutubxonada yashayapman 🏛",
-            "Bilim — kuch, uyqu — undan ham kuchli 😴",
-        ],
-    },
-    {
-        "code": "sport",
-        "title": "🏋️ Sport",
-        "items": [
-            "Zalga ketdim, qaytmasam — oqsil ichib qolganman 💪",
-            "Bugun oyoq kuni 🦵",
-            "Yugurish: 5 km ✅ Qolgani: dangasalik ❌",
-            "No pain, no gain 🔥",
-            "Futbol — hayotim ⚽️",
-            "Ertaga albatta boshlayman... ertaga 🏃",
-        ],
-    },
-    {
-        "code": "wise",
-        "title": "🌙 Hikmat",
-        "items": [
-            "Sabr — eng yaxshi javob 🌿",
-            "Kichik qadam ham oldinga qadam 👣",
-            "Bugun qilgan ishing ertangi kuningdir ✨",
-            "Jimlik ham javob 🤍",
-            "Kim harakat qilsa, o'sha yetadi 🏔",
-            "Har kun — yangi imkoniyat 🌅",
-        ],
-    },
-    {
-        "code": "food",
-        "title": "🍔 Ovqat",
-        "items": [
-            "Palov bo'lsa chaqiring 🍚",
-            "Parhez dushanbadan (qaysi yil — aniq emas) 🥗",
-            "Somsa yeyapman, bezovta qilmang 🥟",
-            "Choy + non = baxt ☕️🍞",
-            "Ovqat haqida gaplashsak — doim tayyorman 🍔",
-            "Muzqaymoq — sevgi tili 🍦",
-        ],
-    },
-    {
-        "code": "live",
-        "title": "⏳ Jonli",
-        "items": [
-            "{daypart} · {time}",
-            "📆 {weekday} · {date}",
-            "🎄 Yangi yilga {newyear_days} kun",
-            "⏳ {year}: {year_bar} {year_percent}%",
-            "📆 {weekend}",
-            "🕐 Toshkentda hozir {time}",
-        ],
-    },
-]
-
 # 🎂 kartasidagi tayyor shablonlar (bio uchun). Tug'ilgan kun kiritilgan bo'lishi kerak.
 BIRTHDAY_TEMPLATES = [
     "🎂 {bday}",
@@ -203,7 +91,6 @@ SERVICE_CATALOG = [
         "desc": "Bir nechta bio navbat bilan yoki tasodifiy almashadi",
         "flag": "playlist_service",
         "intervals": [600, 1800, 3600, 10800, 86400],
-        "packs": PLAYLIST_PACKS,
     },
     {
         "code": "schedule",

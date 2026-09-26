@@ -11,6 +11,7 @@ from core.catalog import BIRTHDAY_TEMPLATES
 from core.db.enums import AutomationStatus
 from core.db.models import Automation, Service, TelegramAccount, User
 from core.entitlements import get_entitlement
+from core.playlist_packs import get_packs
 from core.telegram.presence import get_last_seen, get_telegram_birthday, set_last_seen
 from core.templates import parse_birthday, render
 from deps import get_db
@@ -191,3 +192,8 @@ async def internal_get_presence(user_id: int, account_id: int, db: AsyncSession 
 async def internal_put_presence(user_id: int, account_id: int, payload: PresenceIn, db: AsyncSession = Depends(get_db)) -> dict:
     user, account = await _internal(db, user_id, account_id)
     return await save_presence(db, user, account, payload.mode)
+
+
+@internal_router.get("/playlist-packs")
+async def internal_playlist_packs(db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await get_packs(db)

@@ -146,6 +146,9 @@ class ApiClient:
     async def save_presence(self, user_id: int, account_id: int, mode: str) -> dict:
         return await self._call("PUT", f"/profile/{user_id}/{account_id}/presence", json={"mode": mode})
 
+    async def playlist_packs(self) -> list[dict]:
+        return await self._call("GET", "/profile/playlist-packs")
+
     async def payment_instructions(self) -> str:
         return (await self._call("GET", "/payments/instructions"))["instructions"]
 

@@ -8,6 +8,7 @@ dependencies = [
     "asyncpg>=0.29",
     "cryptography>=43.0",
     "telethon>=1.36",
+    "croniter>=2.0",
 ]
 
 [build-system]

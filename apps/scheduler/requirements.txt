@@ -1,1 +1,2 @@
 pydantic-settings>=2.4
+arq>=0.26

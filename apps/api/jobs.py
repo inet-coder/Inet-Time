@@ -1,10 +1,7 @@
-import uuid
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.enums import WorkerJobStatus
-from core.db.models import WorkerJob
 from arq_pool import get_pool
+from core.job_dispatch import enqueue_job
 
 
 async def enqueue(
@@ -15,18 +12,14 @@ async def enqueue(
     automation_id: int | None,
     task_kwargs: dict,
 ) -> str:
-    job_id = f"{task_name}:{uuid.uuid4().hex}"
-    db.add(
-        WorkerJob(
-            job_id=job_id,
-            telegram_account_id=telegram_account_id,
-            automation_id=automation_id,
-            status=WorkerJobStatus.PENDING,
-            payload={"task": task_name, **task_kwargs},
-        )
-    )
-    await db.commit()
-
     pool = await get_pool()
-    await pool.enqueue_job(task_name, job_id=job_id, _job_id=job_id, **task_kwargs)
+    job_id = await enqueue_job(
+        pool,
+        db,
+        task_name=task_name,
+        telegram_account_id=telegram_account_id,
+        automation_id=automation_id,
+        task_kwargs=task_kwargs,
+    )
+    assert job_id is not None  # tasodifiy uuid — kolliziya bo'lmaydi
     return job_id

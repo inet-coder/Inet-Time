@@ -118,6 +118,17 @@ class ApiClient:
 
     # --- billing ---
 
+    # --- AI va Stories ---
+
+    async def get_ai(self, user_id: int, account_id: int) -> dict:
+        return await self._call("GET", f"/ai/{user_id}/{account_id}")
+
+    async def save_ai(self, user_id: int, account_id: int, settings_: dict) -> dict:
+        return await self._call("PUT", f"/ai/{user_id}/{account_id}", json=settings_)
+
+    async def send_stories(self, user_id: int, account_id: int, username: str) -> dict:
+        return await self._call("POST", f"/ai/{user_id}/{account_id}/stories", json={"username": username})
+
     async def payment_instructions(self) -> str:
         return (await self._call("GET", "/payments/instructions"))["instructions"]
 

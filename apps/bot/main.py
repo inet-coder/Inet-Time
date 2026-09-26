@@ -11,7 +11,7 @@ from api_client import api_client
 from catalog import STUDIO_SHORT
 from common import set_webapp_url, webapp_url
 from core.settings import settings
-from handlers import add_account, admin, billing, home, pro, start
+from handlers import add_account, admin, ai, billing, home, pro, start
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("bot")
@@ -21,6 +21,7 @@ dp.include_router(start.router)
 dp.include_router(add_account.router)
 dp.include_router(billing.router)
 dp.include_router(admin.router)
+dp.include_router(ai.router)  # pro'dan oldin: "pro:ai" / "pro:stories" aniq mos kelsin
 dp.include_router(pro.router)
 dp.include_router(home.router)  # oxirida: holatsiz xabarlar uchun fallback shu yerda
 

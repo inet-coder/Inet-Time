@@ -87,6 +87,10 @@ async def build_home(tg_user_id: int, user_id: int, first_name: str | None = Non
         return _welcome(first_name), kb.home_no_account(admin)
 
     live = {a["service_code"]: a for a in account["automations"]}
+    if overview["plan"]["flags"].get("ai_service"):
+        ai_state = await api_client.get_ai(user_id, account["id"])
+        if ai_state["settings"]["enabled"]:
+            live["ai"] = {"status": "ACTIVE", "service_code": "ai"}
     lines = [
         f"👤 {_account_label(account)}",
         f"{plan_line(overview)} · 💰 {money(overview['user']['balance'])}",

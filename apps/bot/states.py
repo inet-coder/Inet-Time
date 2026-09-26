@@ -24,3 +24,11 @@ class ProSetup(StatesGroup):
     schedule_lines = State()
     emoji_items = State()
     photo_collecting = State()
+
+
+class AISetup(StatesGroup):
+    waiting_style = State()
+
+
+class StoriesAsk(StatesGroup):
+    waiting_username = State()

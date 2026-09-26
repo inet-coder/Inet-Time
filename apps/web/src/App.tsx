@@ -27,6 +27,7 @@ import {
   type EditorProps,
 } from "./components/Editors";
 import { AdminView } from "./components/AdminView";
+import { AIReplyEditor, StoriesEditor } from "./components/AIEditors";
 import { PlansView } from "./components/PlansView";
 import { ProfileCard } from "./components/ProfileCard";
 import { ServiceGrid } from "./components/ServiceGrid";
@@ -36,6 +37,9 @@ import { Timeline } from "./components/Timeline";
 import { buildProfile, nextChangeAt, unlockingPlan, type Mode, type Overrides } from "./profile";
 import { confirmDialog, haptic, matchChrome, openBot, tg } from "./tg";
 import { money, whenText } from "./util";
+
+// Profil maydonini o'zgartirmaydigan xizmatlar — o'z oynasi bor, "profil ko'rinishi" ko'rsatilmaydi.
+const SPECIAL_EDITORS: Record<string, typeof AIReplyEditor> = { ai_reply: AIReplyEditor, stories: StoriesEditor };
 
 const EDITORS: Record<string, (p: EditorProps) => JSX.Element> = {
   template: TemplateEditor,
@@ -123,11 +127,26 @@ function Main() {
 
   if (!state) return <Loader />;
 
-  const services = state.services ?? [];
+  // AI avto-javob automation emas — kartada "yoqilgan" ko'rinishi uchun sun'iy yozuv qo'shamiz.
+  const services: ActiveService[] = [
+    ...(state.services ?? []),
+    ...(state.ai_reply?.enabled ? [aiService()] : []),
+  ];
   const lockLabel = (svc: CatalogService) => (unlockingPlan(state, svc.flag)?.name ?? "PRO").toUpperCase();
   const toggle = async (code: string, active: ActiveService | undefined) => {
     haptic();
     const meta = state.catalog.find((c) => c.code === code)!;
+    if (active && code === "ai_reply") {
+      try {
+        const current = await api.ai(state.account!.id);
+        await api.saveAi(state.account!.id, { ...current.settings, enabled: false });
+        showToast("AI avto-javob o'chirildi");
+        refresh();
+      } catch (e) {
+        showToast((e as Error).message, "err");
+      }
+      return;
+    }
     if (active) {
       if (!(await confirmDialog(`${meta.title} o'chirilsinmi? Profil asl holiga qaytadi.`))) return;
       try {
@@ -274,7 +293,7 @@ function ProfileTab({ state, mode, setMode, onOpen }: { state: State; mode: Mode
   const profile = useMemo(() => buildProfile(state, mode), [state, mode]);
   const nextAt = nextChangeAt(state);
   const catalog = Object.fromEntries(state.catalog.map((c) => [c.code, c]));
-  const services = state.services ?? [];
+  const services = [...(state.services ?? []), ...(state.ai_reply?.enabled ? [aiService()] : [])];
   const active = services.filter((s) => s.status === "ACTIVE").length;
 
   return (
@@ -341,7 +360,23 @@ function ProfileTab({ state, mode, setMode, onOpen }: { state: State; mode: Mode
   );
 }
 
+function aiService(): ActiveService {
+  return {
+    id: -1,
+    service_code: "ai_reply",
+    status: "ACTIVE",
+    field: "ai",
+    template: "",
+    selection_strategy: "NONE",
+    interval_seconds: null,
+    error_message: null,
+    actions: [],
+    preview: { field: "ai", current: "", next: null, next_at: null },
+  };
+}
+
 function previewText(s: ActiveService): string {
+  if (s.service_code === "ai_reply") return "shaxsiy chatlarda javob beradi";
   if (s.field === "photo") return `${s.actions.length} ta rasm`;
   if (s.field === "emoji_status") return `${s.actions.length} ta emoji`;
   if (s.field === "online") return "doim online";
@@ -366,6 +401,7 @@ function ServiceSheet({
   const service = state.catalog.find((c) => c.code === code)!;
   const active = (state.services ?? []).find((s) => s.service_code === code);
   const unlock = unlockingPlan(state, service.flag);
+  const Special = SPECIAL_EDITORS[service.kind];
   const [overrides, setOverridesState] = useState<Overrides>({});
   const [busy, setBusy] = useState(false);
   const setOverrides = useCallback((o: Overrides) => setOverridesState(o), []);
@@ -420,6 +456,8 @@ function ServiceSheet({
             <Crown size={18} /> Tariflarni ko'rish
           </button>
         </div>
+      ) : Special ? (
+        <Special state={state} onDone={onDone} onError={onError} />
       ) : (
         <>
           <div className="sheet__preview">

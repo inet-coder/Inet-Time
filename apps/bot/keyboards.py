@@ -266,3 +266,31 @@ def admin_users(users: list[dict]) -> InlineKeyboardMarkup:
 def admin_user_view(user_id: int, is_banned: bool) -> InlineKeyboardMarkup:
     action = ("✅ Blokdan chiqarish", f"adm_unban:{user_id}") if is_banned else ("🚫 Bloklash", f"adm_ban:{user_id}")
     return _kb([[action], [("⬅️ Orqaga", "adm_users")]])
+
+
+# --- AI avto-javob va Stories ---
+
+
+def ai_menu(data: dict) -> InlineKeyboardMarkup:
+    s = data["settings"]
+    presets = [(("✅ " if s["preset"] == p["code"] else "") + p["title"], f"ai_preset:{p['code']}") for p in data["presets"]]
+    rows = [[("⏹ O'chirish", "ai_off")] if s["enabled"] else [("✅ Yoqish", "ai_on")]]
+    rows += [presets[i : i + 2] for i in range(0, len(presets), 2)]
+    rows.append([(("✅ " if s["preset"] == "custom" else "") + "✍️ O'z uslubim", "ai_custom")])
+    rows.append(
+        [
+            ("🙋 Faqat bandligimda: " + ("ha" if s["only_when_away"] else "yo'q"), "ai_away"),
+            ("🤖 belgi: " + ("ha" if s["signature"] else "yo'q"), "ai_sig"),
+        ]
+    )
+    rows += _webapp_row()
+    rows.append([("⬅️ Orqaga", "pro")])
+    return _kb(rows)
+
+
+def cancel_to(target: str) -> InlineKeyboardMarkup:
+    return _kb([[("❌ Bekor qilish", target)]])
+
+
+def stories_again() -> InlineKeyboardMarkup:
+    return _kb([[("👀 Yana stories", "pro:stories")], [("🏠 Bosh sahifa", "home")]])

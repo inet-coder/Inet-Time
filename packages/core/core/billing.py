@@ -17,6 +17,7 @@ PAYMENT_SETTING_KEY = "payment"
 PLAN_LIMITS = [
     {"key": "account_limit", "title": "Akkauntlar soni", "min": 1, "max": 50},
     {"key": "scheduler_limit", "title": "Bir vaqtda xizmatlar", "min": 1, "max": 100},
+    {"key": "ai_daily_limit", "title": "AI so'rovlar / kun", "min": 0, "max": 5000},
 ]
 PLAN_FEATURES = [
     {"key": "schedule_service", "title": "Jadval", "service": "schedule"},
@@ -24,6 +25,8 @@ PLAN_FEATURES = [
     {"key": "online_service", "title": "24/7 Online", "service": "online"},
     {"key": "emoji_service", "title": "Emoji status", "service": "emoji"},
     {"key": "photo_service", "title": "Rasm almashtirish", "service": "photo"},
+    {"key": "ai_service", "title": "AI avto-javob va yozish", "service": "ai_reply"},
+    {"key": "stories_service", "title": "Stories yuklash", "service": "stories"},
 ]
 
 _CENT = decimal.Decimal("1")

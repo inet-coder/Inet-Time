@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.billing import PLAN_FEATURES, PromoError, paid_plans, payment_instructions, plan_public, quote
 from core.catalog import FIELD_LIMITS, SERVICE_CATALOG, SERVICE_CODES, TEMPLATE_VARIABLES
-from core.db.models import Automation, MediaFile, ProfileSnapshot, Schedule, TelegramAccount, User
+from core.db.models import AccountAI, Automation, MediaFile, ProfileSnapshot, Schedule, TelegramAccount, User
 from core.notify import send_telegram
 from core.preview import automation_preview
 from core.settings import settings
@@ -181,7 +181,14 @@ async def state(account_id: int | None = None, user: User = Depends(current_user
             select(ProfileSnapshot).where(ProfileSnapshot.telegram_account_id == account["id"], ProfileSnapshot.restored == False)  # noqa: E712
         )
     }
-    return {**base, "account": {k: v for k, v in account.items() if k != "automations"}, "services": services, "originals": originals}
+    ai_row = await db.scalar(select(AccountAI).where(AccountAI.telegram_account_id == account["id"]))
+    return {
+        **base,
+        "account": {k: v for k, v in account.items() if k != "automations"},
+        "services": services,
+        "originals": originals,
+        "ai_reply": {"enabled": bool(ai_row and ai_row.enabled)},
+    }
 
 
 class PreviewIn(BaseModel):

@@ -1,4 +1,5 @@
 from core.db.models.admin import AdminRole, AdminUser, AuditLog
+from core.db.models.ai import AccountAI, AIUsage
 from core.db.models.automation import Automation, AutomationAction, ProfileSnapshot, Schedule
 from core.db.models.billing import (
     Payment,
@@ -17,6 +18,8 @@ from core.db.models.telegram import EncryptedSession, TelegramAccount
 from core.db.models.user import User
 
 __all__ = [
+    "AccountAI",
+    "AIUsage",
     "User",
     "TelegramAccount",
     "EncryptedSession",

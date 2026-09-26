@@ -20,7 +20,7 @@ export type LimitMeta = { key: string; title: string; min: number; max: number }
 
 export type CatalogService = {
   code: string;
-  kind: "template" | "online" | "playlist" | "schedule" | "emoji" | "photo";
+  kind: "template" | "online" | "playlist" | "schedule" | "emoji" | "photo" | "ai_reply" | "stories";
   field: string;
   title: string;
   icon: string;
@@ -67,7 +67,32 @@ export type State = {
   account: Account | null;
   services?: ActiveService[];
   originals?: Record<string, string | null>;
+  ai_reply?: { enabled: boolean };
 };
+
+export type AISettings = { enabled: boolean; preset: string; style: string; only_when_away: boolean; signature: boolean };
+
+export type AIState = {
+  available: boolean;
+  unlocked: boolean;
+  daily_limit: number;
+  used_today: number;
+  presets: { code: string; title: string; desc: string }[];
+  max_style_len: number;
+  settings: AISettings;
+};
+
+export type StoryItem = {
+  id: number;
+  date: number;
+  expire_date: number;
+  kind: "photo" | "video" | "other";
+  protected: boolean;
+  caption: string;
+  thumb: string | null;
+};
+
+export type ScheduleSuggestion = { time: string; text: string };
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -134,6 +159,17 @@ export const api = {
   quote: (code: string, promo: string) => request<Quote>("POST", `/webapp/plans/${code}/quote`, { promo_code: promo || null }),
   buy: (code: string, promo?: string) =>
     request<{ ok: boolean; expires_at: string }>("POST", `/webapp/plans/${code}/buy`, { promo_code: promo || null }),
+  ai: (accountId: number) => request<AIState>("GET", `/webapp/ai?account_id=${accountId}`),
+  saveAi: (accountId: number, body: AISettings) => request<AIState>("PUT", `/webapp/ai?account_id=${accountId}`, body),
+  suggest: <T = string>(field: string, topic: string) =>
+    request<{ items: T[]; used_today: number }>("POST", "/webapp/ai/suggest", { field, topic }),
+  stories: (accountId: number, username: string) =>
+    request<{ peer: { name: string; username: string | null }; items: StoryItem[] }>("POST", "/webapp/stories/list", {
+      account_id: accountId,
+      username,
+    }),
+  sendStories: (accountId: number, username: string, storyIds?: number[]) =>
+    request<{ ok: boolean }>("POST", "/webapp/stories/send", { account_id: accountId, username, story_ids: storyIds ?? null }),
   topup: (amount: number) =>
     request<{ ok: boolean; payment_id: number; instructions: string }>("POST", "/webapp/topup", { amount }),
 };
@@ -218,6 +254,17 @@ export type AdminUserRow = {
   usage: { accounts: number; automations: number };
 };
 
+type Usage = { calls: number; input_tokens: number; output_tokens: number; cost_usd: number; cost_known: boolean };
+
+export type AdminAI = {
+  model: string;
+  enabled: boolean;
+  configured: boolean;
+  models: { id: string; price_in: number | null; price_out: number | null }[];
+  enabled_accounts: number;
+  usage: { today: Usage; month: Usage };
+};
+
 const A = "/webapp/admin";
 
 export const adminApi = {
@@ -237,6 +284,9 @@ export const adminApi = {
     request<{ user: AdminUserRow }>("POST", `${A}/users/${id}/balance`, { amount, reason }),
   grant: (id: number, plan_code: string, days: number) => request<{ user: AdminUserRow }>("POST", `${A}/users/${id}/grant`, { plan_code, days }),
   ban: (id: number, banned: boolean) => request<{ user: AdminUserRow }>("POST", `${A}/users/${id}/ban`, { banned }),
+  ai: () => request<AdminAI>("GET", `${A}/ai`),
+  saveAi: (model: string, enabled: boolean) => request<AdminAI>("PUT", `${A}/ai`, { model, enabled }),
+  testAi: () => request<{ ok: boolean; reply?: string; model?: string; ms?: number; error?: string }>("POST", `${A}/ai/test`),
   paymentSettings: () => request<{ instructions: string }>("GET", `${A}/settings/payment`),
   savePaymentSettings: (instructions: string) => request<{ instructions: string }>("PUT", `${A}/settings/payment`, { instructions }),
 };

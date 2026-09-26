@@ -117,6 +117,10 @@ async def show_pro_menu(callback: CallbackQuery, state: FSMContext) -> None:
         return
     flags = overview["plan"]["flags"]
     live = {a["service_code"]: a for a in account["automations"]}
+    if flags.get("ai_service"):
+        ai_state = await api_client.get_ai(overview["user"]["id"], account["id"])
+        if ai_state["settings"]["enabled"]:
+            live["ai"] = {"status": "ACTIVE"}
     lines = ["➕ Ko'proq xizmatlar", ""]
     lines += [f"{m['title']} — {m['short']}" for m in PRO_SERVICES.values()]
     if not all(flags.get(m["flag"]) for m in PRO_SERVICES.values()):

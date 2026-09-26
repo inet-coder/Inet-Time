@@ -1,4 +1,4 @@
-import { CircleAlert, Crown, LoaderCircle } from "lucide-react";
+import { ChevronRight, CircleAlert, Crown, LoaderCircle } from "lucide-react";
 import type { ActiveService, CatalogService } from "../api";
 import { ServiceIcon } from "../icons";
 
@@ -43,7 +43,9 @@ export function ServiceGrid({ catalog, services, lockLabel, onOpen, onToggle }: 
           >
             <div className="service__top">
               <ServiceIcon code={svc.code} />
-              {svc.unlocked ? (
+              {svc.unlocked && svc.kind === "stories" ? (
+                <ChevronRight size={20} className="list-item__chev" />
+              ) : svc.unlocked ? (
                 <button
                   className={`switch ${active ? "is-on" : ""}`}
                   aria-label={active ? "O'chirish" : "Yoqish"}

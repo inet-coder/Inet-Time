@@ -359,3 +359,46 @@ async def revoke_account_job(ctx, account_id: int, job_id: str) -> None:
             await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=str(exc))
         finally:
             await release_lease(ctx["redis"], account.id)
+
+
+async def send_stories_job(ctx, account_id: int, username: str, chat_id: int, job_id: str, story_ids: list[int] | None = None) -> None:
+    """Hikoyalarni akkaunt nomidan yuklab olib, foydalanuvchiga bot chatiga yuboradi."""
+    # Import shu yerda: stories moduli faqat shu vazifaga kerak.
+    import datetime as _dt
+
+    from core.notify import send_media, send_telegram
+    from core.settings import settings
+    from core.telegram.stories import StoryError, download_stories
+
+    async with async_session() as db:
+        if not await _claim_job(db, job_id):
+            return
+        account = await db.get(TelegramAccount, account_id)
+        if account is None:
+            await _finish_job(db, job_id, WorkerJobStatus.FAILED, error="Akkaunt topilmadi")
+            return
+        try:
+            session_string = await _get_session_string(db, account)
+            peer, files = await download_stories(session_string, username, story_ids)
+        except StoryError as exc:
+            await send_telegram(chat_id, f"👀 {exc}")
+            await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 — foydalanuvchiga qisqa xabar, to'liq xato — job'da
+            await send_telegram(chat_id, "⚠️ Hikoyalarni olib bo'lmadi. Keyinroq urinib ko'ring.")
+            await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=str(exc))
+            return
+
+        who = f"@{peer.username}" if peer.username else peer.name
+        if not files:
+            await send_telegram(chat_id, f"👀 {who}: yuklab olinadigan hikoya yo'q (yo'q yoki himoyalangan).")
+            await _finish_job(db, job_id, WorkerJobStatus.DONE, payload={"sent": 0})
+            return
+        sent = 0
+        for info, data in files:
+            when = _dt.datetime.fromtimestamp(info.date, ZoneInfo(settings.default_timezone)).strftime("%d.%m %H:%M")
+            caption = f"👀 {who} · {when}" + (f"\n{info.caption}" if info.caption else "")
+            if await send_media(chat_id, info.kind, data, caption):
+                sent += 1
+        await _finish_job(db, job_id, WorkerJobStatus.DONE, payload={"sent": sent, "total": len(files)})
+

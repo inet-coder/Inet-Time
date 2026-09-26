@@ -14,8 +14,9 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, emojiUrl, mediaUrl, type ActiveService, type CatalogService, type State } from "../api";
+import { api, emojiUrl, mediaUrl, type ActiveService, type CatalogService, type ScheduleSuggestion, type State } from "../api";
 import type { Overrides } from "../profile";
+import { AIWriter } from "./AIEditors";
 import { openBot } from "../tg";
 import { fileToJpegBase64, intervalText } from "../util";
 
@@ -149,6 +150,7 @@ export function TemplateEditor({ state, service, active, setOverrides, save, bus
           </button>
         ))}
       </div>
+      <AIWriter state={state} field={service.field === "name" ? "name" : "bio"} onPick={(item) => setTemplate(String(item))} />
       <PreviewLine preview={preview} />
       {service.presets && (
         <>
@@ -211,6 +213,7 @@ export function PlaylistEditor({ state, service, active, setOverrides, save, bus
         ))}
       </div>
       {items.length < 10 && <AddButton onClick={() => setItems([...items, ""])}>Matn qo'shish</AddButton>}
+      <AIWriter state={state} field="playlist" onPick={(_, all) => setItems(all.map(String).slice(0, 10))} />
       <PreviewLine preview={preview} />
       <label className="label">Tartib</label>
       <Segmented
@@ -316,6 +319,19 @@ export function ScheduleEditor({ state, active, setOverrides, save, busy }: Edit
       </div>
       <p className="hint">Yashil qator — hozir amal qiladigani. Har vaqtda matn o'zgaradi va keyingi vaqtgacha turadi.</p>
       {slots.length < 10 && <AddButton onClick={() => setSlots([...slots, { at_time: "12:00", template: "" }])}>Vaqt qo'shish</AddButton>}
+      <AIWriter<ScheduleSuggestion>
+        state={state}
+        field="schedule"
+        render={(item) => `${item.time} → ${item.text}`}
+        onPick={(_, all) =>
+          setSlots(
+            all
+              .filter((i) => /^\d{2}:\d{2}$/.test(i.time))
+              .map((i) => ({ at_time: i.time, template: i.text }))
+              .slice(0, 10),
+          )
+        }
+      />
       {!valid && <ErrorLine>Kamida 2 ta vaqt, matnlar to'ldirilgan va vaqtlar takrorlanmagan bo'lsin.</ErrorLine>}
       <PreviewLine preview={preview} />
       <button

@@ -1,5 +1,7 @@
 import {
+  Bot,
   CalendarClock,
+  CircleDashed,
   Clock,
   FileText,
   Images,
@@ -21,6 +23,8 @@ export const SERVICE_ICONS: Record<string, { Icon: LucideIcon; from: string; to:
   schedule: { Icon: CalendarClock, from: "#35d0d6", to: "#118aa8" },
   emoji: { Icon: SmilePlus, from: "#ffd84d", to: "#f0a01d" },
   photo: { Icon: Images, from: "#ff6b6b", to: "#c9304a" },
+  ai_reply: { Icon: Bot, from: "#1fd1b6", to: "#0b7f9e" },
+  stories: { Icon: CircleDashed, from: "#ff8a4c", to: "#e1306c" },
 };
 
 const FALLBACK = { Icon: Sparkles, from: "#8a93a6", to: "#5b6478" };

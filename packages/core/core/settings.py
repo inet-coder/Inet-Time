@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     default_timezone: str = "Asia/Tashkent"
     # Mini App manzili. Bo'sh bo'lsa bot uni cloudflared quick tunnel'dan o'zi aniqlaydi.
     webapp_url: str = ""
+    # AI (OpenAI). Kalit bo'lmasa AI xizmatlari "sozlanmagan" deb ko'rsatiladi. Model admin paneldan tanlanadi.
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
     tunnel_metrics_url: str = "http://tunnel:2000/quicktunnel"
 
     @property

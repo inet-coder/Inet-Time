@@ -3,6 +3,7 @@ import {
   Ban,
   BadgePercent,
   Check,
+  Bot,
   ChevronRight,
   CreditCard,
   Gift,
@@ -39,7 +40,7 @@ import { dateText, fromDateInput, money, toDateInput } from "../util";
 import { Sheet } from "./Sheet";
 
 type Toast = (text: string, kind?: "ok" | "err") => void;
-type Section = "home" | "payments" | "plans" | "promos" | "users" | "settings";
+type Section = "home" | "payments" | "plans" | "promos" | "users" | "ai" | "settings";
 
 const SECTIONS: [Section, typeof Zap, string][] = [
   ["home", LayoutDashboard, "Umumiy"],
@@ -47,6 +48,7 @@ const SECTIONS: [Section, typeof Zap, string][] = [
   ["plans", Layers, "Tariflar"],
   ["promos", Ticket, "Promokodlar"],
   ["users", Users, "Foydalanuvchilar"],
+  ["ai", Bot, "AI"],
   ["settings", Settings, "Sozlamalar"],
 ];
 
@@ -831,6 +833,84 @@ function UsersAdmin({ toast }: { toast: Toast }) {
   );
 }
 
+// --- AI ---
+
+function tokens(n: number): string {
+  return n < 1000 ? String(n) : `${Math.round(n / 1000)}k`;
+}
+
+function usd(value: number): string {
+  return value < 0.01 ? `$${value.toFixed(4)}` : `$${value.toFixed(2)}`;
+}
+
+function AIAdmin({ toast }: { toast: Toast }) {
+  const { data } = useQuery({ queryKey: ["admin", "ai"], queryFn: adminApi.ai });
+  const refresh = useRefresh();
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  if (!data) return <div className="spinner spinner--center" />;
+
+  const save = async (model: string, enabled: boolean) => {
+    if (await run(toast, () => adminApi.saveAi(model, enabled), "AI sozlamalari saqlandi")) refresh();
+  };
+  const test = async () => {
+    setTesting(true);
+    setTestResult(null);
+    const r = await adminApi.testAi().catch((e: Error) => ({ ok: false, error: e.message }) as { ok: boolean; error?: string });
+    setTestResult(r.ok ? `✅ Ishlayapti: «${"reply" in r ? r.reply : ""}» · ${"ms" in r ? r.ms : "?"} ms` : `❌ ${r.error}`);
+    setTesting(false);
+  };
+  const usage = (label: string, u: typeof data.usage.today) => (
+    <StatCard
+      icon={<Bot size={16} />}
+      value={u.cost_known ? usd(u.cost_usd) : `${usd(u.cost_usd)}+`}
+      label={`${label} · ${u.calls} so'rov · ${tokens(u.input_tokens + u.output_tokens)} token`}
+    />
+  );
+
+  return (
+    <div className="stack">
+      {!data.configured && (
+        <div className="notice notice--warn">
+          <Bot size={18} />
+          <span>
+            OpenAI kaliti yo'q. Serverdagi <b>.env</b> fayliga <b>OPENAI_API_KEY=sk-…</b> qo'shing va qayta ishga tushiring.
+          </span>
+        </div>
+      )}
+      <div className="stat-grid">
+        {usage("bugun", data.usage.today)}
+        {usage("30 kun", data.usage.month)}
+      </div>
+      <p className="hint">AI yoqilgan akkauntlar: {data.enabled_accounts}. Kunlik limit har tarifda alohida (Tariflar → AI so'rovlar / kun).</p>
+
+      <section className="card">
+        <label className="label" style={{ marginTop: 0 }}>
+          Model
+        </label>
+        <div className="model-list">
+          {data.models.map((m) => (
+            <button key={m.id} className={`model ${data.model === m.id ? "is-selected" : ""}`} onClick={() => save(m.id, data.enabled)}>
+              <b>{m.id}</b>
+              <span className="hint">{m.price_in !== null ? `$${m.price_in} / $${m.price_out} · 1M token` : "narx: OpenAI saytida"}</span>
+            </button>
+          ))}
+        </div>
+        <p className="hint field__hint">Avto-javob uchun gpt-4o-mini yoki gpt-4.1-nano yetarli va eng arzon.</p>
+        <div className="card-inset" style={{ marginTop: 12 }}>
+          <Toggle on={data.enabled} onChange={(v) => save(data.model, v)}>
+            AI xizmatlari yoqilgan
+          </Toggle>
+        </div>
+        <button className="btn btn--ghost" disabled={testing || !data.configured} onClick={test}>
+          <Zap size={16} /> Kalit va modelni tekshirish
+        </button>
+        {testResult && <p className="hint field__hint">{testResult}</p>}
+      </section>
+    </div>
+  );
+}
+
 // --- Sozlamalar ---
 
 function SettingsAdmin({ toast }: { toast: Toast }) {
@@ -903,6 +983,7 @@ export function AdminView({ toast }: { toast: Toast }) {
       {section === "plans" && <Plans toast={toast} />}
       {section === "promos" && <Promos toast={toast} />}
       {section === "users" && <UsersAdmin toast={toast} />}
+      {section === "ai" && <AIAdmin toast={toast} />}
       {section === "settings" && <SettingsAdmin toast={toast} />}
     </div>
   );

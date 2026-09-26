@@ -86,6 +86,16 @@ services:
       api:
         condition: service_healthy
 
+  # AI avto-javob: AI yoqilgan akkauntlar uchun doimiy ulanish (faqat shaxsiy chatlar).
+  listener:
+    <<: *app
+    build:
+      context: .
+      dockerfile: apps/listener/Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+
   scheduler:
     <<: *app
     build:

@@ -95,7 +95,29 @@ SERVICE_CATALOG = [
         "flag": "photo_service",
         "intervals": [3600, 21600, 86400],
     },
+    {
+        "code": "ai_reply",
+        "kind": "ai_reply",
+        "field": "ai",
+        "title": "AI avto-javob",
+        "icon": "🤖",
+        "desc": "Shaxsiy chatlarda siz nomingizdan AI javob beradi",
+        "flag": "ai_service",
+    },
+    {
+        "code": "stories",
+        "kind": "stories",
+        "field": "stories",
+        "title": "Stories",
+        "icon": "👀",
+        "desc": "Istalgan odamning hikoyalarini ko'rish va yuklab olish",
+        "flag": "stories_service",
+    },
 ]
 
-SERVICE_CODES = {s["code"] for s in SERVICE_CATALOG}
+# Profil maydonini o'zgartirmaydigan xizmatlar — automation emas, alohida sozlanadi.
+NON_AUTOMATION_KINDS = {"ai_reply", "stories"}
+
+# Automation sifatida yoqiladigan xizmatlar (profil maydonini o'zgartiradi).
+SERVICE_CODES = {s["code"] for s in SERVICE_CATALOG if s["kind"] not in NON_AUTOMATION_KINDS}
 FIELD_LIMITS = {"name": 64, "bio": 70}

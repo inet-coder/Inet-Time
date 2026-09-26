@@ -70,6 +70,18 @@ PRO_SERVICES = {
         "short": "profil rasmi navbat bilan",
         "desc": "Profil rasmi navbat bilan almashadi.\nO'chirsangiz — asl rasmingiz qaytadi.",
     },
+    "ai": {
+        "title": "🤖 AI avto-javob",
+        "flag": "ai_service",
+        "short": "shaxsiy chatlarda AI javob beradi",
+        "desc": "Siz band bo'lsangiz, shaxsiy chatlarda AI siz nomingizdan qisqa javob beradi.",
+    },
+    "stories": {
+        "title": "👀 Stories",
+        "flag": "stories_service",
+        "short": "hikoyalarni yuklab olish",
+        "desc": "Username yuborasiz — hikoyalari shu chatga keladi.",
+    },
 }
 
 INTERVAL_CHOICES = {

@@ -12,11 +12,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core import ai
 from core.audit import record_audit
 from core.billing import FREE_CODE, PAYMENT_SETTING_KEY, PLAN_FEATURES, PLAN_LIMITS, normalize_code, payment_instructions
 from core.db.enums import ActorType, AutomationStatus, PaymentStatus, SubscriptionStatus, TransactionType
 from core.db.models import (
+    AccountAI,
     AdminUser,
+    AIUsage,
     Automation,
     Payment,
     Plan,
@@ -503,3 +506,94 @@ async def set_payment_settings(
     )
     await db.commit()
     return {"instructions": row.value["instructions"]}
+
+
+# --- AI ---
+
+
+def _usage_summary(rows) -> dict:
+    calls = sum(r.calls for r in rows)
+    tokens_in = sum(r.tin for r in rows)
+    tokens_out = sum(r.tout for r in rows)
+    costs = [ai.estimate_cost(r.model, r.tin, r.tout) for r in rows]
+    return {
+        "calls": calls,
+        "input_tokens": tokens_in,
+        "output_tokens": tokens_out,
+        "cost_usd": round(sum(c for c in costs if c is not None), 4),
+        "cost_known": all(c is not None for c in costs),
+    }
+
+
+async def _usage_since(db: AsyncSession, since: datetime.datetime) -> dict:
+    rows = (
+        await db.execute(
+            select(
+                AIUsage.model,
+                func.count(AIUsage.id).label("calls"),
+                func.coalesce(func.sum(AIUsage.input_tokens), 0).label("tin"),
+                func.coalesce(func.sum(AIUsage.output_tokens), 0).label("tout"),
+            )
+            .where(AIUsage.created_at >= since)
+            .group_by(AIUsage.model)
+        )
+    ).all()
+    return _usage_summary(rows)
+
+
+@router.get("/ai")
+async def get_ai_settings(admin: User = Depends(current_admin), db: AsyncSession = Depends(get_db)) -> dict:
+    config = await ai.get_config(db)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    enabled_accounts = await db.scalar(select(func.count(AccountAI.id)).where(AccountAI.enabled == True))  # noqa: E712
+    return {
+        **config,
+        "models": [
+            {"id": model, "price_in": price[0] if price else None, "price_out": price[1] if price else None}
+            for model, price in ai.MODELS.items()
+        ],
+        "enabled_accounts": enabled_accounts,
+        "usage": {
+            "today": await _usage_since(db, day_start),
+            "month": await _usage_since(db, now - datetime.timedelta(days=30)),
+        },
+    }
+
+
+class AISettingsAdminIn(BaseModel):
+    model: str
+    enabled: bool
+
+
+@router.put("/ai")
+async def set_ai_settings(payload: AISettingsAdminIn, admin: User = Depends(current_admin), db: AsyncSession = Depends(get_db)) -> dict:
+    if payload.model not in ai.MODELS:
+        raise HTTPException(400, "Noma'lum model")
+    row = await db.scalar(select(SystemSetting).where(SystemSetting.key == ai.AI_SETTING_KEY))
+    if row is None:
+        row = SystemSetting(key=ai.AI_SETTING_KEY, value={})
+        db.add(row)
+    row.value = {**(row.value or {}), "model": payload.model, "enabled": payload.enabled}
+    await record_audit(
+        db, actor_type=ActorType.ADMIN, actor_id=None, action="ai_settings_updated", entity_type="system_setting",
+        entity_id=None, meta={"by_telegram_id": admin.telegram_user_id, **row.value},
+    )
+    await db.commit()
+    return await get_ai_settings(admin, db)
+
+
+@router.post("/ai/test")
+async def test_ai(admin: User = Depends(current_admin), db: AsyncSession = Depends(get_db)) -> dict:
+    """Kalit va model ishlayotganini tekshirish (juda kichik so'rov)."""
+    config = await ai.get_config(db)
+    if not config["configured"]:
+        return {"ok": False, "error": "OPENAI_API_KEY .env faylida yo'q"}
+    started = datetime.datetime.now()
+    try:
+        result = await ai.test(config["model"])
+    except ai.AIError as exc:
+        return {"ok": False, "error": str(exc.__cause__ or exc)[:300]}
+    await ai.log_usage(db, admin.id, "test", result)
+    ms = int((datetime.datetime.now() - started).total_seconds() * 1000)
+    return {"ok": True, "reply": result.text, "model": result.model, "ms": ms}

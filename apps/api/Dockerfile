@@ -10,5 +10,6 @@ COPY packages/core ./packages/core
 RUN pip install --no-cache-dir -e ./packages/core
 
 COPY apps/api ./
+RUN chmod +x entrypoint.sh
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["./entrypoint.sh"]

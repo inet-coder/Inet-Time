@@ -1,4 +1,3 @@
-import datetime
 import logging
 import re
 
@@ -9,22 +8,21 @@ from aiogram.types import CallbackQuery, Message
 
 import keyboards as kb
 from api_client import ApiError, api_client
+from catalog import expiry_text, plan_features, plan_status_lines
 from common import db_user_id, money, safe_answer, safe_edit
+from core.entitlements import FREE_PLAN
 from core.settings import settings
 from states import Topup
 
 router = Router(name="billing")
 logger = logging.getLogger(__name__)
 
-FREE_DESCRIPTION = "🆓 Bepul — 1 akkaunt, 1 ta xizmat"
+PLAN_ICONS = {"free": "🆓", "starter": "⭐", "pro": "🚀"}
 
 
-def _plan_description(plan: dict) -> str:
-    flags = plan["flags"]
-    parts = [f"{flags.get('account_limit', 1)} akkaunt", f"bir vaqtda {flags.get('scheduler_limit', 1)} ta xizmat"]
-    if flags.get("online_service"):
-        parts.append("🟢 24/7 Online")
-    return f"⭐ {plan['name']} — {money(plan['price'])} / {plan['duration_days']} kun\n    " + ", ".join(parts)
+def _plan_card(code: str, name: str, price_text: str, flags: dict, is_current: bool) -> str:
+    title = f"{PLAN_ICONS.get(code, '💎')} {name} — {price_text}" + ("   ✅ sizda" if is_current else "")
+    return title + "\n" + "\n".join(f"   • {f}" for f in plan_features(flags))
 
 
 @router.callback_query(F.data == "plans")
@@ -32,15 +30,20 @@ async def show_plans(callback: CallbackQuery) -> None:
     user_id = await db_user_id(callback.from_user)
     overview = await api_client.get_overview(user_id)
     plans = await api_client.list_plans()
-    current = overview["plan"]
-    header = f"💎 Joriy tarif: {current['name']}"
-    if current["expires_at"]:
-        header += f" ({datetime.datetime.fromisoformat(current['expires_at']).strftime('%d.%m.%Y')} gacha)"
-    text = "\n\n".join(
-        [header, f"💰 Balans: {money(overview['user']['balance'])}", FREE_DESCRIPTION, *map(_plan_description, plans)]
+    current_code = overview["plan"]["code"]
+
+    cards = [_plan_card("free", FREE_PLAN["name"], "tekin", FREE_PLAN["flags"], current_code == "free")]
+    cards += [
+        _plan_card(p["code"], p["name"], f"{money(p['price'])} / {p['duration_days']} kun", p["flags"], current_code == p["code"])
+        for p in plans
+    ]
+    text = (
+        "\n".join(plan_status_lines(overview))
+        + f"\n💰 Balans: {money(overview['user']['balance'])}\n\n"
+        + "\n\n".join(cards)
+        + "\n\nTarif balansdan sotib olinadi. Muddat tugasa Bepul tarifga qaytasiz va ortiqcha xizmatlar to'xtaydi."
     )
-    text += "\n\nTarif balansdan sotib olinadi."
-    await safe_edit(callback, text, kb.plans(plans, current["code"]))
+    await safe_edit(callback, text, kb.plans(plans, current_code))
     await safe_answer(callback)
 
 
@@ -49,10 +52,19 @@ async def ask_buy(callback: CallbackQuery) -> None:
     code = callback.data.split(":", 1)[1]
     user_id = await db_user_id(callback.from_user)
     overview = await api_client.get_overview(user_id)
-    plan = next(p for p in await api_client.list_plans() if p["code"] == code)
+    plans = await api_client.list_plans()
+    plan = next(p for p in plans if p["code"] == code)
+    current = next((p for p in plans if p["code"] == overview["plan"]["code"]), None)
     balance = overview["user"]["balance"]
 
-    if balance < plan["price"]:
+    if current is not None and current["code"] != code and current["price"] > plan["price"]:
+        await safe_edit(
+            callback,
+            f"Sizda yuqoriroq {current['name']} tarifi faol — {expiry_text(overview['plan']['expires_at'])}.\n"
+            f"{plan['name']} olish hozir hech narsa qo'shmaydi.",
+            kb.plans(plans, current["code"]),
+        )
+    elif balance < plan["price"]:
         await safe_edit(
             callback,
             f"Balans yetarli emas.\n\n{plan['name']}: {money(plan['price'])}\nSizda: {money(balance)}\n\n"
@@ -60,10 +72,14 @@ async def ask_buy(callback: CallbackQuery) -> None:
             kb.need_topup(),
         )
     else:
+        extend = "Muddati" if current is not None and current["code"] == code else "Tarif"
         await safe_edit(
             callback,
-            f"{plan['name']} tarifi — {plan['duration_days']} kun.\n"
-            f"Balansingizdan {money(plan['price'])} yechiladi.\n\nTasdiqlaysizmi?",
+            f"{PLAN_ICONS.get(code, '💎')} {plan['name']} — {plan['duration_days']} kun\n"
+            + "\n".join(f"   • {f}" for f in plan_features(plan["flags"]))
+            + f"\n\n{extend} {plan['duration_days']} kunga {'uzayadi' if extend == 'Muddati' else 'faollashadi'}.\n"
+            f"Balansingizdan {money(plan['price'])} yechiladi (qoladi: {money(balance - plan['price'])}).\n\n"
+            "Tasdiqlaysizmi?",
             kb.confirm_buy(code),
         )
     await safe_answer(callback)
@@ -74,14 +90,25 @@ async def buy(callback: CallbackQuery) -> None:
     code = callback.data.split(":", 1)[1]
     user_id = await db_user_id(callback.from_user)
     try:
-        subscription = await api_client.buy_plan(user_id, code)
+        await api_client.buy_plan(user_id, code)
     except ApiError as exc:
         await safe_edit(callback, f"⚠️ {exc.message}", kb.need_topup())
         await safe_answer(callback)
         return
-    until = datetime.datetime.fromisoformat(subscription["expires_at"]).strftime("%d.%m.%Y")
-    await safe_edit(callback, f"🎉 Tarif faollashdi! {until} gacha amal qiladi.", kb.back_home())
-    await safe_answer(callback)
+
+    overview = await api_client.get_overview(user_id)
+    plan, flags = overview["plan"], overview["plan"]["flags"]
+    unlocked = [f"{flags['account_limit']} ta akkaunt ulash", f"bir vaqtda {flags['scheduler_limit']} ta xizmat"]
+    if flags.get("online_service"):
+        unlocked.append("🟢 24/7 Online")
+    await safe_edit(
+        callback,
+        f"🎉 {plan['name']} tarifi faollashdi!\n⏳ {expiry_text(plan['expires_at'])}\n\n"
+        "Endi sizda:\n" + "\n".join(f"✅ {u}" for u in unlocked) + "\n\n"
+        "Xizmatlarni bosh sahifada yoqing 👇\nMuddat tugashidan 1 kun oldin eslataman.",
+        kb.after_purchase(bool(flags.get("online_service"))),
+    )
+    await safe_answer(callback, "🎉 Tarif faollashdi")
 
 
 # --- Balans ---

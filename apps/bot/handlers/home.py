@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
@@ -7,7 +6,14 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 import keyboards as kb
 from api_client import ApiError, api_client
-from catalog import SERVICES, STATUS_ICONS, TEMPLATE_HELP, UPDATE_INTERVAL_SECONDS
+from catalog import (
+    SERVICES,
+    STATUS_ICONS,
+    TEMPLATE_HELP,
+    UPDATE_INTERVAL_SECONDS,
+    plan_features,
+    plan_status_lines,
+)
 from common import current_account, db_user_id, is_admin, money, safe_answer, safe_edit, select_account
 from core.settings import settings
 from core.templates import TemplateContext, render
@@ -40,12 +46,15 @@ def _preview(template: str, account: dict) -> str:
     return render(template, ctx)
 
 
-def _plan_line(overview: dict) -> str:
-    plan, usage = overview["plan"], overview["usage"]
-    line = f"💎 Tarif: {plan['name']}"
-    if plan["expires_at"]:
-        line += f" ({datetime.datetime.fromisoformat(plan['expires_at']).strftime('%d.%m.%Y')} gacha)"
-    return line + f" · xizmatlar {usage['automations']}/{plan['flags']['scheduler_limit']}"
+async def _plan_block(overview: dict) -> str:
+    lines = plan_status_lines(overview)
+    if not overview["plan"]["expires_at"]:
+        # Pullik tarifi yo'q foydalanuvchiga eng yuqori tarif nima berishini ko'rsatamiz.
+        plans = await api_client.list_plans()
+        if plans:
+            best = max(plans, key=lambda p: p["price"])
+            lines.append(f"   💡 {best['name']} bilan: " + ", ".join(plan_features(best["flags"])))
+    return "\n".join(lines)
 
 
 async def build_home(tg_user_id: int, user_id: int) -> tuple[str, InlineKeyboardMarkup | None]:
@@ -54,14 +63,15 @@ async def build_home(tg_user_id: int, user_id: int) -> tuple[str, InlineKeyboard
         return "⛔ Hisobingiz bloklangan. Savollar bo'lsa admin bilan bog'laning.", None
 
     admin = is_admin(tg_user_id)
+    plan_block = await _plan_block(overview)
     balance_line = f"💰 Balans: {money(overview['user']['balance'])}"
     account = current_account(overview, tg_user_id)
     if account is None:
-        return f"{WELCOME}\n\n{_plan_line(overview)}\n{balance_line}", kb.home_no_account(admin)
+        return f"{WELCOME}\n\n{plan_block}\n{balance_line}", kb.home_no_account(admin)
 
     live = {a["service_code"]: a for a in account["automations"]}
     flags = overview["plan"]["flags"]
-    lines = [f"👤 Akkaunt: {_account_label(account)}", _plan_line(overview), balance_line, "", "Xizmatlar:"]
+    lines = [f"👤 Akkaunt: {_account_label(account)}", plan_block, balance_line, "", "Xizmatlar:"]
     for code, meta in SERVICES.items():
         automation = live.get(code)
         if automation is not None:

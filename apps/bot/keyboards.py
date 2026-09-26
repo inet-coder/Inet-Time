@@ -121,6 +121,14 @@ def plans(plans_list: list[dict], current_code: str) -> InlineKeyboardMarkup:
     return _kb(rows)
 
 
+def after_purchase(online_unlocked: bool) -> InlineKeyboardMarkup:
+    rows = []
+    if online_unlocked:
+        rows.append([("🟢 24/7 Online'ni yoqish", "svc:online")])
+    rows.append([("🏠 Bosh sahifa", "home")])
+    return _kb(rows)
+
+
 def confirm_buy(plan_code: str) -> InlineKeyboardMarkup:
     return _kb([[("✅ Tasdiqlash", f"buy_yes:{plan_code}")], [("⬅️ Bekor qilish", "plans")]])
 

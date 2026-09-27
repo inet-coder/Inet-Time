@@ -53,11 +53,12 @@ async def safe_edit(callback: CallbackQuery, text: str, reply_markup: InlineKeyb
     except TelegramBadRequest as exc:
         if "message is not modified" in str(exc):
             return
+        # Avval yangisini yuboramiz, keyin eskisini o'chiramiz — yuborib bo'lmasa, eski xabar joyida qoladi.
+        await callback.message.answer(text, reply_markup=reply_markup)
         try:
             await callback.message.delete()
         except TelegramBadRequest:
             pass
-        await callback.message.answer(text, reply_markup=reply_markup)
 
 
 async def safe_answer(callback: CallbackQuery, text: str | None = None, show_alert: bool = False) -> None:

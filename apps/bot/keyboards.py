@@ -5,7 +5,9 @@ from common import webapp_url
 
 
 def _button(text: str, data: str) -> InlineKeyboardButton:
-    # https:// bilan boshlansa — Mini App tugmasi, aks holda oddiy callback.
+    # "url:..." — oddiy havola (ulashish va h.k.); https:// — Mini App tugmasi; qolgani — callback.
+    if data.startswith("url:"):
+        return InlineKeyboardButton(text=text, url=data.removeprefix("url:"))
     if data.startswith("https://"):
         return InlineKeyboardButton(text=text, web_app=WebAppInfo(url=data))
     return InlineKeyboardButton(text=text, callback_data=data)
@@ -338,4 +340,4 @@ def referral(link: str) -> InlineKeyboardMarkup:
     from urllib.parse import quote
 
     share = f"https://t.me/share/url?url={quote(link)}&text={quote('Telegram profilingni avtomatlashtir: ismda soat, avto bio, AI javob 👇')}"
-    return _kb([[("📤 Do'stlarga ulashish", share)], *_webapp_row(), [("🏠 Bosh sahifa", "home")]])
+    return _kb([[("📤 Do'stlarga ulashish", f"url:{share}")], *_webapp_row(), [("🏠 Bosh sahifa", "home")]])

@@ -4,6 +4,7 @@ import { api, type Flags, type Plan, type Quote, type State } from "../api";
 import { ServiceIcon } from "../icons";
 import { haptic } from "../tg";
 import { dateText, daysLeft, money } from "../util";
+import { ReferralCard } from "./ReferralCard";
 import { Sheet } from "./Sheet";
 
 const PLAN_ICONS: Record<string, LucideIcon> = { free: Sparkles, starter: Star, pro: Crown };
@@ -437,6 +438,9 @@ export function PlansView({ state, refresh, toast }: Props) {
           </div>
         )}
       </section>
+
+      <h3 className="section-title">Taklif qilish</h3>
+      <ReferralCard state={state} />
 
       {checkout && (
         <Checkout

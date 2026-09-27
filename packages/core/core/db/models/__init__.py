@@ -2,11 +2,13 @@ from core.db.models.admin import AdminRole, AdminUser, AuditLog
 from core.db.models.ai import AccountAI, AIUsage
 from core.db.models.automation import Automation, AutomationAction, ProfileSnapshot, Schedule
 from core.db.models.billing import (
+    Broadcast,
     Payment,
     Plan,
     PromoCode,
     PromoRedemption,
     Referral,
+    ReferralReward,
     ReferralTransaction,
     Service,
     Subscription,
@@ -31,7 +33,9 @@ __all__ = [
     "Payment",
     "Transaction",
     "Referral",
+    "ReferralReward",
     "ReferralTransaction",
+    "Broadcast",
     "Automation",
     "AutomationAction",
     "Schedule",

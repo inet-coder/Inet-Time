@@ -357,11 +357,39 @@ async def revoke(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "ref")
 async def show_referral(callback: CallbackQuery) -> None:
     user_id = await db_user_id(callback.from_user)
-    user = await api_client.get_user(user_id)
+    data = await api_client.referral(user_id)
     bot_username = (await callback.bot.get_me()).username
-    link = f"https://t.me/{bot_username}?start=ref_{user['referral_code']}"
-    await safe_edit(callback, f"🎁 Do'stlaringizga ulashing\n\nSizning havolangiz:\n{link}", kb.back_home())
+    link = f"https://t.me/{bot_username}?start=ref_{data['code']}"
+    await safe_edit(callback, referral_text(data, link), kb.referral(link))
     await safe_answer(callback)
+
+
+def referral_text(data: dict, link: str) -> str:
+    rule = "akkauntini ulasa" if data["mode"] == "account" else "havola orqali botni ochsa"
+    lines = [
+        "🎁 Do'stlarni taklif qiling",
+        "",
+        f"Havolangiz:\n{link}",
+        "",
+        f"👥 Hisoblangan: {data['qualified']}" + (f" · ⏳ kutilmoqda: {data['pending']}" if data["pending"] else ""),
+        f"ℹ️ Do'stingiz {rule} — hisoblanadi.",
+    ]
+    if data["bonus_per_referral"]:
+        lines.append(f"💰 Har do'st uchun: +{money(data['bonus_per_referral'])}")
+    if data["friend_reward"]["days"]:
+        lines.append(f"🎁 Do'stingizga: {data['friend_reward']['plan_name']} {data['friend_reward']['days']} kun")
+    if data["milestones"]:
+        lines += ["", "🏆 Sovg'alar:"]
+        for m in data["milestones"]:
+            mark = "✅" if m["reached"] else "▫️"
+            left = "" if m["reached"] else f" (yana {m['count'] - data['qualified']} ta)"
+            lines.append(f"{mark} {m['count']} do'st — {m['plan_name']} {m['days']} kun{left}")
+    if data["next"]:
+        filled = round(data["qualified"] / data["next"]["count"] * 10)
+        lines += ["", "▓" * filled + "░" * (10 - filled) + f" {data['qualified']}/{data['next']['count']}"]
+    if not data["enabled"]:
+        lines += ["", "⏸ Referal sovg'alari hozir to'xtatilgan."]
+    return "\n".join(lines)
 
 
 @router.callback_query(F.data == "help")

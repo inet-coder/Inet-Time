@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.models import Plan, PromoCode, PromoRedemption, SystemSetting
+from core.db.enums import SubscriptionStatus
+from core.db.models import Plan, PromoCode, PromoRedemption, Subscription, SystemSetting
 from core.settings import settings
 
 FREE_CODE = "free"
@@ -156,3 +157,29 @@ async def payment_instructions(db: AsyncSession) -> str:
     if row is not None and row.value.get("instructions"):
         return row.value["instructions"]
     return settings.payment_instructions
+
+
+async def extend_subscription(
+    db: AsyncSession, user_id: int, plan: Plan, now: datetime.datetime, days: int | None = None
+) -> Subscription:
+    days = plan.duration_days if days is None else days
+    subscription = await db.scalar(
+        select(Subscription).where(
+            Subscription.user_id == user_id,
+            Subscription.plan_id == plan.id,
+            Subscription.status == SubscriptionStatus.ACTIVE,
+        )
+    )
+    if subscription is not None and subscription.expires_at > now:
+        subscription.expires_at += datetime.timedelta(days=days)
+    else:
+        subscription = Subscription(
+            user_id=user_id,
+            plan_id=plan.id,
+            status=SubscriptionStatus.ACTIVE,
+            started_at=now,
+            expires_at=now + datetime.timedelta(days=days),
+        )
+        db.add(subscription)
+    await db.flush()
+    return subscription

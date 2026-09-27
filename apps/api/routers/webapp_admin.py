@@ -23,7 +23,15 @@ from core.playlist_packs import SETTING_KEY as PACKS_KEY
 from core.playlist_packs import get_packs, slugify
 from core.templates import TemplateContext, render
 from core.audit import record_audit
-from core.billing import FREE_CODE, PAYMENT_SETTING_KEY, PLAN_FEATURES, PLAN_LIMITS, normalize_code, payment_instructions
+from core.billing import (
+    FREE_CODE,
+    PAYMENT_SETTING_KEY,
+    PLAN_FEATURES,
+    PLAN_LIMITS,
+    extend_subscription,
+    normalize_code,
+    payment_instructions,
+)
 from core.db.enums import ActorType, AutomationStatus, PaymentStatus, SubscriptionStatus, TransactionType
 from core.db.models import (
     AccountAI,
@@ -455,7 +463,7 @@ async def grant_plan(user_id: int, payload: GrantIn, admin: User = Depends(curre
     if user is None or plan is None or plan.code == FREE_CODE:
         raise HTTPException(404, "Foydalanuvchi yoki tarif topilmadi")
     now = datetime.datetime.now(datetime.timezone.utc)
-    subscription = await payments_api._extend_or_create_subscription(db, user.id, plan, now, days=payload.days)
+    subscription = await extend_subscription(db, user.id, plan, now, days=payload.days)
     await record_audit(
         db, actor_type=ActorType.ADMIN, actor_id=None, action="plan_granted", entity_type="subscription",
         entity_id=subscription.id, meta={"by_telegram_id": admin.telegram_user_id, "plan": plan.code, "days": payload.days},

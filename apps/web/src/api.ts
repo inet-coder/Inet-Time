@@ -101,6 +101,18 @@ export type BirthdayState = {
   templates: { template: string; preview: string | null; error?: string }[];
 };
 
+export type ReferralState = {
+  enabled: boolean;
+  mode: "start" | "account";
+  code: string;
+  qualified: number;
+  pending: number;
+  bonus_per_referral: number;
+  friend_reward: { plan_name: string; days: number };
+  milestones: (Milestone & { plan_name: string; reached: boolean; rewarded: boolean })[];
+  next: (Milestone & { plan_name: string }) | null;
+};
+
 export type PresenceMode = "online" | "recently" | "contacts" | "default";
 export type PresenceState = { mode: PresenceMode; online_unlocked: boolean };
 
@@ -182,6 +194,7 @@ export const api = {
     }),
   sendStories: (accountId: number, username: string, storyIds?: number[]) =>
     request<{ ok: boolean }>("POST", "/webapp/stories/send", { account_id: accountId, username, story_ids: storyIds ?? null }),
+  referral: () => request<ReferralState>("GET", "/webapp/referral"),
   birthday: (accountId: number) => request<BirthdayState>("GET", `/webapp/birthday?account_id=${accountId}`),
   saveBirthday: (accountId: number, body: { day: number; month: number; year: number | null }) =>
     request<BirthdayState>("PUT", `/webapp/birthday?account_id=${accountId}`, body),
@@ -284,6 +297,58 @@ export type AdminAI = {
   usage: { today: Usage; month: Usage };
 };
 
+export type Milestone = { count: number; plan_code: string; days: number };
+export type ReferralSettings = {
+  enabled: boolean;
+  mode: "start" | "account";
+  bonus_per_referral: number;
+  milestones: Milestone[];
+  friend_plan_code: string;
+  friend_days: number;
+};
+export type ReferralAdmin = {
+  settings: ReferralSettings;
+  plans: { code: string; name: string }[];
+  stats: { qualified: number; pending: number; rejected: number; rewards: number; bonus_paid: number };
+  top: { user_id: number; name: string; count: number }[];
+  recent: { id: number; status: string; created_at: string; referrer: string; referred: string }[];
+};
+export type Segment = { code: string; plan_code?: string };
+export type BroadcastButton = { type: "url" | "webapp" | "copy" | "plans" | "home" | "ref"; text: string; value: string };
+export type BroadcastInput = { text: string; segment: Segment; media_id: number | null; buttons: BroadcastButton[] };
+export type Broadcast = BroadcastInput & {
+  id: number;
+  status: "draft" | "sending" | "done" | "cancelled";
+  total: number;
+  sent: number;
+  failed: number;
+  blocked: number;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+};
+export type BroadcastMeta = {
+  broadcasts: Broadcast[];
+  styles: { code: string; title: string; text: string }[];
+  segments: { code: string; title: string }[];
+  plans: { code: string; name: string }[];
+  promos: { code: string; label: string }[];
+};
+export type UserDetails = {
+  accounts: { id: number; name: string; status: string; premium: boolean; services: string[] }[];
+  payments: { id: number; amount: number; status: string; created_at: string }[];
+  referral: { qualified: number; pending: number; referred_by: string | null };
+};
+export type SystemStatus = {
+  jobs: Record<string, number>;
+  errors: { task: string | null; error: string; at: string | null }[];
+  active_automations: number;
+  error_automations: number;
+  ai_accounts: number;
+  pending_payments: number;
+  webapp_url: string | null;
+};
+
 export type Pack = { code?: string; title: string; items: string[] };
 export type PacksAdmin = { packs: Pack[]; is_default: boolean; max_items: number; item_max_len: number };
 
@@ -309,6 +374,20 @@ export const adminApi = {
   ai: () => request<AdminAI>("GET", `${A}/ai`),
   saveAi: (model: string, enabled: boolean) => request<AdminAI>("PUT", `${A}/ai`, { model, enabled }),
   testAi: () => request<{ ok: boolean; reply?: string; model?: string; ms?: number; error?: string }>("POST", `${A}/ai/test`),
+  referrals: () => request<ReferralAdmin>("GET", `${A}/referrals`),
+  saveReferralSettings: (body: ReferralSettings) => request<ReferralAdmin>("PUT", `${A}/referrals/settings`, body),
+  referralAction: (id: number, action: "qualify" | "reject") => request<{ ok: boolean }>("POST", `${A}/referrals/${id}/${action}`),
+  broadcasts: () => request<BroadcastMeta>("GET", `${A}/broadcasts`),
+  countRecipients: (segment: Segment) => request<{ total: number }>("POST", `${A}/broadcasts/count`, segment),
+  testBroadcast: (body: BroadcastInput) => request<{ ok: boolean }>("POST", `${A}/broadcasts/test`, body),
+  startBroadcast: (body: BroadcastInput) => request<Broadcast>("POST", `${A}/broadcasts`, body),
+  cancelBroadcast: (id: number) => request<Broadcast>("POST", `${A}/broadcasts/${id}/cancel`),
+  userDetails: (id: number) => request<UserDetails>("GET", `${A}/users/${id}/details`),
+  messageUser: (id: number, text: string) => request<{ ok: boolean }>("POST", `${A}/users/${id}/message`, { text }),
+  timeseries: () => request<{ points: { date: string; users: number; revenue: number }[] }>("GET", `${A}/timeseries`),
+  audit: () => request<{ id: number; action: string; actor: string; entity: string; created_at: string }[]>("GET", `${A}/audit`),
+  system: () => request<SystemStatus>("GET", `${A}/system`),
+  exportUrl: () => `/api${A}/export/users.csv?t=${token}`,
   packs: () => request<PacksAdmin>("GET", `${A}/packs`),
   savePacks: (packs: Pack[]) => request<PacksAdmin>("PUT", `${A}/packs`, { packs }),
   resetPacks: () => request<PacksAdmin>("DELETE", `${A}/packs`),

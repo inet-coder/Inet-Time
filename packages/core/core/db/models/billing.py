@@ -1,7 +1,7 @@
 import datetime
 import decimal
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.db.base import Base
@@ -99,6 +99,42 @@ class Referral(TimestampMixin, Base):
     referrer_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     referred_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
     code: Mapped[str] = mapped_column(String(16), index=True)
+    # pending — hali hisoblanmagan (masalan akkaunt ulamagan), qualified — hisoblangan, rejected — admin rad etgan.
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    qualified_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ReferralReward(CreatedAtMixin, Base):
+    """Referal bosqichi uchun berilgan sovg'a — bir bosqich uchun bir marta."""
+
+    __tablename__ = "referral_rewards"
+    __table_args__ = (UniqueConstraint("user_id", "milestone", name="uq_referral_reward_milestone"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    milestone: Mapped[int] = mapped_column(Integer)
+    plan_code: Mapped[str] = mapped_column(String(32))
+    days: Mapped[int] = mapped_column(Integer)
+
+
+class Broadcast(TimestampMixin, Base):
+    """Admin ommaviy xabari: matn (HTML), ixtiyoriy rasm, inline tugmalar, auditoriya."""
+
+    __tablename__ = "broadcasts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_by: Mapped[int | None] = mapped_column(BigInteger)  # admin Telegram ID
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)  # draft|sending|done|cancelled
+    segment: Mapped[dict] = mapped_column(JSON, default=dict)
+    text: Mapped[str] = mapped_column(Text)
+    media_id: Mapped[int | None] = mapped_column(ForeignKey("media_files.id", ondelete="SET NULL"))
+    buttons: Mapped[list] = mapped_column(JSON, default=list)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    sent: Mapped[int] = mapped_column(Integer, default=0)
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    blocked: Mapped[int] = mapped_column(Integer, default=0)
+    started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ReferralTransaction(TimestampMixin, Base):

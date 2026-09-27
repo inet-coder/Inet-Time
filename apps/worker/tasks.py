@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import random
@@ -403,3 +404,52 @@ async def send_stories_job(ctx, account_id: int, username: str, chat_id: int, jo
                 sent += 1
         await _finish_job(db, job_id, WorkerJobStatus.DONE, payload={"sent": sent, "total": len(files)})
 
+
+
+async def broadcast_job(ctx, broadcast_id: int) -> None:
+    """Ommaviy xabar: auditoriyaga ketma-ket yuboradi, har 25 tadan keyin hisobni yangilaydi va bekor qilinganini tekshiradi."""
+    import httpx
+
+    from core.broadcasts import SEND_DELAY, SendResult, personalize, recipients, reply_markup, send_one
+    from core.db.models import Broadcast
+    from core.webapp_url import discover_webapp_url
+
+    async with async_session() as db:
+        broadcast = await db.get(Broadcast, broadcast_id)
+        if broadcast is None or broadcast.status != "sending":
+            return
+        users = await recipients(db, broadcast.segment or {})
+        broadcast.total = len(users)
+        broadcast.started_at = datetime.datetime.now(datetime.timezone.utc)
+        await db.commit()
+        photo: bytes | str | None = None
+        if broadcast.media_id:
+            media = await db.get(MediaFile, broadcast.media_id)
+            photo = media.data if media else None
+        markup = reply_markup(broadcast.buttons or [], await discover_webapp_url())
+        text = broadcast.text
+
+    counts = {SendResult.OK: 0, SendResult.BLOCKED: 0, SendResult.FAILED: 0}
+    async with httpx.AsyncClient(timeout=30) as client:
+        for index, (chat_id, first_name) in enumerate(users, 1):
+            result, file_id, _ = await send_one(client, chat_id, personalize(text, first_name), markup, photo)
+            counts[result] += 1
+            if file_id and isinstance(photo, bytes):
+                photo = file_id  # rasm bir marta yuklanadi, keyin file_id bilan
+            await asyncio.sleep(SEND_DELAY)
+            if index % 25 == 0 or index == len(users):
+                async with async_session() as db:
+                    broadcast = await db.get(Broadcast, broadcast_id)
+                    broadcast.sent, broadcast.blocked, broadcast.failed = counts[SendResult.OK], counts[SendResult.BLOCKED], counts[SendResult.FAILED]
+                    cancelled = broadcast.status == "cancelled"
+                    await db.commit()
+                if cancelled:
+                    break
+
+    async with async_session() as db:
+        broadcast = await db.get(Broadcast, broadcast_id)
+        broadcast.sent, broadcast.blocked, broadcast.failed = counts[SendResult.OK], counts[SendResult.BLOCKED], counts[SendResult.FAILED]
+        if broadcast.status == "sending":
+            broadcast.status = "done"
+        broadcast.finished_at = datetime.datetime.now(datetime.timezone.utc)
+        await db.commit()

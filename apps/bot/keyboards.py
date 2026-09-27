@@ -24,7 +24,7 @@ def home_no_account(admin: bool) -> InlineKeyboardMarkup:
     rows = [
         [("📞 Raqam orqali ulash", "login_phone"), ("📷 QR orqali", "login_qr")],
         *_webapp_row(),
-        [("💎 Tariflar", "plans"), ("❓ Yordam", "help")],
+        [("💎 Tariflar", "plans"), ("🎁 Taklif", "ref"), ("❓ Yordam", "help")],
     ]
     if admin:
         rows.append([("🛠 Admin panel", "adm")])
@@ -50,7 +50,7 @@ def home(live: dict[str, dict], multi_account: bool, admin: bool) -> InlineKeybo
         rows.append([("🔄 Boshqa akkaunt", "acc_switch")])
     rows += [
         [("💎 Tarif", "plans"), ("💰 Balans", "bal")],
-        [("⚙️ Akkaunt", "acc"), ("❓ Yordam", "help")],
+        [("⚙️ Akkaunt", "acc"), ("🎁 Taklif", "ref"), ("❓ Yordam", "help")],
     ]
     if admin:
         rows.append([("🛠 Admin panel", "adm")])
@@ -332,3 +332,10 @@ def playlist_packs(packs: list[dict]) -> InlineKeyboardMarkup:
     rows = [buttons[i : i + 3] for i in range(0, len(buttons), 3)]
     rows.append([("❌ Bekor qilish", "pro")])
     return _kb(rows)
+
+
+def referral(link: str) -> InlineKeyboardMarkup:
+    from urllib.parse import quote
+
+    share = f"https://t.me/share/url?url={quote(link)}&text={quote('Telegram profilingni avtomatlashtir: ismda soat, avto bio, AI javob 👇')}"
+    return _kb([[("📤 Do'stlarga ulashish", share)], *_webapp_row(), [("🏠 Bosh sahifa", "home")]])

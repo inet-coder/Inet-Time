@@ -7,7 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.billing import get_free_plan, plan_public
 from core.db.enums import AutomationStatus, TelegramAccountStatus
 from core.db.models import Automation, AutomationAction, Referral, Schedule, Service, TelegramAccount, User
+from core import referrals
 from core.entitlements import FREE_PLAN, get_entitlement
+from core.notify import send_telegram
 from deps import get_db
 from schemas import UserCreate, UserGetOrCreate, UserOut
 
@@ -51,11 +53,17 @@ async def get_or_create_user(payload: UserGetOrCreate, db: AsyncSession = Depend
     db.add(user)
     await db.flush()
 
+    messages: list[tuple[int, str]] = []
     if referrer is not None:
-        db.add(Referral(referrer_user_id=referrer.id, referred_user_id=user.id, code=payload.referral_code))
+        referral = Referral(referrer_user_id=referrer.id, referred_user_id=user.id, code=payload.referral_code)
+        db.add(referral)
+        await db.flush()
+        messages = await referrals.on_signup(db, referral)
 
     await db.commit()
     await db.refresh(user)
+    for chat_id, text in messages:
+        await send_telegram(chat_id, text)
     return user
 
 

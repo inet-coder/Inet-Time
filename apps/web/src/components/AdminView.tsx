@@ -3,8 +3,11 @@ import {
   Ban,
   BadgePercent,
   Check,
+  Activity,
   Bot,
   ChevronRight,
+  Megaphone,
+  ScrollText,
   ListMusic,
   RotateCcw,
   Trash2,
@@ -41,111 +44,28 @@ import {
 import { ServiceIcon } from "../icons";
 import { confirmDialog, haptic } from "../tg";
 import { dateText, fromDateInput, money, toDateInput } from "../util";
+import { Empty, Field, NumberInput, StatCard, Stepper, Toggle, run, useRefresh, type Toast } from "./AdminKit";
+import { AuditLog, Broadcasts, Referrals, SystemView, TrendChart, UserExtras } from "./AdminTools";
 import { Sheet } from "./Sheet";
 
-type Toast = (text: string, kind?: "ok" | "err") => void;
-type Section = "home" | "payments" | "plans" | "promos" | "packs" | "users" | "ai" | "settings";
+type Section = "home" | "payments" | "broadcast" | "plans" | "promos" | "referral" | "packs" | "users" | "ai" | "audit" | "system" | "settings";
 
 const SECTIONS: [Section, typeof Zap, string][] = [
   ["home", LayoutDashboard, "Umumiy"],
   ["payments", CreditCard, "To'lovlar"],
+  ["broadcast", Megaphone, "Xabarlar"],
   ["plans", Layers, "Tariflar"],
   ["promos", Ticket, "Promokodlar"],
+  ["referral", Gift, "Referal"],
   ["packs", ListMusic, "Playlistlar"],
   ["users", Users, "Foydalanuvchilar"],
   ["ai", Bot, "AI"],
+  ["audit", ScrollText, "Jurnal"],
+  ["system", Activity, "Tizim"],
   ["settings", Settings, "Sozlamalar"],
 ];
 
-// Mutatsiyadan keyin tegishli ro'yxatlar va foydalanuvchi holati (narxlar) yangilansin.
-function useRefresh() {
-  const qc = useQueryClient();
-  return () => {
-    qc.invalidateQueries({ queryKey: ["admin"] });
-    qc.invalidateQueries({ queryKey: ["state"] });
-  };
-}
-
-async function run(toast: Toast, fn: () => Promise<unknown>, ok: string): Promise<boolean> {
-  try {
-    await fn();
-    haptic("success");
-    toast(ok);
-    return true;
-  } catch (e) {
-    haptic("error");
-    toast((e as Error).message, "err");
-    return false;
-  }
-}
-
-// --- Kichik UI bo'laklari ---
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <div className="field">
-      <label className="label">{label}</label>
-      {children}
-      {hint && <p className="hint field__hint">{hint}</p>}
-    </div>
-  );
-}
-
-function Toggle({ on, onChange, children }: { on: boolean; onChange: (v: boolean) => void; children: ReactNode }) {
-  return (
-    <button className="toggle-row" onClick={() => onChange(!on)}>
-      <span className="toggle-row__body">{children}</span>
-      <span className={`switch ${on ? "is-on" : ""}`}>
-        <i />
-      </span>
-    </button>
-  );
-}
-
-function Stepper({ value, min, max, onChange }: { value: number; min: number; max: number; onChange: (v: number) => void }) {
-  const set = (v: number) => onChange(Math.max(min, Math.min(max, v)));
-  return (
-    <div className="stepper">
-      <button onClick={() => set(value - 1)} disabled={value <= min} aria-label="Kamaytirish">
-        <Minus size={16} />
-      </button>
-      <input inputMode="numeric" value={value} onChange={(e) => set(Number(e.target.value.replace(/\D/g, "")) || min)} />
-      <button onClick={() => set(value + 1)} disabled={value >= max} aria-label="Oshirish">
-        <Plus size={16} />
-      </button>
-    </div>
-  );
-}
-
-function NumberInput({ value, onChange, placeholder, suffix }: { value: string; onChange: (v: string) => void; placeholder?: string; suffix?: string }) {
-  return (
-    <div className="input-suffix">
-      <input className="input" inputMode="numeric" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))} />
-      {suffix && <span>{suffix}</span>}
-    </div>
-  );
-}
-
-function Empty({ icon, text }: { icon: ReactNode; text: string }) {
-  return (
-    <div className="card placeholder">
-      {icon}
-      <span>{text}</span>
-    </div>
-  );
-}
-
 // --- Umumiy ---
-
-function StatCard({ icon, value, label, tone }: { icon: ReactNode; value: ReactNode; label: string; tone?: string }) {
-  return (
-    <div className={`stat stat--${tone ?? "default"}`}>
-      <span className="stat__icon">{icon}</span>
-      <span className="stat__value">{value}</span>
-      <span className="stat__label">{label}</span>
-    </div>
-  );
-}
 
 function Home({ toast, go }: { toast: Toast; go: (s: Section) => void }) {
   const { data } = useQuery({ queryKey: ["admin", "stats"], queryFn: adminApi.stats, refetchInterval: 30000 });
@@ -158,6 +78,7 @@ function Home({ toast, go }: { toast: Toast; go: (s: Section) => void }) {
         <StatCard icon={<TrendingUp size={16} />} value={money(data.revenue_month).replace(" so'm", "")} label="so'm kirim · 30 kun" tone="premium" />
         <StatCard icon={<Zap size={16} />} value={data.active_services} label={`faol xizmat · ${data.accounts} akkaunt`} />
       </div>
+      <TrendChart />
       <button className="card row-card" onClick={() => go("payments")}>
         <span className={`row-card__icon ${data.pending_payments ? "is-alert" : ""}`}>
           <CreditCard size={18} />
@@ -171,8 +92,14 @@ function Home({ toast, go }: { toast: Toast; go: (s: Section) => void }) {
       </button>
       <h3 className="section-title">Tezkor</h3>
       <div className="quick-grid">
+        <button className="quick" onClick={() => go("broadcast")}>
+          <Megaphone size={20} /> Xabar yuborish
+        </button>
         <button className="quick" onClick={() => go("promos")}>
           <Ticket size={20} /> Promokod yaratish
+        </button>
+        <button className="quick" onClick={() => go("referral")}>
+          <Gift size={20} /> Referal sozlash
         </button>
         <button className="quick" onClick={() => go("plans")}>
           <BadgePercent size={20} /> Aksiya e'lon qilish
@@ -915,6 +842,8 @@ function UserSheet({ user: initial, onClose, toast }: { user: AdminUserRow; onCl
         </button>
       </div>
 
+      <UserExtras userId={user.id} toast={toast} />
+
       {!user.is_admin && (
         <button
           className={`btn ${user.is_banned ? "btn--ghost" : "btn--danger"}`}
@@ -1124,6 +1053,10 @@ export function AdminView({ toast }: { toast: Toast }) {
       {section === "plans" && <Plans toast={toast} />}
       {section === "promos" && <Promos toast={toast} />}
       {section === "packs" && <PacksAdmin toast={toast} />}
+      {section === "broadcast" && <Broadcasts toast={toast} />}
+      {section === "referral" && <Referrals toast={toast} />}
+      {section === "audit" && <AuditLog />}
+      {section === "system" && <SystemView />}
       {section === "users" && <UsersAdmin toast={toast} />}
       {section === "ai" && <AIAdmin toast={toast} />}
       {section === "settings" && <SettingsAdmin toast={toast} />}

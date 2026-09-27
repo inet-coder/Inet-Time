@@ -12,6 +12,7 @@ type TelegramWebApp = {
   expand: () => void;
   close: () => void;
   openTelegramLink: (url: string) => void;
+  openLink?: (url: string) => void;
   showConfirm: (message: string, callback: (ok: boolean) => void) => void;
   HapticFeedback?: Haptic;
   BackButton: { show: () => void; hide: () => void; onClick: (cb: () => void) => void; offClick: (cb: () => void) => void };

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from admin_deps import require_permission
 from core.audit import record_audit
-from core.billing import FREE_CODE, PromoError, paid_plans, payment_instructions, plan_price, plan_public, quote
+from core.billing import FREE_CODE, PromoError, extend_subscription, paid_plans, payment_instructions, plan_price, plan_public, quote
 from core.db.base import async_session
 from core.db.enums import ActorType, PaymentMethod, PaymentStatus, SubscriptionStatus, TransactionType
 from core.db.models import AdminUser, Payment, Plan, PromoRedemption, Subscription, Transaction, User
@@ -39,32 +39,6 @@ def _is_serialization_failure(exc: DBAPIError) -> bool:
     return "could not serialize access" in str(exc.orig).lower()
 
 
-async def _extend_or_create_subscription(
-    db: AsyncSession, user_id: int, plan: Plan, now: datetime.datetime, days: int | None = None
-) -> Subscription:
-    days = plan.duration_days if days is None else days
-    subscription = await db.scalar(
-        select(Subscription).where(
-            Subscription.user_id == user_id,
-            Subscription.plan_id == plan.id,
-            Subscription.status == SubscriptionStatus.ACTIVE,
-        )
-    )
-    if subscription is not None and subscription.expires_at > now:
-        subscription.expires_at += datetime.timedelta(days=days)
-    else:
-        subscription = Subscription(
-            user_id=user_id,
-            plan_id=plan.id,
-            status=SubscriptionStatus.ACTIVE,
-            started_at=now,
-            expires_at=now + datetime.timedelta(days=days),
-        )
-        db.add(subscription)
-    await db.flush()
-    return subscription
-
-
 @subscriptions_router.post("/buy", response_model=SubscriptionOut)
 async def buy_with_balance(payload: PurchaseCreate) -> Subscription:
     """Tarifni hamyon balansidan darhol sotib olish (admin tasdig'isiz)."""
@@ -93,7 +67,7 @@ async def buy_with_balance(payload: PurchaseCreate) -> Subscription:
                 if balance < q.final:
                     raise HTTPException(402, f"Balans yetarli emas: {balance:.0f} / {q.final:.0f} so'm")
 
-                subscription = await _extend_or_create_subscription(db, user.id, plan, now)
+                subscription = await extend_subscription(db, user.id, plan, now)
                 balance -= q.final
                 db.add(
                     Transaction(
@@ -223,7 +197,7 @@ async def confirm_payment(
 
                 if payment.plan_id is not None:
                     plan = await db.get(Plan, payment.plan_id)
-                    subscription = await _extend_or_create_subscription(db, payment.user_id, plan, now)
+                    subscription = await extend_subscription(db, payment.user_id, plan, now)
 
                     # Double-entry: tashqaridan pul kirdi (TOPUP), so'ng tarifga sarflandi (PURCHASE) — sof ta'sir 0.
                     balance += payment.amount

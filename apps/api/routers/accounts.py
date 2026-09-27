@@ -5,10 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core import crypto
+from core import crypto, referrals
 from core.db.enums import TelegramAccountStatus
 from core.db.models import EncryptedSession, TelegramAccount, User
 from core.entitlements import EntitlementError, check_can_add_account
+from core.notify import send_telegram
 from core.settings import settings
 from core.telegram.enums import LoginStatus
 from core.telegram.factory import get_adapter
@@ -62,6 +63,7 @@ async def _persist_success(db: AsyncSession, user_id: int, state: LoginState) ->
             raise HTTPException(402, str(exc)) from exc
 
     now = datetime.datetime.now(datetime.timezone.utc)
+    referral_messages: list[tuple[int, str]] = []
     if existing is None:
         account = TelegramAccount(
             user_id=user_id,
@@ -75,6 +77,8 @@ async def _persist_success(db: AsyncSession, user_id: int, state: LoginState) ->
         )
         db.add(account)
         await db.flush()
+        # Referal "akkaunt ulasa" rejimi: faqat yangi (ilgari hech kim ulamagan) akkaunt hisoblanadi.
+        referral_messages = await referrals.on_account_connected(db, user_id)
     else:
         if existing.user_id != user_id and existing.status not in (
             TelegramAccountStatus.REVOKED,
@@ -108,6 +112,8 @@ async def _persist_success(db: AsyncSession, user_id: int, state: LoginState) ->
 
     await db.commit()
     await db.refresh(account)
+    for chat_id, text in referral_messages:
+        await send_telegram(chat_id, text)
     return account
 
 

@@ -10,7 +10,7 @@ from core.admin_auth import hash_password, verify_password
 from core.db.base import async_session
 from core.db.models import AdminUser
 from core.settings import settings
-from routers import accounts, admin, admin_auth, automations, jobs, payments, users, webapp, webapp_admin, webapp_ai, webapp_profile
+from routers import accounts, admin, admin_auth, automations, jobs, payments, users, webapp, webapp_admin, webapp_admin_tools, webapp_ai, webapp_profile
 
 if settings.is_production and (missing := settings.missing_production_secrets()):
     raise RuntimeError(f"Production uchun .env'da yetishmaydi: {', '.join(missing)}")
@@ -72,6 +72,9 @@ app.include_router(admin_auth.router)
 app.include_router(admin.router)
 app.include_router(webapp.router)
 app.include_router(webapp_admin.router)
+app.include_router(webapp_admin_tools.router)
+app.include_router(webapp_admin_tools.user_router)
+app.include_router(webapp_admin_tools.internal_router)
 app.include_router(webapp_ai.router)
 app.include_router(webapp_ai.internal_router)
 app.include_router(webapp_profile.router)

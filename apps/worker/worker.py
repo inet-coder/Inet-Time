@@ -1,7 +1,8 @@
+from arq import func
 from arq.connections import RedisSettings
 
 from core.settings import settings
-from tasks import activate_automation_job, revoke_account_job, run_automation_once, send_stories_job, stop_automation_job
+from tasks import activate_automation_job, broadcast_job, revoke_account_job, run_automation_once, send_stories_job, stop_automation_job
 
 
 async def startup(ctx):
@@ -13,7 +14,8 @@ async def shutdown(ctx):
 
 
 class WorkerSettings:
-    functions = [run_automation_once, activate_automation_job, stop_automation_job, revoke_account_job, send_stories_job]
+    # Ommaviy xabar minglab odamga ketishi mumkin — standart 5 daqiqa yetmaydi.
+    functions = [func(broadcast_job, timeout=3 * 3600, max_tries=1), run_automation_once, activate_automation_job, stop_automation_job, revoke_account_job, send_stories_job]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url or "redis://redis:6379")

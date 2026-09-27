@@ -1,7 +1,6 @@
 import asyncio
 import logging
 
-import httpx
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -11,6 +10,7 @@ from api_client import api_client
 from catalog import STUDIO_SHORT
 from common import set_webapp_url, webapp_url
 from core.settings import settings
+from core.webapp_url import discover_webapp_url
 from handlers import add_account, admin, ai, billing, home, pro, profile, start
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -45,21 +45,10 @@ async def on_error(event: ErrorEvent) -> None:
 WEBAPP_CHECK_SECONDS = 60
 
 
-async def _discover_webapp_url() -> str | None:
-    if settings.webapp_url:
-        return settings.webapp_url
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            hostname = (await client.get(settings.tunnel_metrics_url)).json().get("hostname")
-    except (httpx.HTTPError, ValueError):
-        return None
-    return f"https://{hostname}" if hostname else None
-
-
 async def webapp_url_watcher(bot: Bot) -> None:
     """Quick tunnel har restartda yangi manzil beradi — menyu tugmasini doim joriy manzilga moslaymiz."""
     while True:
-        url = await _discover_webapp_url()
+        url = await discover_webapp_url()
         if url and url != webapp_url():
             try:
                 await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text=STUDIO_SHORT, web_app=WebAppInfo(url=url)))

@@ -1,0 +1,7 @@
+# Proxy rejimi: web faqat 127.0.0.1'dagi yuqori portda plain HTTP beradi.
+# HTTPS'ni serverdagi mavjud reverse proxy (nginx/Caddy) beradi va shu portga yo'naltiradi.
+# Standart portlar (80/443) band bo'lgan serverlar uchun — hech qanday umumiy port ochilmaydi.
+services:
+  web:
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8791}:80"

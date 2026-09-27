@@ -56,7 +56,31 @@ nano .env
 
 HTTPS sertifikatini Caddy o'zi oladi va yangilaydi.
 
-**B) Cloudflare Tunnel** — domen Cloudflare'da bo'lsa, server portlarini umuman ochmasdan:
+**B) Mavjud proxy (pm2/nginx band server) — TAVSIYA shu holatda:**
+
+Server portlari (80/443) allaqachon band bo'lsa. Web faqat `127.0.0.1:WEB_PORT`da turadi.
+
+1. `.env`:
+   ```
+   DEPLOY_MODE=proxy
+   SITE_ADDRESS=:80
+   WEB_PORT=8791          # pm2 portlariga urilmaydigan yuqori port
+   WEBAPP_URL=https://app.inettime.uz
+   ```
+2. Mavjud nginx'ingizga subdomen qo'shing (HTTPS'ni u beradi):
+   ```nginx
+   server {
+       server_name app.inettime.uz;
+       location / {
+           proxy_pass http://127.0.0.1:8791;
+           proxy_set_header Host $host;
+           proxy_set_header X-Forwarded-Proto $scheme;
+       }
+   }
+   ```
+   Keyin: `certbot --nginx -d app.inettime.uz && systemctl reload nginx`
+
+**C) Cloudflare Tunnel** — domen Cloudflare'da bo'lsa, server portlarini umuman ochmasdan:
 
 1. Cloudflare → Zero Trust → Networks → Tunnels → **Create tunnel** → token'ni nusxalang.
 2. Public hostname: `app.sizningdomen.uz` → Service: `http://web:80`.

@@ -16,9 +16,10 @@ mode="$(grep -E '^DEPLOY_MODE=' .env | tail -1 | cut -d= -f2- | tr -d '"'"'"' ')
 args=(-f docker-compose.prod.yml)
 case "$mode" in
   domain) args+=(-f deploy/compose.domain.yml) ;;
+  proxy) args+=(-f deploy/compose.proxy.yml) ;;
   tunnel) args+=(--profile tunnel) ;;
   *)
-    echo "❌ .env da DEPLOY_MODE=domain yoki DEPLOY_MODE=tunnel bo'lishi kerak (hozir: '$mode')" >&2
+    echo "❌ .env da DEPLOY_MODE=domain | proxy | tunnel bo'lishi kerak (hozir: '$mode')" >&2
     exit 1
     ;;
 esac

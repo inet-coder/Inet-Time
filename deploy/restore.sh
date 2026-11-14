@@ -9,7 +9,7 @@ dump="${1:?Foydalanish: ./deploy/restore.sh backups/FAYL.dump}"
 read -r -p "Hozirgi baza $dump bilan almashtiriladi. Davom etamizmi? [y/N] " ok
 [ "$ok" = "y" ] || exit 1
 
-./deploy/deploy.sh stop api bot worker scheduler
+./deploy/deploy.sh stop api bot worker scheduler listener botrunner
 ./deploy/deploy.sh exec -T postgres pg_restore -U userbots -d userbots --clean --if-exists --no-owner --no-privileges < "$dump" || true
 ./deploy/deploy.sh up -d
 echo "✅ Tiklandi. Tekshiring: ./deploy/deploy.sh logs --tail 50 api"

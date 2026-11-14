@@ -16,6 +16,8 @@ FREE_PLAN = {
         "scheduler_limit": 1,
         "online_service": False,
         "emoji_service": False,
+        "bot_limit": 1,
+        "bot_pages_limit": 10,
     },
 }
 
@@ -44,6 +46,14 @@ class Entitlement:
     @property
     def scheduler_limit(self) -> int:
         return int(self.flags.get("scheduler_limit", 1))
+
+    @property
+    def bot_limit(self) -> int:
+        return int(self.flags.get("bot_limit", 1))
+
+    @property
+    def bot_pages_limit(self) -> int:
+        return int(self.flags.get("bot_pages_limit", 10))
 
 
 async def get_entitlement(db: AsyncSession, user_id: int) -> Entitlement:

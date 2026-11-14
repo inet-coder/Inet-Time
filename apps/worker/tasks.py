@@ -555,3 +555,86 @@ async def broadcast_job(ctx, broadcast_id: int) -> None:
             broadcast.status = "done"
         broadcast.finished_at = datetime.datetime.now(datetime.timezone.utc)
         await db.commit()
+
+
+async def user_bot_broadcast_job(ctx, broadcast_id: int) -> None:
+    """Foydalanuvchi botining obunachilariga xabar: ~20 xabar/soniya, 429 bo'lsa retry_after kutiladi,
+    botni bloklaganlar belgilanadi (keyingi safar ularga yuborilmaydi)."""
+    import httpx
+
+    from core.botapi import BotApiError, call
+    from core.db.models import BotBroadcast, BotSubscriber, UserBot
+
+    async with async_session() as db:
+        item = await db.get(BotBroadcast, broadcast_id)
+        if item is None or item.status != "sending":
+            return
+        bot = await db.get(UserBot, item.bot_id)
+        if bot is None:
+            return
+        token = crypto.decrypt_packed(bot.token_encrypted)
+        chat_ids = list(
+            await db.scalars(
+                select(BotSubscriber.tg_user_id).where(BotSubscriber.bot_id == bot.id, BotSubscriber.blocked == False)  # noqa: E712
+            )
+        )
+        photo = None
+        if item.media_id:
+            media = await db.get(MediaFile, item.media_id)
+            photo = (media.data, media.mime) if media else None
+        text = item.text
+        item.total = len(chat_ids)
+        await db.commit()
+
+    sent = failed = 0
+    revoked = False
+    blocked: list[int] = []
+    file_id: str | None = None
+    async with httpx.AsyncClient(timeout=30) as client:
+        for index, chat_id in enumerate(chat_ids, 1):
+            for _attempt in range(3):
+                try:
+                    if photo is not None:
+                        if file_id is None:
+                            data, mime = photo
+                            result = await call(client, token, "sendPhoto", {"chat_id": chat_id, "caption": text}, files={"photo": ("photo.jpg", data, mime)})
+                            file_id = result["photo"][-1]["file_id"]
+                        else:
+                            await call(client, token, "sendPhoto", {"chat_id": chat_id, "photo": file_id, "caption": text})
+                    else:
+                        await call(client, token, "sendMessage", {"chat_id": chat_id, "text": text})
+                    sent += 1
+                except BotApiError as exc:
+                    if exc.retry_after is not None:
+                        await asyncio.sleep(exc.retry_after + 1)
+                        continue
+                    if exc.token_revoked:
+                        failed += len(chat_ids) - index + 1
+                        revoked = True  # token bekor — qolganlarga yuborib bo'lmaydi
+                    elif exc.user_blocked:
+                        blocked.append(chat_id)
+                        failed += 1
+                    else:
+                        failed += 1
+                break
+            if revoked:
+                break
+            await asyncio.sleep(0.05)
+            if index % 50 == 0:
+                async with async_session() as db:
+                    item = await db.get(BotBroadcast, broadcast_id)
+                    item.sent, item.failed = sent, failed
+                    await db.commit()
+
+    async with async_session() as db:
+        if blocked:
+            await db.execute(
+                update(BotSubscriber)
+                .where(BotSubscriber.bot_id == bot.id, BotSubscriber.tg_user_id.in_(blocked))
+                .values(blocked=True)
+            )
+        item = await db.get(BotBroadcast, broadcast_id)
+        item.sent, item.failed = sent, failed
+        item.status = "done"
+        item.finished_at = datetime.datetime.now(datetime.timezone.utc)
+        await db.commit()

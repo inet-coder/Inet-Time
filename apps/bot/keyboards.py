@@ -22,10 +22,17 @@ def _webapp_row() -> list[list[tuple[str, str]]]:
     return [[(STUDIO, url)]] if url else []
 
 
+def _bots_row() -> list[list[tuple[str, str]]]:
+    # Bot konstruktori — Mini App'ning «Botlar» bo'limi (hash emas: Telegram initData'ni hash'ga qo'shadi).
+    url = webapp_url()
+    return [[("🧩 O'z botingizni yarating", f"{url.split('?')[0]}?tab=bots")]] if url else []
+
+
 def home_no_account(admin: bool) -> InlineKeyboardMarkup:
     rows = [
         [("📞 Raqam orqali ulash", "login_phone"), ("📷 QR orqali", "login_qr")],
         *_webapp_row(),
+        *_bots_row(),
         [("💎 Tariflar", "plans"), ("🎁 Taklif", "ref"), ("❓ Yordam", "help")],
     ]
     if admin:
@@ -48,6 +55,7 @@ def home(live: dict[str, dict], multi_account: bool, admin: bool) -> InlineKeybo
         [svc_button("clock_name"), svc_button("auto_bio")],
         [svc_button("auto_name"), (f"➕ Ko'proq{f' ({extra_active} ✅)' if extra_active else ''}", "pro")],
     ]
+    rows += _bots_row()
     if multi_account:
         rows.append([("🔄 Boshqa akkaunt", "acc_switch")])
     rows += [

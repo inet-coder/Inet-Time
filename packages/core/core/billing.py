@@ -19,6 +19,8 @@ PLAN_LIMITS = [
     {"key": "account_limit", "title": "Akkauntlar soni", "min": 1, "max": 50},
     {"key": "scheduler_limit", "title": "Bir vaqtda xizmatlar", "min": 1, "max": 100},
     {"key": "ai_daily_limit", "title": "AI so'rovlar / kun", "min": 0, "max": 5000},
+    {"key": "bot_limit", "title": "O'z botlari (konstruktor)", "min": 0, "max": 50},
+    {"key": "bot_pages_limit", "title": "Bot menyusi: sahifalar", "min": 3, "max": 500},
 ]
 PLAN_FEATURES = [
     {"key": "schedule_service", "title": "Jadval", "service": "schedule"},
@@ -28,6 +30,7 @@ PLAN_FEATURES = [
     {"key": "photo_service", "title": "Rasm almashtirish", "service": "photo"},
     {"key": "ai_service", "title": "AI avto-javob va yozish", "service": "ai_reply"},
     {"key": "stories_service", "title": "Stories yuklash", "service": "stories"},
+    {"key": "bot_no_branding", "title": "Botda platforma yozuvisiz", "service": "bots"},
 ]
 
 _CENT = decimal.Decimal("1")

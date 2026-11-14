@@ -78,6 +78,16 @@ services:
       api:
         condition: service_healthy
 
+  # Bot konstruktori: foydalanuvchilar ulagan botlarni long-polling bilan ishga tushiradi.
+  botrunner:
+    build:
+      context: .
+      dockerfile: apps/botrunner/Dockerfile
+    env_file: .env
+    depends_on:
+      api:
+        condition: service_healthy
+
   scheduler:
     build:
       context: .

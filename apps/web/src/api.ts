@@ -118,6 +118,52 @@ export type PresenceState = { mode: PresenceMode; online_unlocked: boolean };
 
 export type ScheduleSuggestion = { time: string; text: string };
 
+// --- Bot konstruktori ---
+
+export type BotAction = "page" | "url" | "back" | "home" | "feedback";
+export type BotButton = { text: string; action: BotAction; target: string | null; url: string | null };
+export type BotPage = {
+  id: string;
+  title: string;
+  text: string;
+  media_id: number | null;
+  keyboard: "inline" | "reply";
+  buttons: BotButton[][];
+};
+export type BotMenu = {
+  start: string;
+  pages: BotPage[];
+  fallback: string;
+  feedback_prompt: string;
+  feedback_done: string;
+  feedback_anonymous: boolean;
+};
+export type UserBotShort = {
+  id: number;
+  username: string;
+  name: string;
+  status: "active" | "paused" | "error";
+  error_message: string | null;
+  pages: number;
+  subscribers: number;
+};
+export type BotTemplate = { code: string; title: string; desc: string; pages: number };
+export type BotsList = {
+  bots: UserBotShort[];
+  limit: number;
+  pages_limit: number;
+  plan_name: string;
+  templates: BotTemplate[];
+  variables: { key: string; label: string }[];
+};
+export type BotBroadcastInfo = { id: number; status: "sending" | "done"; total: number; sent: number; failed: number };
+export type BotDetail = UserBotShort & {
+  menu: BotMenu;
+  pages_limit: number;
+  stats: { subscribers: number; active_24h: number; new_7d: number; blocked: number };
+  last_broadcast: BotBroadcastInfo | null;
+};
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -204,6 +250,14 @@ export const api = {
     request<PresenceState>("PUT", `/webapp/presence?account_id=${accountId}`, { mode }),
   topup: (amount: number) =>
     request<{ ok: boolean; payment_id: number; instructions: string }>("POST", "/webapp/topup", { amount }),
+  bots: () => request<BotsList>("GET", "/webapp/bots"),
+  connectBot: (token: string, template: string) => request<BotDetail>("POST", "/webapp/bots", { token, template }),
+  bot: (id: number) => request<BotDetail>("GET", `/webapp/bots/${id}`),
+  saveBotMenu: (id: number, menu: BotMenu) => request<{ ok: boolean; menu: BotMenu }>("PUT", `/webapp/bots/${id}/menu`, { menu }),
+  setBotActive: (id: number, active: boolean) => request<UserBotShort>("POST", `/webapp/bots/${id}/status`, { active }),
+  deleteBot: (id: number) => request<{ ok: boolean }>("DELETE", `/webapp/bots/${id}`),
+  botBroadcast: (id: number, text: string, mediaId: number | null) =>
+    request<{ id: number; status: string }>("POST", `/webapp/bots/${id}/broadcast`, { text, media_id: mediaId }),
 };
 
 export type Quote = {

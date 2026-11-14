@@ -2534,3 +2534,318 @@ svg {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* --- Bot konstruktori --- */
+.bb-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+.bb-hero h2 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+.bb-hero__icon,
+.bb-avatar {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(145deg, #5ac8fa, #3a6df0);
+  flex-shrink: 0;
+}
+.bb-hero__icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 18px;
+}
+.bb-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+.bb-steps {
+  align-self: stretch;
+  text-align: left;
+  margin: 6px 0 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+.bb-steps code,
+.bb-editor code,
+.sheet code {
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--track);
+  font-size: 13px;
+}
+.bb-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.bb-dot--paused {
+  background: var(--hint);
+}
+.bb-dot--error {
+  background: var(--danger);
+}
+.bb-templates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.bb-template {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px;
+  border-radius: 16px;
+  text-align: left;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.bb-template.is-selected {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: var(--soft);
+}
+.bb-template__meta {
+  margin-top: auto;
+  font-size: 12px;
+  color: var(--link);
+  font-weight: 600;
+}
+.bb-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.bb-topbar__title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.bb-topbar__title b {
+  font-size: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bb-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  align-self: flex-start;
+  padding: 0;
+  font-size: 13px;
+  color: var(--link);
+}
+.bb-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.bb-section-head .section-title {
+  margin-top: 6px;
+}
+.bb-page-item {
+  gap: 10px;
+}
+.bb-indent {
+  flex-shrink: 0;
+  align-self: stretch;
+  border-right: 2px solid var(--hairline);
+}
+.bb-indent[style*="width: 0"] {
+  display: none;
+}
+.bb-page-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--link);
+  background: var(--soft);
+  flex-shrink: 0;
+}
+.bb-page-icon.is-start {
+  color: #fff;
+  background: linear-gradient(145deg, #5ac8fa, #3a6df0);
+}
+.bb-savebar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  width: calc(100% - 32px);
+  max-width: 420px;
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--card) 86%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.35), inset 0 0 0 1px var(--hairline);
+  z-index: 11;
+}
+.bb-savebar .btn {
+  padding: 12px;
+}
+.bb-editor {
+  padding-bottom: 72px;
+}
+
+/* Jonli ko'rinish (Telegram chatiga o'xshash) */
+.bb-chat {
+  border-radius: 18px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.bb-chat__msgs {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bb-chat .bc-preview {
+  background: var(--card);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.06);
+}
+.bb-inline {
+  display: flex;
+  gap: 4px;
+  max-width: 320px;
+}
+.bb-inline__btn {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 9px 6px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  backdrop-filter: blur(8px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bb-inline__btn:active,
+.bb-reply__btn:active {
+  transform: scale(0.97);
+}
+.bb-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  background: var(--card);
+  border-top: 1px solid var(--hairline);
+}
+.bb-reply__row {
+  display: flex;
+  gap: 5px;
+}
+.bb-reply__btn {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 6px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  background: var(--bg);
+  box-shadow: 0 1px 0 var(--hairline);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tugmalar to'ri */
+.bb-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bb-grid__row {
+  display: flex;
+  gap: 6px;
+}
+.bb-key {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px 8px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 550;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.bb-key span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bb-key__icon {
+  color: var(--hint);
+}
+.bb-key.is-selected {
+  background: var(--soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.bb-key.is-invalid {
+  box-shadow: inset 0 0 0 2px var(--danger);
+}
+.bb-key--add {
+  flex: 0 0 40px;
+  color: var(--link);
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--border);
+  border-style: dashed;
+}
+.bb-key--row {
+  color: var(--link);
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--border);
+}
+.bb-btn-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bb-btn-editor .chips {
+  margin: 0;
+}
+.bb-btn-editor .row .btn {
+  flex: 1;
+}
+.bb-page-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.bb-page-actions .btn {
+  flex: 1;
+}
+select.input {
+  appearance: none;
+  -webkit-appearance: none;
+}

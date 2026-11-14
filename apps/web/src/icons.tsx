@@ -6,6 +6,7 @@ import {
   Clock,
   Eye,
   FileText,
+  LayoutGrid,
   Images,
   PenLine,
   Radio,
@@ -29,6 +30,7 @@ export const SERVICE_ICONS: Record<string, { Icon: LucideIcon; from: string; to:
   stories: { Icon: CircleDashed, from: "#ff8a4c", to: "#e1306c" },
   birthday: { Icon: Cake, from: "#ff9ad5", to: "#d9408f" },
   presence: { Icon: Eye, from: "#7aa7ff", to: "#4a5bd6" },
+  bots: { Icon: LayoutGrid, from: "#5ac8fa", to: "#3a6df0" },
 };
 
 const FALLBACK = { Icon: Sparkles, from: "#8a93a6", to: "#5b6478" };

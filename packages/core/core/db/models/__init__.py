@@ -18,6 +18,7 @@ from core.db.models.media import MediaFile
 from core.db.models.system import Notification, SystemSetting, WorkerJob
 from core.db.models.telegram import EncryptedSession, TelegramAccount
 from core.db.models.user import User
+from core.db.models.userbot import BotBroadcast, BotSubscriber, UserBot
 
 __all__ = [
     "AccountAI",
@@ -47,4 +48,7 @@ __all__ = [
     "Notification",
     "WorkerJob",
     "MediaFile",
+    "UserBot",
+    "BotSubscriber",
+    "BotBroadcast",
 ]

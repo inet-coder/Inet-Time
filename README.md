@@ -11,6 +11,9 @@ Telegram akkauntingiz profilini avtomatik boshqaradigan platforma: bot + Mini Ap
 - 😀 **Emoji status**, 🖼 **Rasm almashtirish**
 - 🎂 **Tug'ilgan kun** sanog'i, 👀 **Stories** yuklab olish
 - 🤖 **AI avto-javob** (OpenAI) — shaxsiy chatlarda siz nomingizdan javob; **AI bilan yozish** (bio, ism, jadval matnlari)
+- 🧩 **Bot konstruktori** — foydalanuvchi o'z botini token bilan ulaydi va Mini App'da menyusini quradi: sahifalar,
+  ichma-ich menyular, inline/pastki tugmalar, rasmlar, havolalar, «Adminga yozish» (buyurtma/ariza, egasi «Reply» bilan javob beradi),
+  obunachilar statistikasi va ommaviy xabar; 5 ta tayyor shablon (do'kon, o'quv markazi, anonim savollar, portfolio)
 - 💎 **Tariflar**, promokodlar, chegirmalar, balans
 - 🎁 **Referal tizimi** — bosqichli sovg'alar, ikki hisoblash rejimi
 - 🛠 **Admin panel** (Mini App ichida): foydalanuvchilar, to'lovlar, tariflar, ommaviy xabarlar, statistika, jurnal
@@ -26,6 +29,7 @@ Monorepo (Docker Compose):
 | `apps/worker` | arq — profilni qo'llash, stories, ommaviy xabar |
 | `apps/scheduler` | rejalashtirilgan vazifalar, obuna tugashi |
 | `apps/listener` | doimiy Telegram ulanishi: AI avto-javob va 24/7 Online (worker — zaxira) |
+| `apps/botrunner` | foydalanuvchilar ulagan botlarni long-polling bilan ishga tushiradi (bot konstruktori) |
 | `apps/web` | React + Vite — Mini App (Studiya + admin) |
 | `packages/core` | SQLAlchemy modellar, Alembic, Telethon adapterlari, biznes-mantiq |
 

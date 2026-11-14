@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Bot,
   ChevronRight,
   CircleAlert,
   CircleCheck,
@@ -27,6 +28,7 @@ import {
   type EditorProps,
 } from "./components/Editors";
 import { AdminView } from "./components/AdminView";
+import { BotsView } from "./components/BotsView";
 import { AIReplyEditor, StoriesEditor } from "./components/AIEditors";
 import { BirthdayEditor, PresenceEditor } from "./components/ProfileEditors";
 import { PlansView } from "./components/PlansView";
@@ -56,11 +58,12 @@ const EDITORS: Record<string, (p: EditorProps) => JSX.Element> = {
   online: OnlineEditor,
 };
 
-type Tab = "profile" | "services" | "plan" | "admin";
+type Tab = "profile" | "services" | "bots" | "plan" | "admin";
 
 const TABS: [Tab, typeof UserRound, string][] = [
   ["profile", UserRound, "Profil"],
   ["services", LayoutGrid, "Xizmatlar"],
+  ["bots", Bot, "Botlar"],
   ["plan", Gem, "Tarif"],
   ["admin", ShieldCheck, "Admin"],
 ];
@@ -114,7 +117,8 @@ function Loader() {
 function Main() {
   const queryClient = useQueryClient();
   const [accountId, setAccountId] = useState<number | undefined>();
-  const [tab, setTab] = useState<Tab>("profile");
+  // Botdan «O'z botingizni yarating» tugmasi ?tab=bots bilan ochadi.
+  const [tab, setTab] = useState<Tab>(() => (new URLSearchParams(window.location.search).get("tab") === "bots" ? "bots" : "profile"));
   const [mode, setMode] = useState<Mode>("now");
   const [openCode, setOpenCode] = useState<string | null>(null);
   const [toast, showToast] = useToast();
@@ -225,6 +229,7 @@ function Main() {
           )}
         </div>
       )}
+      {tab === "bots" && <BotsView state={state} toast={showToast} goPlans={() => setTab("plan")} />}
       {tab === "plan" && <PlansView state={state} refresh={refresh} toast={showToast} />}
       {tab === "admin" && state.is_admin && <AdminView toast={showToast} />}
 

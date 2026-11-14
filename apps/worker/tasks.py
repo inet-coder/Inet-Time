@@ -5,6 +5,7 @@ import random
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, update
+from telethon.errors import FloodWaitError
 
 from core import crypto
 from core.automation_engine import find_conflicts
@@ -21,14 +22,71 @@ from core.db.models import (
     WorkerJob,
 )
 from core.preview import slot_index
+from core.session_health import handle_session_dead
+from core.telegram.errors import ErrorKind, SessionDeadError, classify
 from core.telegram.factory import get_adapter
 from core.telegram.field_adapter_factory import get_field_adapter
+from core.telegram.presence import online_keeper_key
 from core.templates import TemplateContext, render
 from core.worker_support.backoff import call_with_backoff
 from core.worker_support.lease import AccountBusyError, release_lease, require_lease
 from core.worker_support.lock import profile_lock
 
 UNCHANGED_REAPPLY_SECONDS = 600
+# Vaqtinchalik xatolar (tarmoq, Telegram serveri, timeout) ketma-ket shuncha marta takrorlansagina xizmat
+# ERROR bo'ladi. Avval birinchi xatodayoq to'xtardi — «bazi-bazida o'zi o'chib qolish» sababi shu edi.
+MAX_TRANSIENT_FAILURES = 15
+FAILURE_COUNTER_TTL = 3 * 3600
+
+
+def _failures_key(automation_id: int) -> str:
+    return f"failures:{automation_id}"
+
+
+def _flood_key(account_id: int) -> str:
+    return f"flood:{account_id}"
+
+
+async def _set_error(db, automation_id: int, message: str) -> None:
+    """Faqat ishlayotgan xizmat ERROR bo'ladi — foydalanuvchi shu payt o'chirgan bo'lsa (CANCELLED) tegilmaydi."""
+    await db.execute(
+        update(Automation)
+        .where(
+            Automation.id == automation_id,
+            Automation.status.in_((AutomationStatus.ACTIVE, AutomationStatus.STARTING)),
+        )
+        .values(status=AutomationStatus.ERROR, error_message=message[:1000])
+    )
+    await db.commit()
+
+
+async def _handle_failure(ctx, db, job_id: str, automation_id: int, account_id: int, exc: Exception, *, tolerate_transient: bool) -> None:
+    """Xatoni turiga qarab ishlaydi: sessiya tugagan / doimiy / vaqtinchalik."""
+    await db.rollback()
+    kind = classify(exc)
+    error = f"{type(exc).__name__}: {exc}"
+
+    if kind == ErrorKind.SESSION_DEAD:
+        await handle_session_dead(db, account_id, type(exc).__name__)
+        await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=error)
+        return
+
+    if isinstance(exc, FloodWaitError):
+        # Telegram «kuting» dedi — shu akkauntni muddat tugaguncha bezovta qilmaymiz, xizmat to'xtamaydi.
+        await ctx["redis"].set(_flood_key(account_id), "1", ex=int(exc.seconds) + 5)
+        await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=error)
+        return
+
+    if kind == ErrorKind.TRANSIENT and tolerate_transient:
+        key = _failures_key(automation_id)
+        failures = await ctx["redis"].incr(key)
+        await ctx["redis"].expire(key, FAILURE_COUNTER_TTL)
+        if failures < MAX_TRANSIENT_FAILURES:
+            await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=f"vaqtinchalik ({failures}/{MAX_TRANSIENT_FAILURES}) {error}")
+            return
+
+    await _set_error(db, automation_id, str(exc) or type(exc).__name__)
+    await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=error)
 
 
 async def _claim_job(db, job_id: str) -> bool:
@@ -61,7 +119,7 @@ async def _get_session_string(db, account: TelegramAccount) -> str:
         select(EncryptedSession).where(EncryptedSession.telegram_account_id == account.id)
     )
     if session_row is None or session_row.revoked_at is not None:
-        raise RuntimeError("Akkaunt sessiyasi mavjud emas yoki bekor qilingan")
+        raise SessionDeadError("Akkaunt sessiyasi mavjud emas yoki bekor qilingan")
     return crypto.decrypt(session_row.ciphertext, session_row.nonce, session_row.key_version)
 
 
@@ -114,12 +172,18 @@ async def run_automation_once(ctx, automation_id: int, job_id: str) -> None:
         if automation is None:
             await _finish_job(db, job_id, WorkerJobStatus.FAILED, error="Automation topilmadi")
             return
-        account = await db.get(TelegramAccount, automation.telegram_account_id)
+        account_id = automation.telegram_account_id
+        if automation.status != AutomationStatus.ACTIVE:
+            # Navbatda turgan payt foydalanuvchi o'chirgan/almashtirgan — bu xato emas, shunchaki o'tkazamiz.
+            await _finish_job(db, job_id, WorkerJobStatus.DONE, payload={"skipped": automation.status.value})
+            return
+        if await ctx["redis"].exists(_flood_key(account_id)):
+            await _finish_job(db, job_id, WorkerJobStatus.FAILED, error="FloodWait: akkaunt dam olmoqda")
+            return
+        account = await db.get(TelegramAccount, account_id)
 
         try:
-            if automation.status != AutomationStatus.ACTIVE:
-                raise RuntimeError("Faqat ACTIVE automation ishga tushirilishi mumkin")
-            await require_lease(ctx["redis"], account.id)
+            await require_lease(ctx["redis"], account_id)
 
             session_string = await _get_session_string(db, account)
             schedule = await db.scalar(select(Schedule).where(Schedule.automation_id == automation_id))
@@ -143,12 +207,15 @@ async def run_automation_once(ctx, automation_id: int, job_id: str) -> None:
             applied = []
             next_index = automation.last_playlist_index
 
-            async with profile_lock(ctx["redis"], account.id):
+            async with profile_lock(ctx["redis"], account_id):
                 for field, field_actions in by_field.items():
                     conflicts = await find_conflicts(
-                        db, automation.telegram_account_id, {field}, exclude_automation_id=automation_id
+                        db, account_id, {field}, exclude_automation_id=automation_id
                     )
                     if conflicts:
+                        continue
+                    if field == ProfileField.ONLINE and await ctx["redis"].exists(online_keeper_key(account_id)):
+                        # Listener doimiy ulanishda online'ni ushlab turibdi — alohida ulanib-uzilish shart emas.
                         continue
                     if len(field_actions) == 1 or automation.selection_strategy == SelectionStrategy.NONE:
                         chosen = field_actions[0]
@@ -181,17 +248,15 @@ async def run_automation_once(ctx, automation_id: int, job_id: str) -> None:
             if schedule is not None:
                 schedule.last_run_at = datetime.datetime.now(datetime.timezone.utc)
             await db.commit()
+            await ctx["redis"].delete(_failures_key(automation_id))
             await _finish_job(db, job_id, WorkerJobStatus.DONE, payload={"applied": applied})
         except AccountBusyError as exc:
             # Vaqtinchalik holat — automation ACTIVE qoladi, keyingi scheduled urinish qayta sinaydi (PHASE 7).
             await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=str(exc))
-        except Exception as exc:  # noqa: BLE001 — statusga aniq xato yozib, jobni FAILED belgilaymiz
-            automation.status = AutomationStatus.ERROR
-            automation.error_message = str(exc)
-            await db.commit()
-            await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=str(exc))
+        except Exception as exc:  # noqa: BLE001 — turiga qarab: sessiya / doimiy / vaqtinchalik
+            await _handle_failure(ctx, db, job_id, automation_id, account_id, exc, tolerate_transient=True)
         finally:
-            await release_lease(ctx["redis"], account.id)
+            await release_lease(ctx["redis"], account_id)
 
 
 async def activate_automation_job(ctx, automation_id: int, job_id: str) -> None:
@@ -203,32 +268,38 @@ async def activate_automation_job(ctx, automation_id: int, job_id: str) -> None:
         if automation is None:
             await _finish_job(db, job_id, WorkerJobStatus.FAILED, error="Automation topilmadi")
             return
-        account = await db.get(TelegramAccount, automation.telegram_account_id)
+        account_id = automation.telegram_account_id
+        account = await db.get(TelegramAccount, account_id)
 
         try:
-            await require_lease(ctx["redis"], account.id)
+            await require_lease(ctx["redis"], account_id)
 
-            session_string = await _get_session_string(db, account)
-            field_adapter = get_field_adapter()
             actions = list(
                 await db.scalars(select(AutomationAction).where(AutomationAction.automation_id == automation_id))
             )
             now = datetime.datetime.now(datetime.timezone.utc)
+            session_string: str | None = None
+            field_adapter = get_field_adapter()
 
             for action in actions:
                 has_snapshot = await db.scalar(
                     select(ProfileSnapshot).where(
-                        ProfileSnapshot.telegram_account_id == account.id,
+                        ProfileSnapshot.telegram_account_id == account_id,
                         ProfileSnapshot.field == action.field,
                         ProfileSnapshot.restored == False,  # noqa: E712
                     )
                 )
                 if has_snapshot is None:
-                    current_value = await call_with_backoff(field_adapter.get_current_value, session_string, action.field)
+                    if action.field == ProfileField.ONLINE:
+                        current_value = None  # online holati tiklanmaydi — Telegram'ga ulanish shart emas
+                    else:
+                        if session_string is None:
+                            session_string = await _get_session_string(db, account)
+                        current_value = await call_with_backoff(field_adapter.get_current_value, session_string, action.field)
                     db.add(
                         ProfileSnapshot(
-                            telegram_account_id=account.id,
-                            automation_id=automation.id,
+                            telegram_account_id=account_id,
+                            automation_id=automation_id,
                             field=action.field,
                             value=current_value,
                             captured_at=now,
@@ -236,21 +307,22 @@ async def activate_automation_job(ctx, automation_id: int, job_id: str) -> None:
                     )
 
             automation.status = AutomationStatus.ACTIVE
+            automation.error_message = None
             automation.started_at = now
             await db.commit()
+            await ctx["redis"].delete(_failures_key(automation_id))
             await _finish_job(db, job_id, WorkerJobStatus.DONE)
         except AccountBusyError as exc:
             await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=str(exc))
         except Exception as exc:  # noqa: BLE001
-            automation.status = AutomationStatus.ERROR
-            automation.error_message = str(exc)
-            await db.commit()
-            await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=str(exc))
+            await _handle_failure(ctx, db, job_id, automation_id, account_id, exc, tolerate_transient=False)
         finally:
-            await release_lease(ctx["redis"], account.id)
+            await release_lease(ctx["redis"], account_id)
 
 
 async def stop_automation_job(ctx, automation_id: int, job_id: str, restore: bool) -> None:
+    """Xizmatni o'chirish HAR DOIM o'tishi kerak: profilni tiklash — best-effort.
+    Avval sessiya tugagan bo'lsa yoki tarmoq uzilsa xizmat o'chmay, «xatolik»da qolib ketardi."""
     async with async_session() as db:
         if not await _claim_job(db, job_id):
             return
@@ -259,15 +331,27 @@ async def stop_automation_job(ctx, automation_id: int, job_id: str, restore: boo
         if automation is None:
             await _finish_job(db, job_id, WorkerJobStatus.FAILED, error="Automation topilmadi")
             return
-        account = await db.get(TelegramAccount, automation.telegram_account_id)
+        account_id = automation.telegram_account_id
+        account = await db.get(TelegramAccount, account_id)
 
         try:
-            await require_lease(ctx["redis"], account.id)
+            await require_lease(ctx["redis"], account_id)
+        except AccountBusyError as exc:
+            await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=str(exc))
+            return
 
+        restore_errors: list[str] = []
+        session_dead_reason: str | None = None
+        try:
             own_fields = set(
                 await db.scalars(select(AutomationAction.field).where(AutomationAction.automation_id == automation_id))
             )
-            session_string = await _get_session_string(db, account) if restore else ""
+            session_string = ""
+            if restore:
+                try:
+                    session_string = await _get_session_string(db, account)
+                except SessionDeadError:
+                    restore = False  # tiklab bo'lmaydi; snapshotlar keyingi ulanish uchun saqlanadi
             if ProfileField.PHOTO in own_fields:
                 await _cleanup_photo(ctx, session_string, automation_id, restore)
 
@@ -276,30 +360,43 @@ async def stop_automation_job(ctx, automation_id: int, job_id: str, restore: boo
                 snapshots = list(
                     await db.scalars(
                         select(ProfileSnapshot).where(
-                            ProfileSnapshot.telegram_account_id == account.id,
+                            ProfileSnapshot.telegram_account_id == account_id,
                             ProfileSnapshot.field.in_(own_fields),
                             ProfileSnapshot.restored == False,  # noqa: E712
                         )
                     )
                 )
-                async with profile_lock(ctx["redis"], account.id):
+                async with profile_lock(ctx["redis"], account_id):
                     for snap in snapshots:
                         if snap.value is not None:
-                            await call_with_backoff(field_adapter.apply, session_string, snap.field, snap.value)
+                            try:
+                                await call_with_backoff(field_adapter.apply, session_string, snap.field, snap.value)
+                            except Exception as exc:  # noqa: BLE001 — tiklanmagan snapshot saqlanib qoladi
+                                restore_errors.append(f"{snap.field.value}: {type(exc).__name__}: {exc}")
+                                if classify(exc) == ErrorKind.SESSION_DEAD:
+                                    session_dead_reason = type(exc).__name__
+                                    break
+                                continue
                         snap.restored = True
+        except Exception as exc:  # noqa: BLE001
+            restore_errors.append(f"{type(exc).__name__}: {exc}")
 
+        try:
             automation.status = AutomationStatus.CANCELLED
             await db.commit()
-            await _finish_job(db, job_id, WorkerJobStatus.DONE)
-        except AccountBusyError as exc:
-            await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=str(exc))
-        except Exception as exc:  # noqa: BLE001
-            automation.status = AutomationStatus.ERROR
-            automation.error_message = str(exc)
+        except Exception:  # noqa: BLE001 — tranzaksiya buzilgan bo'lsa ham xizmat o'chishi shart
+            await db.rollback()
+            await db.execute(update(Automation).where(Automation.id == automation_id).values(status=AutomationStatus.CANCELLED))
             await db.commit()
-            await _finish_job(db, job_id, WorkerJobStatus.FAILED, error=str(exc))
-        finally:
-            await release_lease(ctx["redis"], account.id)
+        await ctx["redis"].delete(_failures_key(automation_id))
+        await release_lease(ctx["redis"], account_id)
+
+        if session_dead_reason:
+            await handle_session_dead(db, account_id, session_dead_reason)
+        if restore_errors:
+            await _finish_job(db, job_id, WorkerJobStatus.DONE, payload={"restore_errors": restore_errors}, error="; ".join(restore_errors)[:2000])
+        else:
+            await _finish_job(db, job_id, WorkerJobStatus.DONE)
 
 
 async def revoke_account_job(ctx, account_id: int, job_id: str) -> None:
@@ -343,7 +440,12 @@ async def revoke_account_job(ctx, account_id: int, job_id: str) -> None:
                     )
                     for automation_id in account_automation_ids:
                         await _cleanup_photo(ctx, session_string, automation_id, restore=True)
-                await call_with_backoff(get_adapter().revoke, session_string)
+                try:
+                    await call_with_backoff(get_adapter().revoke, session_string)
+                except Exception as exc:  # noqa: BLE001
+                    # Telegram'da sessiya allaqachon tugatilgan — chiqish shart emas, akkaunt baribir o'chiriladi.
+                    if classify(exc) != ErrorKind.SESSION_DEAD:
+                        raise
                 session_row.revoked_at = datetime.datetime.now(datetime.timezone.utc)
 
             await db.execute(

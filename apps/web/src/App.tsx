@@ -346,7 +346,10 @@ function ProfileTab({ state, mode, setMode, onOpen }: { state: State; mode: Mode
                 <span className={`list-item__sub ${s.status === "ERROR" ? "is-err" : ""}`}>
                   {s.status === "ERROR" ? (
                     <>
-                      <CircleAlert size={13} /> Xatolik — qayta sozlang
+                      <CircleAlert size={13} />{" "}
+                      {s.error_message?.startsWith("Telegram sessiyasi tugatilgan")
+                        ? "Sessiya tugatilgan — akkauntni qayta ulang"
+                        : "Xatolik — qayta sozlang"}
                     </>
                   ) : s.status === "STARTING" ? (
                     <>

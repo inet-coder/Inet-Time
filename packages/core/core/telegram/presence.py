@@ -70,3 +70,13 @@ async def get_telegram_birthday(session_string: str) -> str | None:
         return f"{birthday.year:04d}-{month_day}" if birthday.year else month_day
     finally:
         await client.disconnect()
+
+
+# --- 24/7 Online: doimiy ulanish (listener) ---
+# Listener akkaunt uchun doimiy ulanishda online'ni ushlab tursa, shu kalit yangilanib turadi; worker esa
+# o'sha akkaunt uchun har daqiqada alohida ulanib-uzilmaydi (uzilish «offline»ga olib kelardi).
+ONLINE_KEEPER_TTL_SECONDS = 120
+
+
+def online_keeper_key(account_id: int) -> str:
+    return f"online_keeper:{account_id}"

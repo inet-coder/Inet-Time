@@ -1,4 +1,4 @@
-"""AI avto-javob tinglovchisi.
+"""AI avto-javob tinglovchisi va 24/7 Online ushlab turuvchi (online.py).
 
 AI yoqilgan har bir akkaunt uchun doimiy Telegram ulanishi saqlanadi va faqat SHAXSIY chatlardagi
 kiruvchi matnli xabarlarga javob beriladi (guruh, kanal, botlar va «Saqlangan xabarlar» — yo'q).
@@ -27,6 +27,7 @@ from core.db.models import AccountAI, EncryptedSession, TelegramAccount, User
 from core.entitlements import LIVE_ACCOUNT_STATUSES, get_entitlement
 from core.notify import send_telegram
 from core.settings import settings
+from online import OnlineKeeper
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("listener")
@@ -71,6 +72,7 @@ class Listener:
         self.accounts: dict[int, AccountListener] = {}
         self.limit_notified: set[tuple[int, str]] = set()
         self.instance_id = uuid.uuid4().hex
+        self.online = OnlineKeeper(self.redis)
 
     # --- Sozlamalarni bazadan sinxronlash ---
 
@@ -276,13 +278,26 @@ class Listener:
         asyncio.create_task(self.catch_up_loop())
         while True:
             try:
-                if await self.is_leader():
+                leader = await self.is_leader()
+            except Exception:  # noqa: BLE001 — redis vaqtincha yo'q: hozirgi holatni saqlab turamiz
+                logger.exception("leader tekshiruvida xato")
+                await asyncio.sleep(SYNC_SECONDS)
+                continue
+            try:
+                if leader:
                     await self.sync()
                 elif self.accounts:
                     for account_id in list(self.accounts):
                         await self.stop(account_id)
             except Exception:  # noqa: BLE001 — sikl to'xtamasin
                 logger.exception("sinxronlashda xato")
+            try:
+                if leader:
+                    await self.online.sync()
+                elif self.online.accounts:
+                    await self.online.stop_all()
+            except Exception:  # noqa: BLE001 — AI qismi xatosi online'ga ta'sir qilmasin (va aksincha)
+                logger.exception("online sinxronlashda xato")
             await asyncio.sleep(SYNC_SECONDS)
 
 

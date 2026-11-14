@@ -8,7 +8,7 @@ import keyboards as kb
 from api_client import ApiError, api_client
 from catalog import (
     BASIC_SERVICES,
-    ERROR_HINT,
+    error_hint,
     PRO_SERVICES,
     SERVICES,
     STATUS_ICONS,
@@ -158,7 +158,7 @@ async def _render_service(callback: CallbackQuery, code: str, note: str = "") ->
         if meta["field"] != "online":
             text += f"\n\nHozir: «{_preview(automation['template'], account)}»\nShablon: {automation['template']}"
         if automation["status"] == "ERROR":
-            text += f"\n\n{ERROR_HINT}"
+            text += f"\n\n{error_hint(automation)}"
         markup = kb.service_on(code, automation["id"])
     else:
         flag = meta.get("pro_flag")

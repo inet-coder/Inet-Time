@@ -25,7 +25,7 @@ Monorepo (Docker Compose):
 | `apps/bot` | aiogram 3 — Telegram bot |
 | `apps/worker` | arq — profilni qo'llash, stories, ommaviy xabar |
 | `apps/scheduler` | rejalashtirilgan vazifalar, obuna tugashi |
-| `apps/listener` | AI avto-javob uchun doimiy Telegram ulanishi |
+| `apps/listener` | doimiy Telegram ulanishi: AI avto-javob va 24/7 Online (worker — zaxira) |
 | `apps/web` | React + Vite — Mini App (Studiya + admin) |
 | `packages/core` | SQLAlchemy modellar, Alembic, Telethon adapterlari, biznes-mantiq |
 

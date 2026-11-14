@@ -3,6 +3,7 @@ from telethon.sessions import StringSession
 
 from core.db.enums import ProfileField
 from core.settings import settings
+from core.telegram.errors import PermanentError
 from core.telegram.field_adapter import FieldAdapter
 
 _UNSUPPORTED = (ProfileField.PHOTO, ProfileField.BIRTHDAY)
@@ -21,6 +22,10 @@ class TelethonFieldAdapter(FieldAdapter):
             # Qisqa ulanish yangilanishlarni (updates) olmasin — aks holda ular listener'ga yetib bormaydi
             # (bitta sessiya ikki ulanishda bo'lsa, Telegram ularni faqat bittasiga yuboradi).
             receive_updates=False,
+            # Qisqa ulanish: uzoq osilib qolmasin — muvaffaqiyatsiz bo'lsa backoff/keyingi tik qayta urinadi.
+            timeout=15,
+            connection_retries=2,
+            retry_delay=1,
         )
 
     async def get_current_value(self, session_string: str, field: ProfileField) -> str | None:
@@ -61,7 +66,7 @@ class TelethonFieldAdapter(FieldAdapter):
             elif field == ProfileField.EMOJI_STATUS:
                 me = await client.get_me()
                 if not getattr(me, "premium", False):
-                    raise RuntimeError("Emoji status faqat Telegram Premium akkauntlar uchun")
+                    raise PermanentError("Emoji status faqat Telegram Premium akkauntlar uchun")
                 if value in ("", "0", "none"):
                     status = types.EmojiStatusEmpty()
                 else:

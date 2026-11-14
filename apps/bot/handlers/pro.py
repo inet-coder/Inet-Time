@@ -11,7 +11,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 import keyboards as kb
 from api_client import ApiError, api_client
 from catalog import (
-    ERROR_HINT,
+    error_hint,
     INTERVAL_CHOICES,
     PRO_SERVICES,
     STATUS_TEXT,
@@ -91,7 +91,7 @@ async def _service_screen(overview: dict, account: dict, code: str) -> tuple[str
     if automation is not None:
         text = f"{meta['title']} · {STATUS_TEXT.get(automation['status'], automation['status'])}\n\n{_summary(code, automation, account)}"
         if automation["status"] == "ERROR":
-            text += f"\n\n{ERROR_HINT}"
+            text += f"\n\n{error_hint(automation)}"
         return text, kb.pro_service_on(code, automation["id"])
 
     locked = not overview["plan"]["flags"].get(meta["flag"])

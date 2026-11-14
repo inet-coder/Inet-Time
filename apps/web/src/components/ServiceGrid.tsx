@@ -14,7 +14,8 @@ function Status({ active }: { active: ActiveService }) {
   if (active.status === "ERROR")
     return (
       <span className="status status--err">
-        <CircleAlert size={13} /> Xatolik
+        <CircleAlert size={13} />{" "}
+        {active.error_message?.startsWith("Telegram sessiyasi tugatilgan") ? "Qayta ulang" : "Xatolik"}
       </span>
     );
   if (active.status === "STARTING")

@@ -86,7 +86,7 @@ services:
       api:
         condition: service_healthy
 
-  # AI avto-javob: AI yoqilgan akkauntlar uchun doimiy ulanish (faqat shaxsiy chatlar).
+  # Doimiy ulanish: AI avto-javob (faqat shaxsiy chatlar) va 24/7 Online holatini ushlab turish.
   listener:
     <<: *app
     build:

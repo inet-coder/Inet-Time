@@ -101,6 +101,18 @@ TEMPLATE_HELP = (
 STATUS_ICONS = {"ACTIVE": "✅", "STARTING": "⏳", "ERROR": "⚠️"}
 STATUS_TEXT = {"ACTIVE": "✅ yoqilgan", "STARTING": "⏳ yoqilmoqda", "ERROR": "⚠️ xatolik"}
 ERROR_HINT = "⚠️ Telegram bilan muammo bo'ldi. O'chirib, qayta yoqing."
+SESSION_HINT = (
+    "🔌 Telegram sessiyasi tugatilgan («Qurilmalar» bo'limidan chiqarilgan).\n"
+    "Akkauntni qayta ulang: ➕ Akkaunt qo'shish — xizmat o'zi qayta yoqiladi."
+)
+# packages/core/core/session_health.py: SESSION_DEAD_MESSAGE bilan bir xil bo'lishi kerak
+_SESSION_DEAD_PREFIX = "Telegram sessiyasi tugatilgan"
+
+
+def error_hint(automation: dict) -> str:
+    if (automation.get("error_message") or "").startswith(_SESSION_DEAD_PREFIX):
+        return SESSION_HINT
+    return ERROR_HINT
 
 PLAN_ICONS = {"free": "🆓", "starter": "⭐", "pro": "🚀"}
 

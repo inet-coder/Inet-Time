@@ -10,6 +10,7 @@ from core.db.enums import TelegramAccountStatus
 from core.db.models import EncryptedSession, TelegramAccount, User
 from core.entitlements import EntitlementError, check_can_add_account
 from core.notify import send_telegram
+from core.session_health import reactivate_after_relogin
 from core.settings import settings
 from core.telegram.enums import LoginStatus
 from core.telegram.factory import get_adapter
@@ -109,6 +110,11 @@ async def _persist_success(db: AsyncSession, user_id: int, state: LoginState) ->
         session_row.nonce = nonce
         session_row.key_version = key_version
         session_row.revoked_at = None
+
+    if not is_new_for_user:
+        # Sessiya tugatilgani sabab to'xtagan xizmatlar qayta ulangandan keyin o'zi davom etadi.
+        await db.flush()
+        await reactivate_after_relogin(db, account.id, user_id)
 
     await db.commit()
     await db.refresh(account)

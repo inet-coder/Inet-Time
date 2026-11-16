@@ -206,6 +206,18 @@ export type WASubmission = {
   user: { id: number; name: string | null; username: string | null };
   created_at: string | null;
 };
+export type DataFieldType = "text" | "longtext" | "number" | "money" | "image" | "date" | "bool" | "select" | "phone" | "url" | "email";
+export type DataField = { key: string; label: string; type: DataFieldType; required: boolean; private: boolean; options: string[] };
+export type DataCollection = { id: number; key: string; name: string; read: "public" | "own" | "none"; create: boolean; fields: DataField[]; count: number };
+export type DataRecord = { id: number; _by?: number | null; _at?: string | null; [key: string]: unknown };
+
+function qs(params: Record<string, unknown>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
+  const s = sp.toString();
+  return s ? `?${s}` : "";
+}
+
 export type PublicAppData = { id: number; doc: AppDoc; bot_username: string | null; branding: string | null };
 
 export class ApiError extends Error {
@@ -326,6 +338,33 @@ export const api = {
     ),
   restoreWebAppVersion: (botId: number, versionId: number) =>
     request<WebAppInfo>("POST", `/webapp/bots/${botId}/app/versions/${versionId}/restore`),
+  collections: (botId: number) =>
+    request<{ items: DataCollection[]; limits: { collections: number; records: number } }>("GET", `/webapp/bots/${botId}/app/collections`),
+  createCollection: (botId: number, body: Omit<DataCollection, "id" | "count">) =>
+    request<DataCollection>("POST", `/webapp/bots/${botId}/app/collections`, body),
+  updateCollection: (botId: number, id: number, body: Omit<DataCollection, "id" | "count">) =>
+    request<DataCollection>("PUT", `/webapp/bots/${botId}/app/collections/${id}`, body),
+  deleteCollection: (botId: number, id: number) => request<{ ok: boolean }>("DELETE", `/webapp/bots/${botId}/app/collections/${id}`),
+  records: (botId: number, id: number, params: { q?: string; sort?: string; dir?: string; offset?: number; limit?: number }) =>
+    request<{ items: DataRecord[]; total: number }>("GET", `/webapp/bots/${botId}/app/collections/${id}/records${qs(params)}`),
+  createRecord: (botId: number, id: number, data: Record<string, unknown>) =>
+    request<DataRecord>("POST", `/webapp/bots/${botId}/app/collections/${id}/records`, { data }),
+  updateRecord: (botId: number, id: number, rid: number, data: Record<string, unknown>) =>
+    request<DataRecord>("PUT", `/webapp/bots/${botId}/app/collections/${id}/records/${rid}`, { data }),
+  deleteRecords: (botId: number, id: number, ids: number[]) =>
+    request<{ deleted: number }>("POST", `/webapp/bots/${botId}/app/collections/${id}/records/delete`, { ids }),
+  importCsv: (botId: number, id: number, csv: string) =>
+    request<{ imported: number }>("POST", `/webapp/bots/${botId}/app/collections/${id}/import`, { csv }),
+  exportCsvUrl: (botId: number, id: number) => `/api/webapp/bots/${botId}/app/collections/${id}/export.csv?t=${token}`,
+  previewData: (botId: number, key: string, params: Record<string, unknown>) =>
+    request<{ items: { id: number; [k: string]: unknown }[] }>("GET", `/webapp/bots/${botId}/app/data/${key}${qs(params)}`),
+  publicData: (appId: number, key: string, params: Record<string, unknown>, initData: string | undefined) =>
+    fetch(`/api/webapp/apps/${appId}/data/${key}${qs(params)}`, { headers: initData ? { "X-Telegram-Init-Data": initData } : {} }).then(
+      async (r) => {
+        if (!r.ok) throw new ApiError(r.status, (await r.json().catch(() => ({}))).detail ?? "Ma'lumot olinmadi");
+        return (await r.json()) as { items: { id: number; [k: string]: unknown }[] };
+      },
+    ),
   publicApp: (appId: number) => request<PublicAppData>("GET", `/webapp/apps/${appId}`),
   submitApp: (appId: number, body: SubmitPayload & { init_data: string }) =>
     request<{ ok: boolean; id: number; message: string }>("POST", `/webapp/apps/${appId}/submit`, body),

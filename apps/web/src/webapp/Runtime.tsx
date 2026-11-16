@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronRight,
   Globe,
+  ImageIcon,
   Camera,
   MapPin,
   Minus,
@@ -30,6 +31,7 @@ import {
   type WATheme,
 } from "./types";
 import { CustomView, collectFonts, cssRule, fontStack, useAppear, useGoogleFonts, type NodeCtx } from "./nodes";
+import { fillTemplate, RecordContext, SearchBox, useDebounced, useFill, useRecord, useRecords, type DataLoader, type Rec } from "./data";
 import "./runtime.css";
 
 export type RuntimeProps = {
@@ -46,6 +48,10 @@ export type RuntimeProps = {
   /** Konstruktor (kompyuter): ko'rinishdan blokni tanlash */
   selectedBlock?: string | null;
   onSelectBlock?: (blockId: string) => void;
+  /** To'plamdan yozuvlarni olish (ilovada — ommaviy API, konstruktorda — egasi API'si) */
+  loadData?: DataLoader;
+  /** To'plam yozuvidagi rasm manzili */
+  recordMedia?: (id: number) => string;
   /** Tahrirlash rejimi: bosish amallarni bajarmaydi, balki blok/elementni tanlaydi */
   selectMode?: boolean;
   selectedNode?: string | null;
@@ -108,7 +114,8 @@ function openUrl(url: string) {
 }
 
 // Oddiy formatlash: **qalin**, havolalar, qator tashlash. HTML hech qachon ishlatilmaydi.
-function Rich({ text }: { text: string }) {
+function Rich({ text: raw }: { text: string }) {
+  const text = fillTemplate(raw, useRecord());
   const lines = text.split("\n");
   return (
     <>
@@ -174,7 +181,8 @@ export function WebAppRuntime(props: RuntimeProps) {
   const visiblePages = doc.pages;
   const pageIds = useMemo(() => new Set(visiblePages.map((p) => p.id)), [visiblePages]);
   const [current, setCurrent] = useState<string>(page && pageIds.has(page) ? page : doc.start);
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<{ page: string; record: Rec | null }[]>([]);
+  const [record, setRecord] = useState<Rec | null>(null);
   const [view, setView] = useState<View>({ kind: "page" });
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [cart, changeCart, clearCart] = useCart(props.appId, mode === "live");
@@ -188,6 +196,7 @@ export function WebAppRuntime(props: RuntimeProps) {
       setHistory([]);
       setView({ kind: "page" });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageIds]);
   useEffect(() => {
     if (!pageIds.has(current)) setCurrent(doc.start);
@@ -211,16 +220,17 @@ export function WebAppRuntime(props: RuntimeProps) {
   };
 
   const go = useCallback(
-    (id: string) => {
+    (id: string, rec: Rec | null = null) => {
       if (!pageIds.has(id)) return;
-      setHistory((h) => [...h, current]);
+      setHistory((h) => [...h, { page: current, record }]);
       setCurrent(id);
+      setRecord(rec);
       setView({ kind: "page" });
       props.onPageChange?.(id);
       scrollTop();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [current, pageIds, props.onPageChange],
+    [current, record, pageIds, props.onPageChange],
   );
 
   const back = useCallback(() => {
@@ -231,8 +241,9 @@ export function WebAppRuntime(props: RuntimeProps) {
     setHistory((h) => {
       const prev = h[h.length - 1];
       if (prev) {
-        setCurrent(prev);
-        props.onPageChange?.(prev);
+        setCurrent(prev.page);
+        setRecord(prev.record);
+        props.onPageChange?.(prev.page);
       }
       return h.slice(0, -1);
     });
@@ -255,13 +266,20 @@ export function WebAppRuntime(props: RuntimeProps) {
     }
   }, [mode, canGoBack, back]);
 
-  const runAction = (action: WAAction | undefined) => {
+  const runAction = (action: WAAction | undefined | null, rec?: Rec | null) => {
     if (!action || action.type === "none") return;
     haptic();
     switch (action.type) {
       case "page":
         if (action.page) go(action.page);
         break;
+      case "detail": {
+        if (!action.page) break;
+        const target = visiblePages.find((p) => p.id === action.page);
+        const src = rec ?? record;
+        go(action.page, src && target?.collection ? { ...src, __c: target.collection } : src);
+        break;
+      }
       case "url":
         if (action.url) openUrl(action.url);
         break;
@@ -286,11 +304,26 @@ export function WebAppRuntime(props: RuntimeProps) {
 
   const navPages = visiblePages.filter((p) => p.in_nav);
   const pageObj: WAPage = visiblePages.find((p) => p.id === current) ?? visiblePages[0];
-  const ctx: BlockCtx = { ...props, runAction, cart, changeCart, currency, openLightbox: setLightbox };
+  // Batafsil sahifa yozuvsiz ochilsa (konstruktorda) — namuna sifatida birinchi yozuv
+  const needSample = !!pageObj.collection && (!record || record.__c !== pageObj.collection);
+  useEffect(() => {
+    if (!needSample || !props.loadData || !pageObj.collection) return;
+    let alive = true;
+    const key = pageObj.collection;
+    props
+      .loadData(key, { limit: 1 })
+      .then((items) => alive && items[0] && setRecord({ ...items[0], __c: key }))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needSample, pageObj.collection, props.loadData]);
+  const ctx: BlockCtx = { ...props, runAction, go, cart, changeCart, currency, openLightbox: setLightbox };
 
   return (
     <div ref={rootRef} className={`wa wa--${mode}`} style={themeStyle(doc.theme, mode === "live")}>
-      {canGoBack && mode === "preview" && (
+      {canGoBack && (mode === "preview" || !tg?.initData) && (
         <div className="wa-topbar">
           <button className="wa-icon-btn" onClick={back} aria-label="Orqaga">
             <ArrowLeft size={20} />
@@ -299,6 +332,7 @@ export function WebAppRuntime(props: RuntimeProps) {
         </div>
       )}
 
+      <RecordContext.Provider value={pageObj.collection ? record : null}>
       <main className="wa-main">
         {view.kind === "page" &&
           pageObj.blocks
@@ -345,6 +379,7 @@ export function WebAppRuntime(props: RuntimeProps) {
           </button>
         )}
       </main>
+      </RecordContext.Provider>
 
       {cartCount > 0 && view.kind === "page" && (
         <button className="wa-cartbar" onClick={() => (haptic(), setView({ kind: "cart" }))}>
@@ -425,7 +460,8 @@ function BlockFrame({ block, ctx }: { block: WABlock; ctx: BlockCtx }) {
 // --- Bloklar ---
 
 type BlockCtx = RuntimeProps & {
-  runAction: (a: WAAction | undefined) => void;
+  runAction: (a: WAAction | undefined | null, rec?: Rec | null) => void;
+  go: (page: string, rec?: Rec | null) => void;
   cart: Cart;
   changeCart: (id: string, delta: number) => void;
   currency: string;
@@ -442,7 +478,9 @@ function BlockView({ block, ctx }: { block: WABlock; ctx: BlockCtx }): JSX.Eleme
           ) : block.emoji ? (
             <span className="wa-hero__emoji">{block.emoji}</span>
           ) : null}
-          <h1>{block.title}</h1>
+          <h1>
+            <Fill text={block.title} />
+          </h1>
           {block.subtitle && (
             <p>
               <Rich text={block.subtitle} />
@@ -457,7 +495,11 @@ function BlockView({ block, ctx }: { block: WABlock; ctx: BlockCtx }): JSX.Eleme
       );
     case "heading": {
       const Tag = (`h${block.size}` as "h1" | "h2" | "h3");
-      return <Tag className={`wa-heading wa-heading--${block.size} wa-align-${block.align}`}>{block.text}</Tag>;
+      return (
+        <Tag className={`wa-heading wa-heading--${block.size} wa-align-${block.align}`}>
+          <Fill text={block.text} />
+        </Tag>
+      );
     }
     case "text":
       return (
@@ -489,7 +531,7 @@ function BlockView({ block, ctx }: { block: WABlock; ctx: BlockCtx }): JSX.Eleme
     case "button":
       return (
         <button className={`wa-btn wa-btn--${block.style}`} onClick={() => ctx.runAction(block.action)}>
-          {block.text}
+          <Fill text={block.text} />
         </button>
       );
     case "features":
@@ -653,11 +695,15 @@ function BlockView({ block, ctx }: { block: WABlock; ctx: BlockCtx }): JSX.Eleme
         </figure>
       );
     }
+    case "collection":
+      return <CollectionView block={block} ctx={ctx} />;
     case "custom": {
       const nodeCtx: NodeCtx = {
         blockId: block.id,
         mediaSrc: ctx.mediaSrc,
-        runAction: (a) => ctx.runAction(a ?? undefined),
+        recordMedia: ctx.recordMedia ?? ctx.mediaSrc,
+        loadData: ctx.loadData,
+        runAction: (a, rec) => ctx.runAction(a, rec),
         selectMode: ctx.selectMode,
         selected: ctx.selectedBlock === block.id ? ctx.selectedNode : null,
         onSelect: (nodeId) => ctx.onSelectNode?.(block.id, nodeId),
@@ -1013,5 +1059,69 @@ function CartView({
         </button>
       </div>
     </div>
+  );
+}
+
+function Fill({ text }: { text: string }) {
+  const fill = useFill();
+  return <>{fill(text)}</>;
+}
+
+function CollectionView({ block, ctx }: { block: Extract<WABlock, { type: "collection" }>; ctx: BlockCtx }) {
+  const [q, setQ] = useState("");
+  const dq = useDebounced(q);
+  const { items, loading, error } = useRecords(ctx.loadData, block.query, dq);
+  const media = ctx.recordMedia ?? ctx.mediaSrc;
+  const val = (rec: Rec, key: string | null) => (key ? rec[key] : undefined);
+  const open = (rec: Rec) => block.detail_page && ctx.go(block.detail_page, { ...rec, __c: block.query.collection });
+  return (
+    <section className="wa-coll">
+      {block.title && (
+        <h2 className="wa-heading wa-heading--2">
+          <Fill text={block.title} />
+        </h2>
+      )}
+      {block.query.search && <SearchBox value={q} onChange={setQ} />}
+      {loading && !items.length ? (
+        <div className={`wa-coll__grid wa-coll--${block.layout}`} style={{ ["--wa-cols" as string]: block.columns }}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="wa-card wa-skel" />
+          ))}
+        </div>
+      ) : error ? (
+        <div className="wa-empty">{error}</div>
+      ) : !items.length ? (
+        <div className="wa-empty">{block.query.empty_text || "Hozircha hech narsa yo'q"}</div>
+      ) : (
+        <div className={`wa-coll__grid wa-coll--${block.layout}`} style={{ ["--wa-cols" as string]: block.columns }}>
+          {items.map((rec) => {
+            const img = Number(val(rec, block.image_field)) || null;
+            const price = val(rec, block.price_field);
+            const badge = val(rec, block.badge_field);
+            return (
+              <button key={rec.id} className="wa-card wa-item" disabled={!block.detail_page} onClick={() => open(rec)}>
+                {block.image_field && (
+                  <div className="wa-item__media">
+                    {img ? <img src={media(img)} alt="" loading="lazy" /> : <ImageIcon size={26} strokeWidth={1.5} className="wa-item__ph" />}
+                    {badge ? <i className="wa-badge">{String(badge)}</i> : null}
+                  </div>
+                )}
+                <span className="wa-item__body">
+                  <b>{String(val(rec, block.title_field) ?? `#${rec.id}`)}</b>
+                  {block.subtitle_field && val(rec, block.subtitle_field) != null && (
+                    <span className="wa-muted wa-item__sub">{String(val(rec, block.subtitle_field))}</span>
+                  )}
+                  {price !== undefined && price !== null && price !== "" && (
+                    <span className="wa-item__price">{typeof price === "number" ? formatMoney(price, ctx.currency) : String(price)}</span>
+                  )}
+                  {!block.image_field && badge ? <i className="wa-badge wa-badge--inline">{String(badge)}</i> : null}
+                </span>
+                {block.detail_page && block.layout === "list" && <ChevronRight size={18} className="wa-muted" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }

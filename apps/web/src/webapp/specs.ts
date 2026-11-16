@@ -31,6 +31,7 @@ export const ACTION_TYPES: Opt[] = [
   ["phone", "Qo'ng'iroq"],
   ["share", "Ulashish"],
   ["cart", "Savatchani ochish"],
+  ["detail", "Batafsil sahifa (shu yozuv)"],
 ];
 
 export const FIELD_TYPES: Opt[] = [
@@ -75,6 +76,27 @@ export function countNodes(n: WANode): number {
 }
 
 export const BLOCK_SPECS: Record<BlockType, BlockSpec> = {
+  collection: {
+    title: "Ma'lumotlar ro'yxati",
+    icon: "🗂",
+    desc: "To'plamdagi yozuvlar: kartalar, ro'yxat yoki to'r",
+    category: "Ma'lumot",
+    make: () => ({
+      type: "collection",
+      title: "",
+      query: { collection: "", limit: 20, sort_field: null, sort_dir: "desc", filter_field: null, filter_value: null, search: false, empty_text: "Hozircha hech narsa yo'q" },
+      layout: "cards",
+      columns: 2,
+      title_field: null,
+      subtitle_field: null,
+      image_field: null,
+      price_field: null,
+      badge_field: null,
+      detail_page: null,
+    }),
+    fields: [],
+    summary: (b) => `${b.query.collection || "⚠️ to'plam tanlanmagan"} · ${{ cards: "kartalar", list: "ro'yxat", grid: "to'r" }[b.layout as string]}`,
+  },
   custom: {
     title: "Erkin bo'lim",
     icon: "🧩",

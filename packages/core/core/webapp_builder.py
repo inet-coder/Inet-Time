@@ -88,14 +88,14 @@ def _url_ok(v: str | None) -> str | None:
 
 
 class Action(_M):
-    type: Literal["none", "page", "url", "bot", "phone", "share", "cart"] = "none"
+    type: Literal["none", "page", "url", "bot", "phone", "share", "cart", "detail"] = "none"
     page: str | None = None
     url: str | None = None
     phone: str | None = None
 
     @model_validator(mode="after")
     def _check(self):
-        if self.type == "page" and not self.page:
+        if self.type in ("page", "detail") and not self.page:
             raise ValueError("tugma uchun sahifa tanlanmagan")
         if self.type == "url":
             self.url = _url_ok(self.url)
@@ -160,6 +160,36 @@ class Style(_M):
 
 Anim = Literal["none", "fade", "up", "zoom", "left", "right"]
 
+_DKEY = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+
+
+def _dkey(v: str | None, what: str = "maydon") -> str | None:
+    if v in (None, ""):
+        return None
+    if not _DKEY.match(v):
+        raise ValueError(f"{what} kaliti noto'g'ri")
+    return v
+
+
+class Query(_M):
+    """To'plamdan qaysi yozuvlar olinadi."""
+
+    collection: str
+    limit: int = Field(default=20, ge=1, le=100)
+    sort_field: str | None = None
+    sort_dir: Literal["asc", "desc"] = "desc"
+    filter_field: str | None = None
+    filter_value: str | None = Field(default=None, max_length=200)
+    search: bool = False
+    empty_text: str = Field(default="Hozircha hech narsa yo'q", max_length=200)
+
+    @model_validator(mode="after")
+    def _check(self):
+        _dkey(self.collection, "to'plam")
+        self.sort_field = _dkey(self.sort_field)
+        self.filter_field = _dkey(self.filter_field)
+        return self
+
 
 class _Node(_M):
     id: str
@@ -186,6 +216,8 @@ class BoxNode(_Node):
     columns: int = Field(default=2, ge=1, le=6)
     columns_wide: int | None = Field(default=None, ge=1, le=8)
     action: "Action | None" = None
+    # Takrorlovchi: bolalar to'plamdagi har bir yozuv uchun chiziladi ({{maydon}} bilan)
+    repeat: Query | None = None
     children: list["Node"] = Field(default_factory=list, max_length=60)
 
 
@@ -200,7 +232,13 @@ class ImageNode(_Node):
     media_id: int | None = None
     fit: Literal["cover", "contain"] = "cover"
     ratio: Literal["auto", "1:1", "4:3", "16:9", "3:4", "21:9", "9:16"] = "auto"
+    bind: str | None = None  # rasm yozuvning shu maydonidan olinadi
     action: "Action | None" = None
+
+    @field_validator("bind")
+    @classmethod
+    def _bind(cls, v: str | None) -> str | None:
+        return _dkey(v)
 
 
 class ButtonNode(_Node):
@@ -391,10 +429,12 @@ class Form(_Block):
     fields: list[FormField] = Field(min_length=1, max_length=20)
     submit_text: str = Field(default="Yuborish", min_length=1, max_length=40)
     success_text: str = Field(default="✅ Yuborildi! Tez orada bog'lanamiz.", max_length=300)
+    save_to: str | None = None  # javoblar shu to'plamga ham yoziladi
 
     @model_validator(mode="after")
     def _check(self):
         _unique_fields(self.fields, self.title or "Forma")
+        self.save_to = _dkey(self.save_to, "to'plam")
         return self
 
 
@@ -485,6 +525,28 @@ class Divider(_Block):
     size: Literal["s", "m", "l"] = "m"
 
 
+class CollectionList(_Block):
+    """To'plamdagi yozuvlar ro'yxati — kartalar, ro'yxat yoki to'r ko'rinishida."""
+
+    type: Literal["collection"]
+    title: str = Field(default="", max_length=80)
+    query: Query
+    layout: Literal["cards", "list", "grid"] = "cards"
+    columns: int = Field(default=2, ge=1, le=4)
+    title_field: str | None = None
+    subtitle_field: str | None = None
+    image_field: str | None = None
+    price_field: str | None = None
+    badge_field: str | None = None
+    detail_page: str | None = None
+
+    @model_validator(mode="after")
+    def _check(self):
+        for name in ("title_field", "subtitle_field", "image_field", "price_field", "badge_field"):
+            setattr(self, name, _dkey(getattr(self, name)))
+        return self
+
+
 class Custom(_Block):
     """Erkin bo'lim: elementlar daraxti (konteyner, matn, rasm, tugma, ikonka...) — istalgan dizayn."""
 
@@ -511,13 +573,13 @@ class Custom(_Block):
 
 
 Block = Annotated[
-    Union[Hero, Heading, Text, Image, Gallery, ButtonBlock, Features, Links, Products, Form, Contacts, Faq, Pricing, Stats, Countdown, Video, Divider, Custom],
+    Union[Hero, Heading, Text, Image, Gallery, ButtonBlock, Features, Links, Products, Form, Contacts, Faq, Pricing, Stats, Countdown, Video, Divider, Custom, CollectionList],
     Field(discriminator="type"),
 ]
 
 BLOCK_TYPES = [
     "hero", "heading", "text", "image", "gallery", "button", "features", "links",
-    "products", "form", "contacts", "faq", "pricing", "stats", "countdown", "video", "divider", "custom",
+    "products", "form", "contacts", "faq", "pricing", "stats", "countdown", "video", "divider", "custom", "collection",
 ]
 
 
@@ -528,11 +590,16 @@ IconNode.model_rebuild()
 Custom.model_rebuild()
 
 
+CollectionList.model_rebuild()
+
+
 class Page(_M):
     id: str
     title: str = Field(min_length=1, max_length=40)
     emoji: str = Field(default="", max_length=8)
     in_nav: bool = True
+    # Batafsil sahifa: shu to'plamning bitta yozuvi uchun ochiladi ({{maydon}} bilan)
+    collection: str | None = None
     blocks: list[Block] = Field(default_factory=list, max_length=MAX_BLOCKS)
 
     @field_validator("id")
@@ -541,6 +608,11 @@ class Page(_M):
         if not _ID.match(v):
             raise ValueError("sahifa identifikatori noto'g'ri")
         return v
+
+    @field_validator("collection")
+    @classmethod
+    def _coll(cls, v: str | None) -> str | None:
+        return _dkey(v, "to'plam")
 
 
 class Theme(_M):
@@ -598,8 +670,10 @@ class AppDoc(_M):
                     raise ValueError(f"«{page.title}»: bloklar takrorlanmasin")
                 block_ids.add(block.id)
                 for action in _actions(block):
-                    if action.type == "page" and action.page not in known:
+                    if action.type in ("page", "detail") and action.page not in known:
                         raise ValueError(f"«{page.title}»: tugma o'chirilgan sahifaga bog'langan")
+                if isinstance(block, CollectionList) and block.detail_page and block.detail_page not in known:
+                    raise ValueError(f"«{page.title}»: ro'yxat o'chirilgan sahifaga bog'langan")
                 if isinstance(block, Products):
                     for item in block.items:
                         if item.id in product_ids:
@@ -673,13 +747,37 @@ def _error_message(exc: ValidationError, raw: dict) -> str:
     return msg
 
 
-def validate_app(raw: dict, owned_media: set[int] | None = None) -> dict:
+def used_collections(doc: dict) -> set[str]:
+    keys: set[str] = set()
+    for page in doc.get("pages", []):
+        if page.get("collection"):
+            keys.add(page["collection"])
+        for b in page.get("blocks", []):
+            if b.get("type") == "collection":
+                keys.add(b["query"]["collection"])
+            if b.get("type") == "form" and b.get("save_to"):
+                keys.add(b["save_to"])
+            if b.get("type") == "custom":
+                stack = [b["root"]]
+                while stack:
+                    n = stack.pop()
+                    if n.get("repeat"):
+                        keys.add(n["repeat"]["collection"])
+                    stack.extend(n.get("children") or [])
+    return keys
+
+
+def validate_app(raw: dict, owned_media: set[int] | None = None, collections: set[str] | None = None) -> dict:
     """Tekshiradi va tozalangan hujjatni qaytaradi. Xato bo'lsa WebAppError (o'zbekcha)."""
     try:
         doc = AppDoc.model_validate(raw)
     except ValidationError as exc:
         raise WebAppError(_error_message(exc, raw if isinstance(raw, dict) else {})) from exc
     data = doc.model_dump(mode="json")
+    if collections is not None:
+        missing = used_collections(data) - collections
+        if missing:
+            raise WebAppError(f"«{sorted(missing)[0]}» to'plami topilmadi — «Ma'lumotlar» bo'limida yarating yoki bog'lanishni o'zgartiring")
     if owned_media is not None:
         missing = referenced_media(data) - owned_media
         if missing:

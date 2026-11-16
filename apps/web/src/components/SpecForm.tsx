@@ -374,16 +374,24 @@ export function ActionField({ label, value, set, ctx }: { label: string; value: 
   return (
     <div className="sf-field">
       <Label text={label} />
-      <select className="input" value={a.type} onChange={(e) => set({ ...NO_ACTION, type: e.target.value as WAAction["type"], page: e.target.value === "page" ? ctx.pages[0]?.id ?? null : null })}>
+      <select
+        className="input"
+        value={a.type}
+        onChange={(e) => {
+          const type = e.target.value as WAAction["type"];
+          const first = type === "detail" ? ctx.pages.find((p) => p.collection)?.id : ctx.pages[0]?.id;
+          set({ ...NO_ACTION, type, page: type === "page" || type === "detail" ? first ?? null : null });
+        }}
+      >
         {ACTION_TYPES.map(([v, l]) => (
           <option key={v} value={v}>
             {l}
           </option>
         ))}
       </select>
-      {a.type === "page" && (
+      {(a.type === "page" || a.type === "detail") && (
         <select className="input" value={a.page ?? ""} onChange={(e) => set({ ...a, page: e.target.value })}>
-          {ctx.pages.map((p) => (
+          {ctx.pages.filter((p) => a.type !== "detail" || p.collection).map((p) => (
             <option key={p.id} value={p.id}>
               {p.emoji} {p.title}
             </option>
@@ -394,6 +402,9 @@ export function ActionField({ label, value, set, ctx }: { label: string; value: 
       {a.type === "phone" && <input className="input" inputMode="tel" placeholder="+998 90 123 45 67" value={a.phone ?? ""} onChange={(e) => set({ ...a, phone: e.target.value })} />}
       {a.type === "bot" && <span className="sf-hint">Ilova yopiladi va bot chati ochiladi</span>}
       {a.type === "share" && <span className="sf-hint">Bot havolasini do'stlarga ulashish oynasi ochiladi</span>}
+      {a.type === "detail" && (
+        <span className="sf-hint">Takrorlovchi yoki ro'yxat ichida — bosilgan yozuvning batafsil sahifasi ochiladi.</span>
+      )}
     </div>
   );
 }

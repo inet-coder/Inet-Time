@@ -23,6 +23,13 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
   - Muharrir: elementlar daraxti, ko'rinishdan bosib tanlash (Tahrirlash / Sinash rejimi), bekor qilish /
     qaytarish (Ctrl+Z / Ctrl+Y), nusxa olish / qo'yish (Ctrl+C / Ctrl+V), 9 ta tayyor erkin bo'lim,
     versiyalar tarixi va tiklash
+  - **Ma'lumotlar bazasi**: har ilovaga 20 tagacha to'plam (o'z jadvallari: mahsulotlar, xizmatlar,
+    arizalar, jamoa…), 11 maydon turi (matn, son, narx, rasm, sana, ha/yo'q, tanlov, telefon, havola,
+    email…), yashirin maydonlar, o'qish rejimi (hamma / faqat o'z yozuvlari / yopiq). Yozuvlar jadvali:
+    qidirish, tahrirlash, ommaviy o'chirish, CSV eksport/import. «Ma'lumotlar ro'yxati» bloki (kartalar /
+    ro'yxat / to'r, saralash, filtr, qidiruv), erkin konteynerni to'plamdan takrorlash, `{{maydon}}`
+    o'zgaruvchilari, rasmni maydonga bog'lash, batafsil sahifalar (bir bosishda yaratiladi), formalar
+    to'plamga yozadi
 
 **👤 Profil xizmatlari** (asosiy menyuda alohida bo'lim):
 

@@ -1,11 +1,17 @@
 // Foydalanuvchilar ochadigan ilova: /app/<id>. Telegram ichida (bot menyu tugmasi yoki tugma orqali) ochiladi.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { DataLoader } from "./data";
 import { api, type PublicAppData } from "../api";
 import { tg, versionAtLeast } from "../tg";
 import { WebAppRuntime, themeStyle } from "./Runtime";
 
 export default function PublicApp({ appId }: { appId: number }) {
   const [data, setData] = useState<PublicAppData | null>(null);
+  // Telegram imzosi bilan — «faqat o'z yozuvlari» to'plamlari uchun kerak
+  const loadData = useCallback<DataLoader>(
+    (key, params) => api.publicData(appId, key, params as Record<string, unknown>, tg?.initData || undefined).then((r) => r.items),
+    [appId],
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,6 +63,8 @@ export default function PublicApp({ appId }: { appId: number }) {
         botUsername={data.bot_username}
         branding={data.branding}
         mediaSrc={(id) => `/api/webapp/apps/${appId}/media/${id}`}
+        recordMedia={(id) => `/api/webapp/apps/${appId}/records-media/${id}`}
+        loadData={loadData}
         onSubmit={async (payload) => {
           if (!tg?.initData) throw new Error("Yuborish uchun ilovani Telegram ichida, bot orqali oching");
           const res = await api.submitApp(appId, { ...payload, init_data: tg.initData });

@@ -1,7 +1,8 @@
 // Erkin bo'lim (elementlar daraxti) va universal uslub dvigateli.
 // Uslub inline emas, generatsiya qilingan <style> orqali beriladi — shunda keng oyna uchun alohida qiymatlar
 // (@container) va hover ishlaydi. Qiymatlar har doim tozalanadi (rang — faqat #RRGGBB, son — chegaralangan).
-import { useEffect, useRef, type MouseEvent, type ReactNode, type Ref } from "react";
+import { useContext, useEffect, useRef, type MouseEvent, type ReactNode, type Ref } from "react";
+import { fillTemplate, RecordContext, useRecords, type DataLoader, type Rec } from "./data";
 import { WA_ICONS } from "./icons";
 import type { Anim, BoxNode, WAAction, WANode, WAStyle } from "./types";
 
@@ -203,7 +204,10 @@ export function useAppear<T extends HTMLElement>(anim: Anim | undefined) {
 export type NodeCtx = {
   blockId: string;
   mediaSrc: (id: number) => string;
-  runAction: (a: WAAction | null | undefined) => void;
+  /** To'plam yozuvidagi rasmlar (ommaviy manzil boshqacha) */
+  recordMedia: (id: number) => string;
+  loadData?: DataLoader;
+  runAction: (a: WAAction | null | undefined, rec?: Rec | null) => void;
   /** Konstruktor: bosilganda element tanlanadi (amal bajarilmaydi) */
   selectMode?: boolean;
   selected?: string | null;
@@ -211,8 +215,30 @@ export type NodeCtx = {
   Rich: (p: { text: string }) => JSX.Element;
 };
 
+function RepeatChildren({ node, ctx }: { node: BoxNode; ctx: NodeCtx }) {
+  const { items, loading, error } = useRecords(ctx.loadData, node.repeat);
+  if (loading && !items.length) return <span className="wa-n-empty">Yuklanmoqda…</span>;
+  if (error) return <span className="wa-n-empty">{error}</span>;
+  if (!items.length) return <span className="wa-n-empty">{node.repeat?.empty_text || "Hozircha hech narsa yo'q"}</span>;
+  const single = node.children.length === 1;
+  return (
+    <>
+      {items.map((rec) => (
+        <RecordContext.Provider key={rec.id} value={rec}>
+          <div className={single ? "wa-rep wa-rep--single" : "wa-rep"}>
+            {node.children.map((c) => (
+              <NodeView key={c.id} node={c} ctx={ctx} />
+            ))}
+          </div>
+        </RecordContext.Provider>
+      ))}
+    </>
+  );
+}
+
 export function NodeView({ node, ctx }: { node: WANode; ctx: NodeCtx }): JSX.Element | null {
   const ref = useAppear<HTMLElement>(node.anim);
+  const rec = useContext(RecordContext);
   if (node.hidden) return null;
   const action = "action" in node ? node.action : null;
   const clickable = !!action && action.type !== "none";
@@ -237,7 +263,7 @@ export function NodeView({ node, ctx }: { node: WANode; ctx: NodeCtx }): JSX.Ele
       }
       if (clickable && node.kind !== "button") {
         e.stopPropagation();
-        ctx.runAction(action);
+        ctx.runAction(action, rec);
       }
     },
     ref: ref as Ref<never>,
@@ -247,9 +273,11 @@ export function NodeView({ node, ctx }: { node: WANode; ctx: NodeCtx }): JSX.Ele
     case "box":
       return (
         <div {...common}>
-          {node.children.map((c) => (
-            <NodeView key={c.id} node={c} ctx={ctx} />
-          ))}
+          {node.repeat ? (
+            <RepeatChildren node={node} ctx={ctx} />
+          ) : (
+            node.children.map((c) => <NodeView key={c.id} node={c} ctx={ctx} />)
+          )}
           {ctx.selectMode && node.children.length === 0 && <span className="wa-n-empty">Bo'sh konteyner</span>}
         </div>
       );
@@ -261,22 +289,25 @@ export function NodeView({ node, ctx }: { node: WANode; ctx: NodeCtx }): JSX.Ele
         </Tag>
       );
     }
-    case "image":
-      if (!node.media_id)
+    case "image": {
+      const bound = node.bind && rec ? Number(rec[node.bind]) || null : null;
+      const src = bound ? ctx.recordMedia(bound) : node.media_id ? ctx.mediaSrc(node.media_id) : null;
+      if (!src)
         return ctx.selectMode ? (
           <div {...common} className={`${common.className} wa-n-placeholder`}>
-            🖼 Rasm tanlanmagan
+            🖼 {node.bind ? `Rasm: {{${node.bind}}}` : "Rasm tanlanmagan"}
           </div>
         ) : null;
       return (
         <img
           {...common}
-          src={ctx.mediaSrc(node.media_id)}
+          src={src}
           alt=""
           loading="lazy"
           style={{ objectFit: node.fit, aspectRatio: node.ratio === "auto" ? undefined : node.ratio.replace(":", " / ") }}
         />
       );
+    }
     case "button": {
       const Icon = node.icon ? WA_ICONS[node.icon] : null;
       return (
@@ -285,10 +316,10 @@ export function NodeView({ node, ctx }: { node: WANode; ctx: NodeCtx }): JSX.Ele
           className={`${common.className} wa-btn wa-btn--${node.variant === "ghost" || node.variant === "link" ? node.variant : node.variant}`}
           onClick={(e) => {
             if (ctx.selectMode) common.onClick(e);
-            else ctx.runAction(node.action);
+            else ctx.runAction(node.action, rec);
           }}
         >
-          {node.text}
+          {fillTemplate(node.text, rec)}
           {Icon && <Icon size={17} />}
         </button>
       );

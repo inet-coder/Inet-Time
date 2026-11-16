@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core import crypto
 from core.botapi import BotApiError, call
 from core.botbuilder import OWNER_START_HINT
-from core.db.models import MediaFile, User, UserBot, WebApp, WebAppSubmission, WebAppVersion
+from core.db.models import AppCollection, MediaFile, User, UserBot, WebApp, WebAppSubmission, WebAppVersion
 from core.entitlements import get_entitlement
 from core.webapp_auth import InitDataError, validate_init_data
 from core.webapp_builder import (
@@ -157,7 +157,9 @@ async def save_draft(bot_id: int, payload: DraftIn, user: User = Depends(current
 async def publish(bot_id: int, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)) -> dict:
     _, app = await _require_app(db, user, bot_id)
     try:
-        doc = validate_app(app.draft, await _owned_media(db, user, app.draft))
+        # E'londa ilova bog'langan to'plamlar haqiqatan mavjudligi ham tekshiriladi (qoralamada — yo'q)
+        keys = set(await db.scalars(select(AppCollection.key).where(AppCollection.app_id == app.id)))
+        doc = validate_app(app.draft, await _owned_media(db, user, app.draft), keys)
     except WebAppError as exc:
         raise HTTPException(400, str(exc)) from exc
     app.draft = doc
@@ -357,7 +359,19 @@ async def submit(app_id: int, payload: SubmitIn, db: AsyncSession = Depends(get_
             title = (block.get("title") or "Ariza")[:128]
             data = {"fields": values}
             success = block.get("success_text") or "✅ Yuborildi!"
+            if block.get("save_to"):
+                # Forma to'plamga ham yozadi (masalan «Arizalar» jadvali, «Mening arizalarim» sahifasi)
+                from core.appdata import DataError
+                from routers.webapp_data import save_form_record
+
+                try:
+                    record_id = await save_form_record(db, app, block["save_to"], payload.values, int(tg_user["id"]))
+                except DataError as exc:
+                    raise WebAppError(str(exc)) from exc
+                if record_id:
+                    data["record_id"] = record_id
     except WebAppError as exc:
+        await db.rollback()
         raise HTTPException(400, str(exc)) from exc
 
     name = " ".join(x for x in (tg_user.get("first_name"), tg_user.get("last_name")) if x)[:128] or None

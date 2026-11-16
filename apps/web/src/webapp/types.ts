@@ -1,6 +1,6 @@
 // Kodsiz Web App hujjati — server tomonidagi sxema: packages/core/core/webapp_builder.py
 
-export type ActionType = "none" | "page" | "url" | "bot" | "phone" | "share" | "cart";
+export type ActionType = "none" | "page" | "url" | "bot" | "phone" | "share" | "cart" | "detail";
 export type WAAction = { type: ActionType; page?: string | null; url?: string | null; phone?: string | null };
 export type WABtn = { text: string; action: WAAction };
 
@@ -35,6 +35,17 @@ export type WAStyle = {
   uppercase?: boolean;
 };
 
+export type WAQuery = {
+  collection: string;
+  limit: number;
+  sort_field: string | null;
+  sort_dir: "asc" | "desc";
+  filter_field: string | null;
+  filter_value: string | null;
+  search: boolean;
+  empty_text: string;
+};
+
 type NodeBase = { id: string; hidden?: boolean; style?: WAStyle | null; wide?: WAStyle | null; anim?: Anim };
 export type BoxNode = NodeBase & {
   kind: "box";
@@ -46,6 +57,7 @@ export type BoxNode = NodeBase & {
   columns: number;
   columns_wide?: number | null;
   action?: WAAction | null;
+  repeat?: WAQuery | null;
   children: WANode[];
 };
 export type TextNode = NodeBase & { kind: "text"; text: string; tag: "h1" | "h2" | "h3" | "p" | "small" };
@@ -54,6 +66,7 @@ export type ImageNode = NodeBase & {
   media_id: number | null;
   fit: "cover" | "contain";
   ratio: "auto" | "1:1" | "4:3" | "16:9" | "3:4" | "21:9" | "9:16";
+  bind?: string | null;
   action?: WAAction | null;
 };
 export type ButtonNode = NodeBase & {
@@ -108,7 +121,14 @@ export type Product = {
 export type ProductsBlock = Base & { type: "products"; title: string; columns: 1 | 2; items: Product[] };
 export type FieldType = "text" | "textarea" | "phone" | "email" | "number" | "select" | "radio" | "checkbox" | "date";
 export type FormField = { id: string; type: FieldType; label: string; placeholder: string; required: boolean; options: string[] };
-export type FormBlock = Base & { type: "form"; title: string; fields: FormField[]; submit_text: string; success_text: string };
+export type FormBlock = Base & {
+  type: "form";
+  title: string;
+  fields: FormField[];
+  submit_text: string;
+  success_text: string;
+  save_to?: string | null;
+};
 export type ContactsBlock = Base & {
   type: "contacts";
   phone: string | null;
@@ -126,6 +146,19 @@ export type CountdownBlock = Base & { type: "countdown"; title: string; date: st
 export type VideoBlock = Base & { type: "video"; url: string; caption: string };
 export type DividerBlock = Omit<Base, "style"> & { type: "divider"; style: "line" | "space"; size: "s" | "m" | "l" };
 export type CustomBlock = Base & { type: "custom"; name: string; root: BoxNode };
+export type CollectionBlock = Base & {
+  type: "collection";
+  title: string;
+  query: WAQuery;
+  layout: "cards" | "list" | "grid";
+  columns: number;
+  title_field: string | null;
+  subtitle_field: string | null;
+  image_field: string | null;
+  price_field: string | null;
+  badge_field: string | null;
+  detail_page: string | null;
+};
 
 export type WABlock =
   | HeroBlock
@@ -145,11 +178,12 @@ export type WABlock =
   | CountdownBlock
   | VideoBlock
   | DividerBlock
-  | CustomBlock;
+  | CustomBlock
+  | CollectionBlock;
 
 export type BlockType = WABlock["type"];
 
-export type WAPage = { id: string; title: string; emoji: string; in_nav: boolean; blocks: WABlock[] };
+export type WAPage = { id: string; title: string; emoji: string; in_nav: boolean; collection?: string | null; blocks: WABlock[] };
 
 export type WATheme = {
   preset: string;

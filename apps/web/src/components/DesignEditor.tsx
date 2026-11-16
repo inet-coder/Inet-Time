@@ -20,6 +20,7 @@ import { cloneNode, SECTIONS } from "../webapp/sections";
 import { NO_ACTION, type FieldSpec } from "../webapp/specs";
 import { uid, type Anim, type BoxNode, type CustomBlock, type NodeKind, type WANode, type WAPage, type WAStyle } from "../webapp/types";
 import { MediaField, SliderField, SpecForm } from "./SpecForm";
+import { emptyQuery, FieldChips, ImageBindField, QueryEditor } from "./DataEditor";
 
 type Ctx = { pages: WAPage[]; toast: (text: string, kind?: "ok" | "err") => void };
 
@@ -293,7 +294,24 @@ function label(n: WANode): string {
   return KIND_META[n.kind].title;
 }
 
+/** Element qaysi to'plam yozuvi ichida: eng yaqin takrorlovchi konteyner yoki batafsil sahifa. */
+function contextCollection(root: BoxNode, id: string, pageCollection: string | null): string | null {
+  const path: BoxNode[] = [];
+  const walk = (n: WANode, trail: BoxNode[]): boolean => {
+    if (n.id === id) {
+      path.push(...trail);
+      return true;
+    }
+    if (n.kind === "box") return n.children.some((c) => walk(c, [...trail, n]));
+    return false;
+  };
+  walk(root, []);
+  for (let i = path.length - 1; i >= 0; i--) if (path[i].repeat?.collection) return path[i].repeat!.collection;
+  return pageCollection;
+}
+
 export function CustomEditor({
+  pageCollection = null,
   block,
   onChange,
   selected,
@@ -303,6 +321,7 @@ export function CustomEditor({
   clipboard,
   setClipboard,
 }: {
+  pageCollection?: string | null;
   block: CustomBlock;
   onChange: (b: CustomBlock) => void;
   selected: string | null;
@@ -317,6 +336,9 @@ export function CustomEditor({
   const sel = selected ? locate(block.root, selected) : null;
   const current = sel?.node ?? block.root;
   const isRoot = current.id === block.root.id;
+  // Takrorlovchi ichidagi elementlar uchun: o'sha to'plam; o'zi takrorlovchi bo'lsa — o'z to'plami
+  const dataKey =
+    current.kind === "box" && current.repeat?.collection ? current.repeat.collection : contextCollection(block.root, current.id, pageCollection);
 
   const mutate = (fn: (root: BoxNode) => string | void) => {
     const next = clone(block);
@@ -490,6 +512,29 @@ export function CustomEditor({
           ) : (
             <p className="hint">Bu elementning kontent sozlamasi yo'q — «Uslub» bo'limidan rang va masofani o'zgartiring.</p>
           ))}
+        {tab === "content" && current.kind === "box" && (
+          <div className="de-data">
+            <button type="button" className="sf-toggle" onClick={() => updateNode({ repeat: current.repeat ? null : emptyQuery(dataKey ?? "") } as Partial<WANode>)}>
+              <span>
+                🗂 To'plamdan takrorlash
+                <span className="sf-hint">Ichidagi elementlar har bir yozuv uchun chiziladi — istalgan dizayndagi ro'yxat</span>
+              </span>
+              <span className={`switch ${current.repeat ? "is-on" : ""}`}>
+                <i />
+              </span>
+            </button>
+            {current.repeat && <QueryEditor query={current.repeat} onChange={(q) => updateNode({ repeat: q } as Partial<WANode>)} allowSearch={false} />}
+          </div>
+        )}
+        {tab === "content" && current.kind === "image" && dataKey && (
+          <ImageBindField collection={dataKey} value={current.bind} onChange={(bind) => updateNode({ bind } as Partial<WANode>)} />
+        )}
+        {tab === "content" && (current.kind === "text" || current.kind === "button") && dataKey && (
+          <FieldChips
+            collection={dataKey}
+            onPick={(t) => updateNode({ text: `${current.text}${current.text.endsWith(" ") || !current.text ? "" : " "}${t}` } as Partial<WANode>)}
+          />
+        )}
         {tab === "style" && (
           <>
             <StyleEditor value={current.style} onChange={(s) => updateNode({ style: s })} fonts={fonts} ctx={ctx} />

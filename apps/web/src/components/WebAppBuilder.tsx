@@ -6,6 +6,7 @@ import {
   ArrowRight,
   ArrowUp,
   Copy,
+  Database,
   ExternalLink,
   Eye,
   EyeOff,
@@ -26,15 +27,26 @@ import {
   Undo2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, mediaUrl, type WASubmission, type WebAppInfo, type WebAppState } from "../api";
 import { confirmDialog, haptic, tg } from "../tg";
-import { WebAppRuntime } from "../webapp/Runtime";
+import { WebAppRuntime, type RuntimeProps } from "../webapp/Runtime";
+import { clearDataCache, type DataLoader } from "../webapp/data";
 import { BLOCK_SPECS, CATEGORIES, FORM_FIELD_SPEC, cloneBlock, newBlock, newField } from "../webapp/specs";
 import { formatMoney, uid, type AppDoc, type BlockType, type WABlock, type WANode, type WAPage, type WAStyle } from "../webapp/types";
 import { fontStack, useGoogleFonts } from "../webapp/nodes";
 import { cloneNode, SECTIONS, type SectionPreset } from "../webapp/sections";
 import { AnimField, CustomEditor, locate, StyleEditor } from "./DesignEditor";
+import {
+  CollectionBlockEditor,
+  collectionFromForm,
+  CollectionSelect,
+  CollectionsPanel,
+  DataProvider,
+  FieldChips,
+  RecordsPanel,
+  useCollections,
+} from "./DataEditor";
 import { Inspector, Sheet } from "./Sheet";
 import { useEscape, useSaveShortcut } from "../hooks";
 import { DESKTOP_QUERY, isMac, useMediaQuery } from "../util";
@@ -49,6 +61,14 @@ function clone<T>(v: T): T {
 function openLink(url: string) {
   if (tg?.openLink) tg.openLink(url);
   else window.open(url, "_blank");
+}
+
+// Konstruktordagi har bir jonli ko'rinish egasining ma'lumotlarini ko'radi
+const PreviewData = createContext<DataLoader | undefined>(undefined);
+
+function BuilderRuntime(props: RuntimeProps) {
+  const load = useContext(PreviewData);
+  return <WebAppRuntime {...props} loadData={load} recordMedia={mediaUrl} />;
 }
 
 const previewSubmit = async () => {
@@ -154,7 +174,7 @@ function TemplateGrid({ templates, busy, onPick }: { templates: WebAppState["tem
 // Konstruktor (to'liq ekran)
 // ============================================================
 
-type Tab = "pages" | "style" | "settings" | "inbox";
+type Tab = "pages" | "style" | "data" | "settings" | "inbox";
 
 export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number; state: WebAppState; toast: Toast; onClose: () => void }) {
   const [info, setInfo] = useState<WebAppInfo>(state.app!);
@@ -166,9 +186,14 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
   const [palette, setPalette] = useState(false);
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
+  const previewLoader = useMemo<DataLoader>(
+    () => (key, params) => api.previewData(botId, key, params as Record<string, unknown>).then((r) => r.items),
+    [botId],
+  );
   const desktop = useMediaQuery(DESKTOP_QUERY);
   const [device, setDevice] = useState<"phone" | "wide">("phone");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [dataColl, setDataColl] = useState<number | null>(null);
   const [selectMode, setSelectMode] = useState(true);
   const [clipboard, setClipboardState] = useState<WANode | null>(() => {
     try {
@@ -372,11 +397,14 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
       <button className={tab === "style" ? "is-selected" : ""} onClick={() => setTab("style")}>
         <Paintbrush size={15} /> Uslub
       </button>
+      <button className={tab === "data" ? "is-selected" : ""} onClick={() => setTab("data")}>
+        <Database size={15} /> Ma'lumot
+      </button>
       <button className={tab === "settings" ? "is-selected" : ""} onClick={() => setTab("settings")}>
         <Settings2 size={15} /> Sozlama
       </button>
       <button className={tab === "inbox" ? "is-selected" : ""} onClick={() => setTab("inbox")}>
-        <Inbox size={15} /> Arizalar
+        <Inbox size={15} /> Ariza
       </button>
     </div>
   );
@@ -418,11 +446,55 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
         />
       )}
       {tab === "inbox" && <InboxTab botId={botId} currency={doc.settings.currency} />}
+      {tab === "data" &&
+        (!desktop && dataColl !== null ? (
+          <RecordsPanel collectionId={dataColl} onBack={() => setDataColl(null)} toast={toast} wide={false} />
+        ) : (
+          <CollectionsPanel selected={dataColl} onSelect={setDataColl} toast={toast} />
+        ))}
     </>
   );
 
+  // To'plam uchun batafsil sahifa: rasm, sarlavha, narx va matn maydonlari bilan tayyor erkin bo'lim
+  const createDetailPage = (key: string, fields: { key: string; type: string }[]): string => {
+    const id = uid("pg");
+    const img = fields.find((f) => f.type === "image");
+    const texts = fields.filter((f) => f.type === "text" || f.type === "longtext");
+    const money = fields.find((f) => f.type === "money" || f.type === "number");
+    const n = (kind: string, extra: object) => ({ id: uid("n"), hidden: false, style: null, wide: null, anim: "none", kind, ...extra });
+    const children = [
+      ...(img ? [n("image", { media_id: null, fit: "cover", ratio: "4:3", bind: img.key, action: null, style: { radius: 18 } })] : []),
+      ...(texts[0] ? [n("text", { text: `{{${texts[0].key}}}`, tag: "h1" })] : []),
+      ...(money ? [n("text", { text: `{{${money.key}}} ${doc.settings.currency}`, tag: "h2", style: { color: doc.theme.primary } })] : []),
+      ...texts.slice(1).map((f) => n("text", { text: `{{${f.key}}}`, tag: "p" })),
+      n("button", { text: "Bog'lanish", variant: "primary", icon: "Send", action: { type: "bot", page: null, url: null, phone: null } }),
+    ];
+    update((d) =>
+      d.pages.push({
+        id,
+        title: "Batafsil",
+        emoji: "📄",
+        in_nav: false,
+        collection: key,
+        blocks: [
+          {
+            id: uid("b"),
+            hidden: false,
+            type: "custom",
+            name: "Batafsil",
+            root: { id: uid("n"), kind: "box", layout: "column", gap: 12, align: "stretch", justify: "start", wrap: true, columns: 1, children } as never,
+          } as WABlock,
+        ],
+      }),
+    );
+    toast("Batafsil sahifa yaratildi — «Sahifa» bo'limida o'zgartirishingiz mumkin");
+    return id;
+  };
+
   const blockEditor = editingBlock && (
     <BlockSheet
+      onCreateDetail={createDetailPage}
+      pageCollection={page.collection ?? null}
       inline={desktop}
       fonts={state.fonts}
       selectedNode={selectedNode}
@@ -473,6 +545,8 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
   );
 
   return (
+    <PreviewData.Provider value={previewLoader}>
+    <DataProvider botId={botId}>
     <div className={`wb ${desktop ? "wb--desktop" : ""}`}>
       <header className="wb-bar">
         <button className="icon-btn icon-btn--round" onClick={close} aria-label="Yopish">
@@ -509,6 +583,20 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
             {tabs}
             {tabContent}
           </aside>
+          {tab === "data" ? (
+            <main className="wb-data">
+              {dataColl !== null ? (
+                <RecordsPanel collectionId={dataColl} toast={toast} wide />
+              ) : (
+                <div className="wb-right__empty">
+                  <Database size={30} />
+                  <b>Ma'lumotlar bazasi</b>
+                  <span className="hint">Chapdan to'plamni tanlang yoki yangisini yarating. Yozuvlar shu yerda jadval ko'rinishida tahrirlanadi.</span>
+                </div>
+              )}
+            </main>
+          ) : (
+          <>
           <main className="wb-stage">
             <div className="wb-stage__bar">
               <div className="segmented segmented--small">
@@ -529,7 +617,7 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
               </div>
             </div>
             <div className={`wb-stage__frame ${device === "wide" ? "is-wide" : ""}`}>
-              <WebAppRuntime
+              <BuilderRuntime
                 doc={doc}
                 appId={`stage-${botId}`}
                 mode="preview"
@@ -591,6 +679,8 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
               </div>
             )}
           </aside>
+          </>
+          )}
         </div>
       ) : (
         <div className="wb-body">
@@ -616,7 +706,7 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
             </button>
           </div>
           <div className="wb-preview__frame">
-            <WebAppRuntime
+            <BuilderRuntime
               doc={doc}
               appId={`preview-${botId}`}
               mode="preview"
@@ -630,6 +720,8 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
         </div>
       )}
     </div>
+    </DataProvider>
+    </PreviewData.Provider>
   );
 }
 
@@ -761,7 +853,7 @@ function PagesTab({
         </button>
         {showPreview && (
           <div className="wb-frame">
-            <WebAppRuntime
+            <BuilderRuntime
               doc={doc}
               appId="inline-preview"
               mode="preview"
@@ -787,6 +879,12 @@ function PagesTab({
               <input className="input sf-emoji" maxLength={8} value={page.emoji} onChange={(e) => updatePage((p) => void (p.emoji = e.target.value))} />
               <input className="input" maxLength={40} value={page.title} onChange={(e) => updatePage((p) => void (p.title = e.target.value))} />
             </div>
+            <CollectionSelect
+              label="Batafsil sahifa (bitta yozuv uchun)"
+              value={page.collection ?? null}
+              onChange={(key) => updatePage((p) => void (p.collection = key || null))}
+            />
+            {page.collection && <FieldChips collection={page.collection} />}
             <button className="sf-toggle" onClick={() => updatePage((p) => void (p.in_nav = !p.in_nav))}>
               <span>
                 Pastki menyuda ko'rsatish
@@ -865,6 +963,8 @@ function PagesTab({
 
 function BlockSheet({
   inline = false,
+  onCreateDetail,
+  pageCollection,
   fonts,
   selectedNode,
   onSelectNode,
@@ -883,6 +983,8 @@ function BlockSheet({
   onClose,
 }: {
   inline?: boolean;
+  onCreateDetail: (key: string, fields: { key: string; type: string }[]) => string;
+  pageCollection: string | null;
   fonts: Record<string, string>;
   selectedNode: string | null;
   onSelectNode: (id: string | null) => void;
@@ -901,6 +1003,7 @@ function BlockSheet({
   onClose: () => void;
 }) {
   const spec = BLOCK_SPECS[block.type];
+  const { collections, botId, refetch: refetchCollections } = useCollections();
   // Faqat shu blokdan iborat sahifa — blok qanday chiqishini darhol ko'rsatadi
   const single = useMemo<AppDoc>(
     () => ({ ...doc, start: "single", pages: [{ id: "single", title: "", emoji: "", in_nav: false, blocks: [{ ...block, hidden: false }] }] }),
@@ -911,11 +1014,19 @@ function BlockSheet({
       <div className="stack">
         {!inline && (
           <div className="wb-frame wb-frame--block">
-            <WebAppRuntime doc={single} appId="block-preview" mode="preview" mediaSrc={mediaUrl} botUsername={botUsername} branding={null} onSubmit={previewSubmit} />
+            <BuilderRuntime doc={single} appId="block-preview" mode="preview" mediaSrc={mediaUrl} botUsername={botUsername} branding={null} onSubmit={previewSubmit} />
           </div>
         )}
-        {block.type === "custom" ? (
+        {block.type === "collection" ? (
+          <CollectionBlockEditor
+            block={block}
+            onChange={(b) => onChange(b)}
+            pages={doc.pages}
+            onCreateDetail={(key) => onCreateDetail(key, collections.find((c) => c.key === key)?.fields ?? [])}
+          />
+        ) : block.type === "custom" ? (
           <CustomEditor
+            pageCollection={pageCollection}
             block={block}
             onChange={(b) => onChange(b)}
             selected={selectedNode}
@@ -928,6 +1039,35 @@ function BlockSheet({
         ) : (
           <>
             <SpecForm spec={spec.fields} value={block} onChange={(next) => onChange(next as WABlock)} ctx={ctx} />
+            {pageCollection && <FieldChips collection={pageCollection} />}
+            {block.type === "form" && (
+              <div className="sf de-form-save">
+                <CollectionSelect
+                  label="Javoblarni to'plamga ham saqlash"
+                  value={block.save_to ?? null}
+                  onChange={(key) => onChange({ ...block, save_to: key || null })}
+                />
+                {!block.save_to && (
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--compact"
+                    onClick={async () => {
+                      try {
+                        const c = await collectionFromForm(botId, block);
+                        refetchCollections();
+                        onChange({ ...block, save_to: c.key });
+                        ctx.toast(`«${c.name}» to'plami yaratildi — javoblar unga yoziladi`);
+                      } catch (e) {
+                        ctx.toast((e as Error).message, "err");
+                      }
+                    }}
+                  >
+                    <Database size={16} /> Formadan to'plam yaratish
+                  </button>
+                )}
+                <span className="sf-hint">Saqlangan javoblarni «Mening arizalarim» sahifasida (to'plam: «Faqat o'zinikini») ko'rsatish mumkin.</span>
+              </div>
+            )}
             <details className="de-block-style">
               <summary>🎨 Uslub va animatsiya</summary>
               {block.type !== "divider" && (
@@ -1060,7 +1200,7 @@ function StyleTab({
         <>
           <span className="label">Ko'rinish</span>
           <div className="wb-frame">
-            <WebAppRuntime doc={doc} appId="style-preview" mode="preview" mediaSrc={mediaUrl} botUsername={botUsername} branding={null} onSubmit={previewSubmit} />
+            <BuilderRuntime doc={doc} appId="style-preview" mode="preview" mediaSrc={mediaUrl} botUsername={botUsername} branding={null} onSubmit={previewSubmit} />
           </div>
         </>
       )}

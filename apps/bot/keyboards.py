@@ -22,21 +22,14 @@ def _webapp_row() -> list[list[tuple[str, str]]]:
     return [[(STUDIO, url)]] if url else []
 
 
-def _bots_row() -> list[list[tuple[str, str]]]:
-    # Bot konstruktori — Mini App'ning «Botlar» bo'limi (hash emas: Telegram initData'ni hash'ga qo'shadi).
-    url = webapp_url()
-    return [[("🧩 O'z botingizni yarating", f"{url.split('?')[0]}?tab=bots")]] if url else []
 
 
 def home_no_account(admin: bool) -> InlineKeyboardMarkup:
     rows = [
         [("📞 Raqam orqali ulash", "login_phone"), ("📷 QR orqali", "login_qr")],
         *_webapp_row(),
-        *_bots_row(),
-        [("💎 Tariflar", "plans"), ("🎁 Taklif", "ref"), ("❓ Yordam", "help")],
+        [("⬅️ Asosiy menyu", "main")],
     ]
-    if admin:
-        rows.append([("🛠 Admin panel", "adm")])
     return _kb(rows)
 
 
@@ -55,15 +48,12 @@ def home(live: dict[str, dict], multi_account: bool, admin: bool) -> InlineKeybo
         [svc_button("clock_name"), svc_button("auto_bio")],
         [svc_button("auto_name"), (f"➕ Ko'proq{f' ({extra_active} ✅)' if extra_active else ''}", "pro")],
     ]
-    rows += _bots_row()
     if multi_account:
         rows.append([("🔄 Boshqa akkaunt", "acc_switch")])
     rows += [
-        [("💎 Tarif", "plans"), ("💰 Balans", "bal")],
-        [("⚙️ Akkaunt", "acc"), ("🎁 Taklif", "ref"), ("❓ Yordam", "help")],
+        [("⚙️ Akkaunt", "acc"), ("💰 Balans", "bal")],
+        [("⬅️ Asosiy menyu", "main")],
     ]
-    if admin:
-        rows.append([("🛠 Admin panel", "adm")])
     return _kb(rows)
 
 
@@ -72,7 +62,64 @@ def back_home() -> InlineKeyboardMarkup:
 
 
 def help_menu() -> InlineKeyboardMarkup:
-    return _kb([*_webapp_row(), [("🎁 Do'stga ulashish", "ref")], [("🏠 Bosh sahifa", "home")]])
+    return _kb([[("➕ Yangi bot yaratish", "bot_new")], [("⬅️ Asosiy menyu", "main")]])
+
+
+# --- Bot konstruktori ---
+
+
+def main_menu(bots_count: int, admin: bool) -> InlineKeyboardMarkup:
+    rows = [
+        [("➕ Yangi bot yaratish", "bot_new")],
+        [(f"🤖 Botlarim ({bots_count})", "bots"), ("📚 Shablonlar", "tpls")],
+        [("👤 Profil xizmatlari", "home")],
+        [("💎 Tarif", "plans"), ("🎁 Taklif", "ref"), ("❓ Yordam", "help")],
+    ]
+    if admin:
+        rows.append([("🛠 Admin panel", "adm")])
+    return _kb(rows)
+
+
+def templates_menu(templates: list[dict], back: str = "main") -> InlineKeyboardMarkup:
+    buttons = [(f"{t['icon']} {t['title']}", f"tpl:{t['code']}") for t in templates]
+    rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+    rows.append([("⬅️ Orqaga", back)])
+    return _kb(rows)
+
+
+def token_wait(back: str = "bot_new") -> InlineKeyboardMarkup:
+    return _kb([[("🔗 @BotFather'ni ochish", "url:https://t.me/BotFather")], [("⬅️ Orqaga", back), ("❌ Bekor qilish", "main")]])
+
+
+def bot_created(username: str) -> InlineKeyboardMarkup:
+    return _kb([[(f"🚀 @{username} — sozlashga o'tish", f"url:https://t.me/{username}?start=admin")], [("🤖 Botlarim", "bots")]])
+
+
+def bots_list(bots: list[dict], can_add: bool) -> InlineKeyboardMarkup:
+    icons = {"active": "🟢", "paused": "⏸", "error": "⚠️"}
+    rows = [[(f"{icons.get(b['status'], '•')} @{b['username']} · {b['subscribers']} obunachi", f"ubot:{b['id']}")] for b in bots]
+    if can_add:
+        rows.append([("➕ Yangi bot yaratish", "bot_new")])
+    else:
+        rows.append([("💎 Ko'proq bot uchun tarif", "plans")])
+    rows.append([("⬅️ Asosiy menyu", "main")])
+    return _kb(rows)
+
+
+def bot_card(bot: dict) -> InlineKeyboardMarkup:
+    toggle = ("⏸ To'xtatish", f"ubot_tog:{bot['id']}:0") if bot["status"] == "active" else ("▶️ Ishga tushirish", f"ubot_tog:{bot['id']}:1")
+    return _kb(
+        [
+            [("⚙️ Sozlash (botingizda)", f"url:https://t.me/{bot['username']}?start=admin")],
+            [toggle, ("🔑 Tokenni yangilash", f"ubot_tok:{bot['id']}")],
+            [("🗑 O'chirish", f"ubot_del:{bot['id']}")],
+            [("⬅️ Botlarim", "bots")],
+        ]
+    )
+
+
+def confirm_bot_delete(bot_id: int) -> InlineKeyboardMarkup:
+    return _kb([[("🗑 Ha, o'chirilsin", f"ubot_delok:{bot_id}")], [("⬅️ Yo'q", f"ubot:{bot_id}")]])
 
 
 def cancel() -> InlineKeyboardMarkup:

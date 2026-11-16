@@ -164,6 +164,26 @@ class ApiClient:
     async def create_topup(self, user_id: int, amount: float) -> dict:
         return await self._call("POST", "/payments/topup", json={"user_id": user_id, "amount": amount})
 
+    # --- bot konstruktori (foydalanuvchi botlari) ---
+
+    async def bot_templates(self) -> list[dict]:
+        return await self._call("GET", "/userbots/templates")
+
+    async def list_bots(self, user_id: int) -> dict:
+        return await self._call("GET", f"/userbots/{user_id}")
+
+    async def connect_bot(self, user_id: int, token: str, template: str) -> dict:
+        return await self._call("POST", f"/userbots/{user_id}", json={"token": token, "template": template})
+
+    async def bot_detail(self, user_id: int, bot_id: int) -> dict:
+        return await self._call("GET", f"/userbots/{user_id}/{bot_id}")
+
+    async def set_bot_active(self, user_id: int, bot_id: int, active: bool) -> dict:
+        return await self._call("POST", f"/userbots/{user_id}/{bot_id}/status", json={"active": active})
+
+    async def delete_bot(self, user_id: int, bot_id: int) -> dict:
+        return await self._call("DELETE", f"/userbots/{user_id}/{bot_id}")
+
     # --- admin (bot service-account orqali) ---
 
     async def _admin_login(self) -> str:

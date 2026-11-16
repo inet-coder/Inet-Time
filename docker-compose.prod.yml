@@ -66,7 +66,8 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      # Migratsiya + ishga tushish band serverda sekinroq bo'lishi mumkin.
+      start_period: 90s
 
   bot:
     <<: *app

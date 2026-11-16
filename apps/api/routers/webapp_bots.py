@@ -15,11 +15,14 @@ from core.botbuilder import VARIABLES, MenuError, template_menu, templates_publi
 from core.db.models import BotBroadcast, BotSubscriber, MediaFile, User, UserBot
 from core.entitlements import get_entitlement
 from core.settings import settings
+from core.webapp_auth import InitDataError, create_user_token, validate_init_data
 from deps import get_db
 from redis_client import get_redis
 from routers.webapp import current_user
 
 router = APIRouter(prefix="/webapp/bots", tags=["webapp-bots"])
+# Asosiy bot uchun (ichki, X-Internal-Token bilan): foydalanuvchi bot orqali bot yaratadi va boshqaradi.
+internal_router = APIRouter(prefix="/userbots", tags=["userbots"])
 
 # botrunner shu kalitni kuzatadi — o'zgarish bo'lsa darhol qayta sinxronlanadi.
 SYNC_KEY = "userbots:sync"
@@ -47,6 +50,30 @@ def _short(bot: UserBot, subscribers: int = 0) -> dict:
         "pages": len((bot.menu or {}).get("pages", [])),
         "subscribers": subscribers,
     }
+
+
+class BotAuthIn(BaseModel):
+    init_data: str
+    bot_id: int
+
+
+@router.post("/auth")
+async def bot_auth(payload: BotAuthIn, db: AsyncSession = Depends(get_db)) -> dict:
+    """Menyu muharriri foydalanuvchining O'Z botidan (/admin → «Menyu») ochiladi — initData o'sha bot tokeni
+    bilan imzolangan. Faqat bot egasi kira oladi."""
+    bot = await db.get(UserBot, payload.bot_id)
+    if bot is None:
+        raise HTTPException(404, "Bot topilmadi")
+    try:
+        tg_user = validate_init_data(payload.init_data, crypto.decrypt_packed(bot.token_encrypted))
+    except InitDataError as exc:
+        raise HTTPException(401, "Muharrirni botingizdagi /admin panelidan oching") from exc
+    owner = await db.get(User, bot.user_id)
+    if owner is None or owner.telegram_user_id != tg_user["id"]:
+        raise HTTPException(403, "Bu botni faqat uning egasi sozlay oladi")
+    if owner.is_banned:
+        raise HTTPException(403, "Hisob bloklangan")
+    return {"token": create_user_token(owner.id), "user_id": owner.id, "bot_id": bot.id}
 
 
 @router.get("")
@@ -213,3 +240,43 @@ async def broadcast(bot_id: int, payload: BroadcastIn, user: User = Depends(curr
     pool = await get_pool()
     await pool.enqueue_job("user_bot_broadcast_job", broadcast_id=item.id, _job_id=f"userbot_broadcast:{item.id}")
     return {"id": item.id, "status": item.status}
+
+
+# --- Asosiy bot uchun ichki endpointlar (foydalanuvchi user_id bilan) ---
+
+
+async def _user(db: AsyncSession, user_id: int) -> User:
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, "Foydalanuvchi topilmadi")
+    return user
+
+
+@internal_router.get("/templates")
+async def internal_templates() -> list[dict]:
+    return templates_public()
+
+
+@internal_router.get("/{user_id}")
+async def internal_list(user_id: int, db: AsyncSession = Depends(get_db)) -> dict:
+    return await list_bots(await _user(db, user_id), db)
+
+
+@internal_router.post("/{user_id}")
+async def internal_connect(user_id: int, payload: ConnectIn, db: AsyncSession = Depends(get_db)) -> dict:
+    return await connect_bot(payload, await _user(db, user_id), db)
+
+
+@internal_router.get("/{user_id}/{bot_id}")
+async def internal_detail(user_id: int, bot_id: int, db: AsyncSession = Depends(get_db)) -> dict:
+    return await bot_detail(bot_id, await _user(db, user_id), db)
+
+
+@internal_router.post("/{user_id}/{bot_id}/status")
+async def internal_status(user_id: int, bot_id: int, payload: StatusIn, db: AsyncSession = Depends(get_db)) -> dict:
+    return await set_status(bot_id, payload, await _user(db, user_id), db)
+
+
+@internal_router.delete("/{user_id}/{bot_id}")
+async def internal_delete(user_id: int, bot_id: int, db: AsyncSession = Depends(get_db)) -> dict:
+    return await delete_bot(bot_id, await _user(db, user_id), db)

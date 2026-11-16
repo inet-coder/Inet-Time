@@ -36,3 +36,7 @@ class StoriesAsk(StatesGroup):
 
 class BirthdayAsk(StatesGroup):
     waiting_date = State()
+
+
+class CreateBot(StatesGroup):
+    waiting_token = State()

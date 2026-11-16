@@ -194,6 +194,7 @@ function ConnectSheet({ data, onClose, onDone }: { data: BotsList; onClose: () =
         <div className="bb-templates">
           {data.templates.map((t) => (
             <button key={t.code} className={`bb-template ${template === t.code ? "is-selected" : ""}`} onClick={() => setTemplate(t.code)}>
+              <span className="bb-template__icon">{t.icon}</span>
               <b>{t.title}</b>
               <span className="hint">{t.desc}</span>
               <span className="bb-template__meta">{t.pages} sahifa</span>
@@ -231,16 +232,18 @@ function ConnectSheet({ data, onClose, onDone }: { data: BotsList; onClose: () =
 
 type EditorTab = "menu" | "broadcast" | "settings";
 
-function BotEditor({
+export function BotEditor({
   botId,
   variables,
   toast,
   onBack,
+  standalone = false,
 }: {
   botId: number;
   variables: { key: string; label: string }[];
   toast: Toast;
   onBack: () => void;
+  standalone?: boolean;
 }) {
   const queryClient = useQueryClient();
   const { data: bot, refetch } = useQuery({
@@ -320,8 +323,8 @@ function BotEditor({
   return (
     <div className="stack bb-editor">
       <div className="bb-topbar">
-        <button className="icon-btn icon-btn--round" onClick={back} aria-label="Orqaga">
-          <ChevronLeft size={18} />
+        <button className="icon-btn icon-btn--round" onClick={back} aria-label={standalone ? "Yopish" : "Orqaga"}>
+          {standalone ? <X size={18} /> : <ChevronLeft size={18} />}
         </button>
         <div className="bb-topbar__title">
           <b>{bot.name}</b>
@@ -329,9 +332,11 @@ function BotEditor({
             @{bot.username} <ExternalLink size={12} />
           </button>
         </div>
-        <button className={`switch ${bot.status === "active" ? "is-on" : ""}`} onClick={toggleActive} aria-label="Yoqish">
-          <i />
-        </button>
+        {!standalone && (
+          <button className={`switch ${bot.status === "active" ? "is-on" : ""}`} onClick={toggleActive} aria-label="Yoqish">
+            <i />
+          </button>
+        )}
       </div>
 
       {bot.error_message && (
@@ -373,7 +378,7 @@ function BotEditor({
 
       {tab === "menu" && <PagesList menu={draft} limit={Math.max(bot.pages_limit, draft.pages.length)} update={update} onOpen={setEditing} />}
       {tab === "broadcast" && <BroadcastTab bot={bot} toast={toast} refetch={refetch} />}
-      {tab === "settings" && <SettingsTab menu={draft} update={update} onDelete={remove} />}
+      {tab === "settings" && <SettingsTab menu={draft} update={update} onDelete={standalone ? undefined : remove} />}
 
       {editing && draft.pages.some((p) => p.id === editing) && (
         <PageSheet
@@ -1064,17 +1069,26 @@ function BroadcastTab({ bot, toast, refetch }: { bot: BotDetail; toast: Toast; r
 // Sozlamalar
 // ------------------------------------------------------------
 
-function SettingsTab({ menu, update, onDelete }: { menu: BotMenu; update: (fn: (m: BotMenu) => void) => void; onDelete: () => void }) {
+function SettingsTab({ menu, update, onDelete }: { menu: BotMenu; update: (fn: (m: BotMenu) => void) => void; onDelete?: () => void }) {
   const field = (key: "fallback" | "feedback_prompt" | "feedback_done", label: string, hint: string) => (
     <label className="field">
       <span className="label">{label}</span>
       <textarea className="input" rows={2} maxLength={1000} value={menu[key]} onChange={(e) => update((m) => void (m[key] = e.target.value))} />
-      <span className="field__hint">{hint}</span>
+      <span className="field__hint hint">{hint}</span>
     </label>
   );
   return (
     <div className="stack">
       <section className="card stack">
+        <button className="toggle-row" onClick={() => update((m) => void (m.forward_all = !m.forward_all))}>
+          <span className="toggle-row__body toggle-row__body--col">
+            <b>Murojaatlar rejimi</b>
+            <span className="hint">Menyuda yo'q har qanday xabar (matn, rasm, ovoz) sizga keladi — qayta aloqa boti uchun</span>
+          </span>
+          <span className={`switch ${menu.forward_all ? "is-on" : ""}`}>
+            <i />
+          </span>
+        </button>
         {field("feedback_prompt", "«Adminga yozish» bosilganda", "Foydalanuvchidan nima yozishini so'rang (buyurtma, telefon…).")}
         {field("feedback_done", "Xabar yetkazilgach", "Foydalanuvchiga tasdiq.")}
         <button className="toggle-row" onClick={() => update((m) => void (m.feedback_anonymous = !m.feedback_anonymous))}>
@@ -1094,9 +1108,25 @@ function SettingsTab({ menu, update, onDelete }: { menu: BotMenu; update: (fn: (
           xabarga «Reply» qiling.
         </p>
       </section>
-      <button className="btn btn--danger" onClick={onDelete}>
-        <Trash2 size={17} /> Botni o'chirish
-      </button>
+      {onDelete && (
+        <button className="btn btn--danger" onClick={onDelete}>
+          <Trash2 size={17} /> Botni o'chirish
+        </button>
+      )}
     </div>
+  );
+}
+
+// Foydalanuvchining o'z botidan ochilgan muharrir (/admin → «Menyu va tugmalar»): faqat shu bot, tabbarsiz.
+export function StandaloneBotEditor({ botId, toast }: { botId: number; toast: Toast }) {
+  const { data } = useQuery({ queryKey: ["bots"], queryFn: api.bots });
+  return (
+    <BotEditor
+      botId={botId}
+      variables={data?.variables ?? []}
+      toast={toast}
+      standalone
+      onBack={() => (tg ? tg.close() : window.history.back())}
+    />
   );
 }

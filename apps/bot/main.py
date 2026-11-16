@@ -11,13 +11,14 @@ from catalog import STUDIO_SHORT
 from common import set_webapp_url, webapp_url
 from core.settings import settings
 from core.webapp_url import discover_webapp_url
-from handlers import add_account, admin, ai, billing, home, pro, profile, start
+from handlers import add_account, admin, ai, billing, bots, home, pro, profile, start
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("bot")
 
 dp = Dispatcher(storage=MemoryStorage())
 dp.include_router(start.router)
+dp.include_router(bots.router)
 dp.include_router(add_account.router)
 dp.include_router(billing.router)
 dp.include_router(admin.router)
@@ -61,18 +62,23 @@ async def webapp_url_watcher(bot: Bot) -> None:
 
 # /start bosilishidan oldin ko'rinadigan matnlar (bot profili va bo'sh chat).
 DESCRIPTION = (
-    "Telegram profilingiz o'zi yangilanib turadi:\n"
-    "🕐 ismda soat · 📝 avto bio · 🗓 jadval\n"
-    "🟢 24/7 online · 🖼 rasm · 😀 emoji status\n\n"
-    "«Start» ni bosing — 1 daqiqada ulanadi."
+    "Inet-Time — Telegram botlar konstruktori.\n\n"
+    "Kod yozmasdan o'z botingizni yarating: menyular va tugmalar, buyurtma va murojaatlarni qabul qilish, "
+    "obunachilarga xabar tarqatish. 15 ta tayyor shablon.\n\n"
+    "«Start» ni bosing — birinchi bot 1 daqiqada tayyor."
 )
-SHORT_DESCRIPTION = "Profilingiz o'zi yangilanadi: ismda soat, avto bio, jadval, 24/7 online, rasm va emoji."
+SHORT_DESCRIPTION = "Telegram botlar konstruktori: kod yozmasdan bot yarating. Tayyor shablonlar, menyular, xabar tarqatish."
 
 
 async def setup_profile(bot: Bot) -> None:
     try:
         await bot.set_my_commands(
-            [BotCommand(command="start", description="🏠 Bosh sahifa"), BotCommand(command="help", description="❓ Qanday ishlaydi")]
+            [
+                BotCommand(command="start", description="Asosiy menyu"),
+                BotCommand(command="newbot", description="Yangi bot yaratish"),
+                BotCommand(command="mybots", description="Botlarim"),
+                BotCommand(command="help", description="Yordam"),
+            ]
         )
         await bot.set_my_description(DESCRIPTION)
         await bot.set_my_short_description(SHORT_DESCRIPTION)

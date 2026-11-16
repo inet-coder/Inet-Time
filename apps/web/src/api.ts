@@ -137,6 +137,7 @@ export type BotMenu = {
   feedback_prompt: string;
   feedback_done: string;
   feedback_anonymous: boolean;
+  forward_all: boolean;
 };
 export type UserBotShort = {
   id: number;
@@ -147,7 +148,7 @@ export type UserBotShort = {
   pages: number;
   subscribers: number;
 };
-export type BotTemplate = { code: string; title: string; desc: string; pages: number };
+export type BotTemplate = { code: string; icon: string; title: string; desc: string; pages: number };
 export type BotsList = {
   bots: UserBotShort[];
   limit: number;
@@ -198,6 +199,14 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new ApiError(resp.status, message);
   }
   return resp.json();
+}
+
+// Foydalanuvchining O'Z botidan (/admin → «Menyu va tugmalar») ochilganda: initData o'sha bot tokeni bilan imzolangan.
+export async function authenticateBot(botId: number): Promise<void> {
+  const initData = tg?.initData;
+  if (!initData) throw new ApiError(401, "Muharrirni botingizdagi /admin panelidan oching");
+  const result = await request<{ token: string }>("POST", "/webapp/bots/auth", { init_data: initData, bot_id: botId });
+  token = result.token;
 }
 
 export async function authenticate(): Promise<void> {

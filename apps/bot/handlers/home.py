@@ -31,23 +31,25 @@ router = Router(name="home")
 
 def _welcome(first_name: str | None) -> str:
     return (
-        f"👋 Salom{', ' + first_name if first_name else ''}!\n\n"
-        "Men Telegram profilingizni o'zim yangilab turaman:\n"
+        "👤 Profil xizmatlari\n\n"
+        "Telegram profilingiz o'zi yangilanib turadi:\n"
         "🕐 ismda soat · 📝 avto bio · 🗓 jadval\n"
         "🟢 24/7 online · 🖼 rasm · 😀 emoji status\n\n"
-        "Boshlash uchun akkauntingizni ulang — 1 daqiqa 👇"
+        "Boshlash uchun Telegram akkauntingizni ulang:"
     )
 
 
 HELP = (
-    "❓ Qanday ishlaydi\n\n"
-    "1️⃣ Akkauntni ulang — 📞 raqam yoki 📷 QR orqali.\n"
-    "2️⃣ Xizmatni yoqing — profilingiz o'zi yangilanadi.\n"
-    f"3️⃣ {STUDIO}da natijani oldindan ko'ring va tahrirlang.\n\n"
-    "⏹ Xizmatni o'chirsangiz — profil asl holiga qaytadi.\n"
-    "🚫 Akkauntni istalgan vaqtda uzasiz: ⚙️ Akkaunt.\n"
-    "🔒 Sessiya shifrlangan holda saqlanadi.\n\n"
-    "Savol bo'lsa — shu chatga yozing yoki /start bosing."
+    "❓ <b>Yordam</b>\n\n"
+    "<b>Bot yaratish</b>\n"
+    "1. @BotFather'da /newbot orqali bot oching va tokenni oling.\n"
+    "2. Bu yerda «➕ Yangi bot yaratish» → shablonni tanlang → tokenni yuboring.\n"
+    "3. Botingizga o'ting va /admin buyrug'i bilan uni sozlang: menyu, tugmalar, xabar tarqatish.\n\n"
+    "Botingiz serverimizda doimiy ishlaydi, token shifrlangan holda saqlanadi. "
+    "Botni to'xtatish, o'chirish yoki tokenni yangilash — 🤖 Botlarim bo'limida.\n\n"
+    "<b>Profil xizmatlari</b>\n"
+    "Telegram profilingizni avtomatlashtirish: ismda soat, avto bio, 24/7 online va boshqalar.\n\n"
+    "Buyruqlar: /newbot — yangi bot · /mybots — botlarim · /start — asosiy menyu"
 )
 
 # Telegram cheklovlari: ism 64, bio 70 belgi (Premium'da 140).
@@ -394,16 +396,21 @@ def referral_text(data: dict, link: str) -> str:
 
 @router.callback_query(F.data == "help")
 async def show_help(callback: CallbackQuery) -> None:
-    await safe_edit(callback, HELP, kb.help_menu())
+    try:
+        await callback.message.edit_text(HELP, reply_markup=kb.help_menu(), parse_mode="HTML")
+    except Exception:  # noqa: BLE001
+        await callback.message.answer(HELP, reply_markup=kb.help_menu(), parse_mode="HTML")
     await safe_answer(callback)
 
 
 async def send_help(message: Message) -> None:
-    await message.answer(HELP, reply_markup=kb.help_menu())
+    await message.answer(HELP, reply_markup=kb.help_menu(), parse_mode="HTML")
 
 
 @router.message()
 async def fallback(message: Message) -> None:
-    """Holatsiz har qanday matn — bosh sahifani ko'rsatadi (bot jim qolmasin)."""
+    """Holatsiz har qanday matn — asosiy menyuni ko'rsatadi (bot jim qolmasin)."""
+    from handlers.bots import send_main
+
     user_id = await db_user_id(message.from_user)
-    await send_home(message.bot, message.chat.id, message.from_user.id, user_id, message.from_user.first_name)
+    await send_main(message.bot, message.chat.id, message.from_user.id, user_id)

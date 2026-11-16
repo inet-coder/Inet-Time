@@ -17,7 +17,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, authenticate, type ActiveService, type CatalogService, type State } from "./api";
+import { api, authenticate, authenticateBot, type ActiveService, type CatalogService, type State } from "./api";
 import {
   EmojiEditor,
   OnlineEditor,
@@ -28,7 +28,7 @@ import {
   type EditorProps,
 } from "./components/Editors";
 import { AdminView } from "./components/AdminView";
-import { BotsView } from "./components/BotsView";
+import { BotsView, StandaloneBotEditor } from "./components/BotsView";
 import { AIReplyEditor, StoriesEditor } from "./components/AIEditors";
 import { BirthdayEditor, PresenceEditor } from "./components/ProfileEditors";
 import { PlansView } from "./components/PlansView";
@@ -78,6 +78,9 @@ function useToast(): [Toast, (text: string, kind?: "ok" | "err") => void] {
   return [toast, show];
 }
 
+// ?bot=<id> — muharrir foydalanuvchining o'z botidan ochilgan (asosiy botdan emas).
+const OWN_BOT_ID = Number(new URLSearchParams(window.location.search).get("bot")) || null;
+
 export function App() {
   const [authed, setAuthed] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -86,7 +89,7 @@ export function App() {
     tg?.ready();
     tg?.expand();
     matchChrome();
-    authenticate()
+    (OWN_BOT_ID ? authenticateBot(OWN_BOT_ID) : authenticate())
       .then(() => setAuthed(true))
       .catch((e: Error) => setAuthError(e.message));
   }, []);
@@ -103,7 +106,22 @@ export function App() {
     );
   }
   if (!authed) return <Loader />;
-  return <Main />;
+  return OWN_BOT_ID ? <OwnBot botId={OWN_BOT_ID} /> : <Main />;
+}
+
+function OwnBot({ botId }: { botId: number }) {
+  const [toast, showToast] = useToast();
+  return (
+    <div className="app app--standalone">
+      <StandaloneBotEditor botId={botId} toast={showToast} />
+      {toast && (
+        <div className={`toast toast--${toast.kind}`}>
+          {toast.kind === "ok" ? <CircleCheck size={18} /> : <CircleAlert size={18} />}
+          <span>{toast.text}</span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Loader() {

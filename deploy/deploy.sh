@@ -26,7 +26,13 @@ esac
 
 mkdir -p backups
 if [ "$#" -eq 0 ]; then
-  docker compose "${args[@]}" up -d --build --remove-orphans
+  # Image'lar bittadan yig'iladi: hammasi bir vaqtda yig'ilsa kichik serverda xotira tugab,
+  # boshqa ilovalar (pm2 va h.k.) ham sekinlashadi yoki to'xtaydi.
+  for svc in api bot worker scheduler listener botrunner web; do
+    echo "▶ $svc yig'ilmoqda..."
+    docker compose "${args[@]}" build "$svc"
+  done
+  docker compose "${args[@]}" up -d --remove-orphans
   docker compose "${args[@]}" ps
 else
   docker compose "${args[@]}" "$@"

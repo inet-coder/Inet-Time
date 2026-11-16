@@ -583,6 +583,10 @@ async def user_bot_broadcast_job(ctx, broadcast_id: int) -> None:
             media = await db.get(MediaFile, item.media_id)
             photo = (media.data, media.mime) if media else None
         text = item.text
+        copy_from = (item.from_chat_id, item.message_id) if item.from_chat_id and item.message_id else None
+        # Egasi o'zi ham obunachi bo'lishi mumkin — o'ziga nusxa yuborilmaydi.
+        if copy_from:
+            chat_ids = [c for c in chat_ids if c != copy_from[0]]
         item.total = len(chat_ids)
         await db.commit()
 
@@ -594,7 +598,9 @@ async def user_bot_broadcast_job(ctx, broadcast_id: int) -> None:
         for index, chat_id in enumerate(chat_ids, 1):
             for _attempt in range(3):
                 try:
-                    if photo is not None:
+                    if copy_from is not None:
+                        await call(client, token, "copyMessage", {"chat_id": chat_id, "from_chat_id": copy_from[0], "message_id": copy_from[1]})
+                    elif photo is not None:
                         if file_id is None:
                             data, mime = photo
                             result = await call(client, token, "sendPhoto", {"chat_id": chat_id, "caption": text}, files={"photo": ("photo.jpg", data, mime)})
@@ -638,3 +644,16 @@ async def user_bot_broadcast_job(ctx, broadcast_id: int) -> None:
         item.status = "done"
         item.finished_at = datetime.datetime.now(datetime.timezone.utc)
         await db.commit()
+
+    if copy_from is not None and not revoked:
+        # Bot ichidan boshlangan tarqatish — natijani egasiga o'sha botning o'zida aytamiz.
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                await call(
+                    client,
+                    token,
+                    "sendMessage",
+                    {"chat_id": copy_from[0], "text": f"✅ Xabar tarqatildi\n\n📬 Yetkazildi: {sent}\n⚠️ Yetmadi: {failed}\n👥 Jami: {len(chat_ids)}"},
+                )
+        except BotApiError:
+            pass

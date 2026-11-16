@@ -1,8 +1,17 @@
-# Inet-Time — Telegram profil avtomatlashtirish platformasi
+# Inet-Time — Telegram botlar konstruktori
 
-Telegram akkauntingiz profilini avtomatik boshqaradigan platforma: bot + Mini App (Studiya) + admin panel.
+Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlashtirish: bot + Mini App + admin panel.
 
 ## Imkoniyatlar
+
+- 🧩 **Bot konstruktori** — asosiy bot orqali kod yozmasdan Telegram bot yaratish: shablon tanlanadi, @BotFather
+  tokeni yuboriladi (yoki BotFather xabari forward qilinadi) — bot darhol ishlaydi. Sozlash yaratilgan botning
+  o'zida (`/admin`): menyu va tugmalar muharriri (Mini App), istalgan turdagi xabarni tarqatish, murojaatlar
+  rejimi (har bir xabar egasiga, «Reply» bilan javob), statistika. 15 ta tayyor shablon: qayta aloqa, do'kon,
+  restoran, go'zallik saloni, klinika, avtoservis, ko'chmas mulk, turizm, o'quv markazi, tadbir, kanal,
+  FAQ, anonim savollar, portfolio, bo'sh
+
+**👤 Profil xizmatlari** (asosiy menyuda alohida bo'lim):
 
 - 🕐 **Soat ismda**, 📝 **Avto bio**, ✏️ **Avto ism** — profil matnlari o'zi yangilanadi (soat, sana, hafta kuni, tug'ilgan kun sanog'i va h.k.)
 - 🔁 **Bio playlist** — matnlar navbat bilan yoki tasodifiy almashadi (14 ta tayyor to'plam)
@@ -11,9 +20,6 @@ Telegram akkauntingiz profilini avtomatik boshqaradigan platforma: bot + Mini Ap
 - 😀 **Emoji status**, 🖼 **Rasm almashtirish**
 - 🎂 **Tug'ilgan kun** sanog'i, 👀 **Stories** yuklab olish
 - 🤖 **AI avto-javob** (OpenAI) — shaxsiy chatlarda siz nomingizdan javob; **AI bilan yozish** (bio, ism, jadval matnlari)
-- 🧩 **Bot konstruktori** — foydalanuvchi o'z botini token bilan ulaydi va Mini App'da menyusini quradi: sahifalar,
-  ichma-ich menyular, inline/pastki tugmalar, rasmlar, havolalar, «Adminga yozish» (buyurtma/ariza, egasi «Reply» bilan javob beradi),
-  obunachilar statistikasi va ommaviy xabar; 5 ta tayyor shablon (do'kon, o'quv markazi, anonim savollar, portfolio)
 - 💎 **Tariflar**, promokodlar, chegirmalar, balans
 - 🎁 **Referal tizimi** — bosqichli sovg'alar, ikki hisoblash rejimi
 - 🛠 **Admin panel** (Mini App ichida): foydalanuvchilar, to'lovlar, tariflar, ommaviy xabarlar, statistika, jurnal

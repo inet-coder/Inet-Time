@@ -46,6 +46,9 @@ class BotBroadcast(CreatedAtMixin, Base):
     bot_id: Mapped[int] = mapped_column(ForeignKey("user_bots.id", ondelete="CASCADE"), index=True)
     text: Mapped[str] = mapped_column(Text)
     media_id: Mapped[int | None] = mapped_column(ForeignKey("media_files.id", ondelete="SET NULL"))
+    # Egasi o'z botida yuborgan xabar (istalgan turi) — copyMessage bilan tarqatiladi; bo'lsa text/media ishlatilmaydi.
+    from_chat_id: Mapped[int | None] = mapped_column(BigInteger)
+    message_id: Mapped[int | None] = mapped_column(Integer)
     # sending | done
     status: Mapped[str] = mapped_column(String(16), default="sending")
     total: Mapped[int] = mapped_column(Integer, default=0)

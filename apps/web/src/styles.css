@@ -2849,3 +2849,18 @@ select.input {
   appearance: none;
   -webkit-appearance: none;
 }
+.bb-template__icon {
+  font-size: 22px;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+/* O'z botidan ochilgan muharrir: tabbar yo'q — saqlash paneli va xabarlar pastroqda */
+.app--standalone {
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+.app--standalone .bb-savebar {
+  bottom: calc(12px + env(safe-area-inset-bottom));
+}
+.app--standalone .toast {
+  bottom: calc(84px + env(safe-area-inset-bottom));
+}

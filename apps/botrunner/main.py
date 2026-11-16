@@ -19,6 +19,8 @@ import uuid
 from dataclasses import dataclass, field
 
 import httpx
+from arq import create_pool
+from arq.connections import RedisSettings
 from redis.asyncio import Redis
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -31,6 +33,8 @@ from core.db.models import BotSubscriber, MediaFile, User, UserBot
 from core.entitlements import get_entitlement
 from core.notify import send_telegram
 from core.settings import settings
+
+import admin
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)  # URL ichida token bor
@@ -94,6 +98,12 @@ class Runner:
         self.bots: dict[int, RunningBot] = {}
         self.instance_id = uuid.uuid4().hex
         self.platform_username: str | None = None
+        self._arq = None
+
+    async def arq(self):
+        if self._arq is None:
+            self._arq = await create_pool(RedisSettings.from_dsn(settings.redis_url or "redis://redis:6379"))
+        return self._arq
 
     # --- Sinxronlash ---
 
@@ -194,6 +204,7 @@ class Runner:
             await call(self.http, bot.token, "deleteWebhook", {"drop_pending_updates": False})
         except BotApiError:
             pass
+        await admin.set_owner_commands(self, bot)
         while True:
             try:
                 updates = await call(
@@ -394,6 +405,10 @@ class Runner:
         if message is None:
             return
         chat_id = message["chat"]["id"]
+        if data.startswith("adm:"):
+            if chat_id == bot.owner_chat_id:
+                await admin.on_callback(self, bot, chat_id, data, message, user)
+            return
         await self._touch(bot, user)
         if data.startswith("p:"):
             await self.open_page(bot, chat_id, data[2:], user, message=message)
@@ -424,20 +439,26 @@ class Runner:
                     await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": f"⚠️ Yuborilmadi: {reason}"})
                 return
 
+        if chat_id == bot.owner_chat_id and text.startswith("/start"):
+            # Egasi botiga kirdi — endi murojaatlarni qabul qila oladi.
+            async with async_session() as db:
+                await db.execute(
+                    update(UserBot).where(UserBot.id == bot.bot_id, UserBot.error_message == OWNER_START_HINT).values(error_message=None)
+                )
+                await db.commit()
+        if chat_id == bot.owner_chat_id and await admin.on_message(self, bot, message):
+            await self._touch(bot, user)
+            return
+
         if text.startswith("/start"):
             await self._touch(bot, user, force=True)
-            if chat_id == bot.owner_chat_id:
-                # Egasi botiga kirdi — endi xabarlarni qabul qila oladi.
-                async with async_session() as db:
-                    await db.execute(
-                        update(UserBot).where(UserBot.id == bot.bot_id, UserBot.error_message == OWNER_START_HINT).values(error_message=None)
-                    )
-                    await db.commit()
             await self.redis.delete(_k(bot.bot_id, "st", chat_id), _k(bot.bot_id, "nav", chat_id), _k(bot.bot_id, "cur", chat_id))
             start = page_by_id(bot.menu, bot.menu.get("start"))
             if start is not None:
                 await self.redis.set(_k(bot.bot_id, "cur", chat_id), start["id"], ex=STATE_TTL)
                 await self.send_page(bot, chat_id, start, user, with_branding=True)
+            if chat_id == bot.owner_chat_id:
+                await admin.owner_started(self, bot, chat_id)
             return
 
         await self._touch(bot, user)
@@ -452,6 +473,10 @@ class Runner:
         button = await self._find_reply_button(bot, chat_id, text) if text else None
         if button is not None:
             await self.run_action(bot, chat_id, button, user, None)
+            return
+        # Qayta aloqa rejimi: menyuda yo'q har qanday xabar (matn, rasm, ovoz...) egasiga boradi.
+        if bot.menu.get("forward_all") and chat_id != bot.owner_chat_id and not text.startswith("/"):
+            await self.forward_feedback(bot, message, user)
             return
         await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": bot.menu.get("fallback") or "Menyudan tanlang 👇"})
 

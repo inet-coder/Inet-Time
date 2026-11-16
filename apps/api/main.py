@@ -80,6 +80,7 @@ app.include_router(webapp_ai.internal_router)
 app.include_router(webapp_profile.router)
 app.include_router(webapp_profile.internal_router)
 app.include_router(webapp_bots.router)
+app.include_router(webapp_bots.internal_router)
 
 
 @app.get("/health")

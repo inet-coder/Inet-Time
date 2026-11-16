@@ -17,7 +17,8 @@ Menyu — bitta JSON hujjat (user_bots.menu):
       "fallback": "...",                     # tushunarsiz xabarga javob
       "feedback_prompt": "...",              # «Adminga yozish» bosilganda
       "feedback_done": "...",                # xabar yetkazilgach
-      "feedback_anonymous": false            # egasiga yozuvchining ismi ko'rsatilmasin
+      "feedback_anonymous": false,           # egasiga yozuvchining ismi ko'rsatilmasin
+      "forward_all": false                   # menyuda yo'q har qanday xabar egasiga boradi (qayta aloqa boti)
     }
 
 Tugma amallari:
@@ -33,6 +34,8 @@ import re
 import secrets
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+
+from core.bot_templates import TEMPLATES
 
 ACTIONS = ("page", "url", "back", "home", "feedback")
 KEYBOARDS = ("inline", "reply")
@@ -124,6 +127,8 @@ class Menu(BaseModel):
     feedback_done: str = Field(default="", max_length=1000)
     # true — egasiga yozgan odamning ismi ko'rsatilmaydi (anonim savollar)
     feedback_anonymous: bool = False
+    # true — menyuda yo'q har qanday xabar egasiga yuboriladi (qayta aloqa / Livegram uslubi)
+    forward_all: bool = False
 
     @model_validator(mode="after")
     def _check(self):
@@ -187,219 +192,7 @@ def new_page_id() -> str:
     return "p" + secrets.token_hex(3)
 
 
-# --- Tayyor shablonlar ---
-
-
-def _b(text: str, action: str, target: str | None = None, url: str | None = None) -> dict:
-    return {"text": text, "action": action, "target": target, "url": url}
-
-
-TEMPLATES: dict[str, dict] = {
-    "blank": {
-        "title": "Bo'sh",
-        "desc": "Faqat bosh sahifa — o'zingiz quring",
-        "menu": {
-            "start": "main",
-            "pages": [
-                {
-                    "id": "main",
-                    "title": "Bosh menyu",
-                    "text": "Assalomu alaykum, {name}! 👋\n\n{bot} ga xush kelibsiz.",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [[_b("✍️ Adminga yozish", "feedback")]],
-                }
-            ],
-        },
-    },
-    "shop": {
-        "title": "Do'kon",
-        "desc": "Katalog, narxlar, yetkazib berish, buyurtma",
-        "menu": {
-            "start": "main",
-            "pages": [
-                {
-                    "id": "main",
-                    "title": "Bosh menyu",
-                    "text": "Assalomu alaykum, {name}! 🛍\n\nDo'konimizga xush kelibsiz. Bo'limni tanlang:",
-                    "media_id": None,
-                    "keyboard": "reply",
-                    "buttons": [
-                        [_b("📦 Katalog", "page", "catalog"), _b("💰 Narxlar", "page", "prices")],
-                        [_b("🚚 Yetkazib berish", "page", "delivery"), _b("📍 Manzil", "page", "address")],
-                        [_b("🛒 Buyurtma berish", "feedback")],
-                    ],
-                },
-                {
-                    "id": "catalog",
-                    "title": "Katalog",
-                    "text": "📦 Katalog\n\nKategoriyani tanlang:",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [
-                        [_b("👕 Kiyimlar", "page", "cat1"), _b("👟 Poyabzal", "page", "cat2")],
-                        [_b("⬅️ Orqaga", "back")],
-                    ],
-                },
-                {
-                    "id": "cat1",
-                    "title": "Kiyimlar",
-                    "text": "👕 Kiyimlar\n\n• Futbolka — 120 000 so'm\n• Ko'ylak — 180 000 so'm\n\nBuyurtma uchun «Buyurtma berish» ni bosing.",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [[_b("🛒 Buyurtma berish", "feedback")], [_b("⬅️ Orqaga", "back"), _b("🏠 Bosh menyu", "home")]],
-                },
-                {
-                    "id": "cat2",
-                    "title": "Poyabzal",
-                    "text": "👟 Poyabzal\n\n• Krossovka — 350 000 so'm\n• Tufli — 420 000 so'm",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [[_b("🛒 Buyurtma berish", "feedback")], [_b("⬅️ Orqaga", "back"), _b("🏠 Bosh menyu", "home")]],
-                },
-                {
-                    "id": "prices",
-                    "title": "Narxlar",
-                    "text": "💰 Narxlar ro'yxati shu yerda bo'ladi.",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [],
-                },
-                {
-                    "id": "delivery",
-                    "title": "Yetkazib berish",
-                    "text": "🚚 Toshkent bo'ylab — 1 kunda, viloyatlarga — 2–3 kunda.",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [],
-                },
-                {
-                    "id": "address",
-                    "title": "Manzil",
-                    "text": "📍 Manzil: Toshkent sh., ...\n🕘 Ish vaqti: 9:00–20:00",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [[_b("🗺 Xaritada ochish", "url", url="https://maps.google.com")]],
-                },
-            ],
-            "feedback_prompt": "🛒 Nima buyurtma qilmoqchisiz? Mahsulot nomi, soni va telefon raqamingizni yozing.",
-            "feedback_done": "✅ Buyurtmangiz qabul qilindi! Operator tez orada bog'lanadi.",
-        },
-    },
-    "edu": {
-        "title": "O'quv markazi",
-        "desc": "Kurslar, narxlar, ro'yxatdan o'tish",
-        "menu": {
-            "start": "main",
-            "pages": [
-                {
-                    "id": "main",
-                    "title": "Bosh menyu",
-                    "text": "Assalomu alaykum, {name}! 🎓\n\nO'quv markazimiz botiga xush kelibsiz.",
-                    "media_id": None,
-                    "keyboard": "reply",
-                    "buttons": [
-                        [_b("📚 Kurslar", "page", "courses")],
-                        [_b("📝 Ro'yxatdan o'tish", "feedback"), _b("📍 Manzil", "page", "address")],
-                    ],
-                },
-                {
-                    "id": "courses",
-                    "title": "Kurslar",
-                    "text": "📚 Kursni tanlang:",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [
-                        [_b("🇬🇧 Ingliz tili", "page", "english"), _b("💻 Dasturlash", "page", "it")],
-                        [_b("⬅️ Orqaga", "back")],
-                    ],
-                },
-                {
-                    "id": "english",
-                    "title": "Ingliz tili",
-                    "text": "🇬🇧 Ingliz tili\n\n⏱ Haftasiga 3 kun, 2 soatdan\n💰 Oyiga 450 000 so'm",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [[_b("📝 Yozilish", "feedback")], [_b("⬅️ Orqaga", "back")]],
-                },
-                {
-                    "id": "it",
-                    "title": "Dasturlash",
-                    "text": "💻 Dasturlash (Python)\n\n⏱ Haftasiga 3 kun\n💰 Oyiga 600 000 so'm",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [[_b("📝 Yozilish", "feedback")], [_b("⬅️ Orqaga", "back")]],
-                },
-                {
-                    "id": "address",
-                    "title": "Manzil",
-                    "text": "📍 Manzil: ...\n📞 Telefon: ...",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [],
-                },
-            ],
-            "feedback_prompt": "📝 Ism-familiyangiz, telefon raqamingiz va qaysi kursga yozilmoqchi ekaningizni yozing.",
-            "feedback_done": "✅ Arizangiz qabul qilindi! Administrator siz bilan bog'lanadi.",
-        },
-    },
-    "anon": {
-        "title": "Anonim savollar",
-        "desc": "Odamlar sizga anonim yozadi, siz javob qaytarasiz",
-        "menu": {
-            "start": "main",
-            "pages": [
-                {
-                    "id": "main",
-                    "title": "Bosh sahifa",
-                    "text": "🤫 Bu yerda menga anonim savol yoki fikr yozishingiz mumkin.\n\nKim yozgani menga ko'rinmaydi.",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [[_b("✍️ Anonim yozish", "feedback")]],
-                }
-            ],
-            "feedback_prompt": "✍️ Xabaringizni yozing — u anonim yetkaziladi.",
-            "feedback_anonymous": True,
-            "feedback_done": "✅ Yuborildi! Javob kelsa, shu yerga keladi.",
-        },
-    },
-    "portfolio": {
-        "title": "Portfolio / xizmatlar",
-        "desc": "O'zingiz, xizmatlaringiz va aloqa",
-        "menu": {
-            "start": "main",
-            "pages": [
-                {
-                    "id": "main",
-                    "title": "Bosh menyu",
-                    "text": "👋 Salom, {name}! Men — ...\n\nQuyidan tanlang:",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [
-                        [_b("👤 Men haqimda", "page", "about"), _b("🛠 Xizmatlar", "page", "services")],
-                        [_b("🖼 Ishlarim", "url", url="https://t.me/"), _b("✉️ Bog'lanish", "feedback")],
-                    ],
-                },
-                {
-                    "id": "about",
-                    "title": "Men haqimda",
-                    "text": "👤 Men haqimda qisqacha ...",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [[_b("⬅️ Orqaga", "back")]],
-                },
-                {
-                    "id": "services",
-                    "title": "Xizmatlar",
-                    "text": "🛠 Xizmatlar va narxlar:\n\n• ...\n• ...",
-                    "media_id": None,
-                    "keyboard": "inline",
-                    "buttons": [[_b("✉️ Buyurtma berish", "feedback")], [_b("⬅️ Orqaga", "back")]],
-                },
-            ],
-        },
-    },
-}
+# --- Tayyor shablonlar (core/bot_templates.py) ---
 
 
 def template_menu(code: str) -> dict:
@@ -412,6 +205,6 @@ def template_menu(code: str) -> dict:
 
 def templates_public() -> list[dict]:
     return [
-        {"code": code, "title": t["title"], "desc": t["desc"], "pages": len(t["menu"]["pages"])}
+        {"code": code, "icon": t["icon"], "title": t["title"], "desc": t["desc"], "pages": len(t["menu"]["pages"])}
         for code, t in TEMPLATES.items()
     ]

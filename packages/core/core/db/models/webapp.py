@@ -43,3 +43,13 @@ class WebAppSubmission(CreatedAtMixin, Base):
     total: Mapped[decimal.Decimal | None] = mapped_column(Numeric(14, 2))
     # new | done
     status: Mapped[str] = mapped_column(String(16), default="new", index=True)
+
+
+class WebAppVersion(CreatedAtMixin, Base):
+    """Har bir «E'lon qilish» — alohida versiya. Istalgan vaqtda qoralamaga qaytarish mumkin."""
+
+    __tablename__ = "web_app_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    app_id: Mapped[int] = mapped_column(ForeignKey("web_apps.id", ondelete="CASCADE"), index=True)
+    doc: Mapped[dict] = mapped_column(JSON)

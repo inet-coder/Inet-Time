@@ -15,20 +15,26 @@ import {
   Monitor,
   MousePointerClick,
   Paintbrush,
+  Play,
   Plus,
+  Redo2,
   Rocket,
   Settings2,
   Smartphone,
   Star,
   Trash2,
+  Undo2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, mediaUrl, type WASubmission, type WebAppInfo, type WebAppState } from "../api";
 import { confirmDialog, haptic, tg } from "../tg";
 import { WebAppRuntime } from "../webapp/Runtime";
 import { BLOCK_SPECS, CATEGORIES, FORM_FIELD_SPEC, cloneBlock, newBlock, newField } from "../webapp/specs";
-import { formatMoney, uid, type AppDoc, type BlockType, type WABlock, type WAPage } from "../webapp/types";
+import { formatMoney, uid, type AppDoc, type BlockType, type WABlock, type WANode, type WAPage, type WAStyle } from "../webapp/types";
+import { fontStack, useGoogleFonts } from "../webapp/nodes";
+import { cloneNode, SECTIONS, type SectionPreset } from "../webapp/sections";
+import { AnimField, CustomEditor, locate, StyleEditor } from "./DesignEditor";
 import { Inspector, Sheet } from "./Sheet";
 import { useEscape, useSaveShortcut } from "../hooks";
 import { DESKTOP_QUERY, isMac, useMediaQuery } from "../util";
@@ -162,6 +168,26 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
   const [busy, setBusy] = useState(false);
   const desktop = useMediaQuery(DESKTOP_QUERY);
   const [device, setDevice] = useState<"phone" | "wide">("phone");
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(true);
+  const [clipboard, setClipboardState] = useState<WANode | null>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("wa-clipboard") || "null");
+    } catch {
+      return null;
+    }
+  });
+  const setClipboard = (n: WANode | null) => {
+    setClipboardState(n);
+    try {
+      localStorage.setItem("wa-clipboard", JSON.stringify(n));
+    } catch {
+      /* xotira yo'q */
+    }
+  };
+  // Bekor qilish / qaytarish tarixi (tez-tez yozishda yaqin o'zgarishlar bitta qadamga birlashadi)
+  const history = useRef<{ past: AppDoc[]; future: AppDoc[]; last: number }>({ past: [], future: [], last: 0 });
+  const [, forceHistory] = useState(0);
 
   const dirty = JSON.stringify(doc) !== saved;
   const page = doc.pages.find((p) => p.id === pageId) ?? doc.pages[0];
@@ -180,8 +206,34 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
     setDoc((prev) => {
       const next = clone(prev);
       fn(next);
+      const h = history.current;
+      const now = Date.now();
+      if (now - h.last > 700) {
+        h.past.push(prev);
+        if (h.past.length > 100) h.past.shift();
+      }
+      h.last = now;
+      h.future = [];
       return next;
     });
+  const undo = () => {
+    const h = history.current;
+    const prev = h.past.pop();
+    if (!prev) return;
+    h.future.push(doc);
+    h.last = 0;
+    setDoc(prev);
+    forceHistory((n) => n + 1);
+  };
+  const redo = () => {
+    const h = history.current;
+    const next = h.future.pop();
+    if (!next) return;
+    h.past.push(doc);
+    h.last = 0;
+    setDoc(next);
+    forceHistory((n) => n + 1);
+  };
   const updatePage = (fn: (p: WAPage, d: AppDoc) => void) => update((d) => fn(d.pages.find((p) => p.id === page.id)!, d));
 
   const save = async (): Promise<boolean> => {
@@ -220,7 +272,65 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
   useSaveShortcut(() => {
     if (dirty && !busy) save();
   }, dirty);
-  useEscape(editing ? () => setEditing(null) : palette ? () => setPalette(false) : preview ? () => setPreview(false) : null);
+  useEscape(
+    selectedNode
+      ? () => setSelectedNode(null)
+      : editing
+        ? () => setEditing(null)
+        : palette
+          ? () => setPalette(false)
+          : preview
+            ? () => setPreview(false)
+            : null,
+  );
+  // Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y) — matn kiritilayotganda brauzerning o'z bekor qilishi ishlaydi
+  // Ctrl+C / Ctrl+V — tanlangan elementni nusxalash va qo'yish (erkin bo'limda)
+  const copyNode = () => {
+    const block = page.blocks.find((b) => b.id === editing);
+    if (block?.type !== "custom") return;
+    const loc = locate(block.root, selectedNode ?? block.root.id);
+    if (!loc) return;
+    setClipboard(clone(loc.node));
+    toast("Nusxa olindi");
+  };
+  const pasteNode = () => {
+    const block = page.blocks.find((b) => b.id === editing);
+    if (block?.type !== "custom" || !clipboard) return;
+    const node = cloneNode(clipboard);
+    updatePage((p) => {
+      const b = p.blocks.find((x) => x.id === block.id);
+      if (b?.type !== "custom") return;
+      const loc = locate(b.root, selectedNode ?? b.root.id);
+      if (!loc) return;
+      if (loc.node.kind === "box") loc.node.children.push(node);
+      else if (loc.parent) loc.parent.children.splice(loc.index + 1, 0, node);
+    });
+    setSelectedNode(node.id);
+  };
+  const keysRef = useRef({ undo, redo, copyNode, pasteNode });
+  keysRef.current = { undo, redo, copyNode, pasteNode };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        keysRef.current.undo();
+      } else if ((k === "z" && e.shiftKey) || k === "y") {
+        e.preventDefault();
+        keysRef.current.redo();
+      } else if (k === "c" && !window.getSelection()?.toString()) {
+        keysRef.current.copyNode();
+      } else if (k === "v") {
+        e.preventDefault();
+        keysRef.current.pasteNode();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const close = async () => {
     if (dirty && !(await confirmDialog("Saqlanmagan o'zgarishlar bor. Chiqilsinmi?"))) return;
@@ -236,6 +346,18 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
     updatePage((p) => p.blocks.push(block));
     setPalette(false);
     setEditing(block.id);
+  };
+
+  const addCustom = (preset: SectionPreset) => {
+    if (page.blocks.length >= state.limits.blocks) {
+      toast(`Bitta sahifada ko'pi bilan ${state.limits.blocks} ta blok`, "err");
+      return;
+    }
+    const block = { ...newBlock("custom"), name: preset.title, root: preset.make() } as WABlock;
+    updatePage((p) => p.blocks.push(block));
+    setPalette(false);
+    setEditing(block.id);
+    setSelectedNode(null);
   };
 
   const editingBlock = page.blocks.find((b) => b.id === editing) ?? null;
@@ -276,7 +398,7 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
           selected={editing}
         />
       )}
-      {tab === "style" && <StyleTab doc={doc} update={update} themes={state.themes} botUsername={state.bot_username} showPreview={!desktop} />}
+      {tab === "style" && <StyleTab doc={doc} update={update} themes={state.themes} botUsername={state.bot_username} showPreview={!desktop} fonts={state.fonts} />}
       {tab === "settings" && (
         <SettingsTab
           botId={botId}
@@ -302,6 +424,11 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
   const blockEditor = editingBlock && (
     <BlockSheet
       inline={desktop}
+      fonts={state.fonts}
+      selectedNode={selectedNode}
+      onSelectNode={setSelectedNode}
+      clipboard={clipboard}
+      setClipboard={setClipboard}
       doc={doc}
       block={editingBlock}
       index={page.blocks.findIndex((b) => b.id === editingBlock.id)}
@@ -327,8 +454,22 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
         updatePage((p) => (p.blocks = p.blocks.filter((b) => b.id !== editingBlock.id)));
         setEditing(null);
       }}
-      onClose={() => setEditing(null)}
+      onClose={() => {
+        setEditing(null);
+        setSelectedNode(null);
+      }}
     />
+  );
+
+  const undoRedo = (
+    <>
+      <button className="icon-btn" disabled={!history.current.past.length} onClick={undo} aria-label="Bekor qilish" title={`Bekor qilish (${isMac ? "⌘Z" : "Ctrl+Z"})`}>
+        <Undo2 size={18} />
+      </button>
+      <button className="icon-btn" disabled={!history.current.future.length} onClick={redo} aria-label="Qaytarish" title={`Qaytarish (${isMac ? "⌘⇧Z" : "Ctrl+Y"})`}>
+        <Redo2 size={18} />
+      </button>
+    </>
   );
 
   return (
@@ -341,6 +482,7 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
           <b>{desktop ? `Web App · ${doc.settings.title || state.bot_username}` : "Web App"}</b>
           <span className={`wb-bar__status ${info.published && !dirty && !info.has_changes ? "is-live" : ""}`}>{status}</span>
         </div>
+        {undoRedo}
         {!desktop && (
           <button className="icon-btn icon-btn--soft" onClick={() => setPreview(true)} aria-label="Ko'rish">
             <Eye size={19} />
@@ -377,9 +519,14 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
                   <Monitor size={14} /> Keng oyna
                 </button>
               </div>
-              <span className="hint">
-                {page.emoji} {page.title} · sinov rejimi
-              </span>
+              <div className="segmented segmented--small wb-mode">
+                <button className={selectMode ? "is-selected" : ""} onClick={() => setSelectMode(true)} title="Bosilgan element tanlanadi">
+                  <MousePointerClick size={14} /> Tahrirlash
+                </button>
+                <button className={!selectMode ? "is-selected" : ""} onClick={() => setSelectMode(false)} title="Tugmalar ishlaydi">
+                  <Play size={14} /> Sinash
+                </button>
+              </div>
             </div>
             <div className={`wb-stage__frame ${device === "wide" ? "is-wide" : ""}`}>
               <WebAppRuntime
@@ -393,10 +540,20 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
                 onPageChange={setPageId}
                 onSubmit={previewSubmit}
                 selectedBlock={editing}
+                selectMode={selectMode}
+                selectedNode={selectedNode}
                 onSelectBlock={(id) => {
                   setPalette(false);
                   setTab("pages");
                   setEditing(id);
+                  setSelectedNode(null);
+                }}
+                onSelectNode={(blockId, nodeId) => {
+                  setPalette(false);
+                  setTab("pages");
+                  setEditing(blockId);
+                  const block = page.blocks.find((b) => b.id === blockId);
+                  setSelectedNode(block?.type === "custom" && block.root.id === nodeId ? null : nodeId);
                 }}
               />
             </div>
@@ -413,7 +570,7 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
                     <X size={18} />
                   </button>
                 </div>
-                <Palette onAdd={addBlock} compact />
+                <Palette onAdd={addBlock} onAddCustom={addCustom} compact />
               </div>
             ) : (
               <div className="wb-right__empty">
@@ -444,7 +601,7 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
 
       {!desktop && palette && (
         <Sheet title="Blok qo'shish" icon={<Plus size={20} />} onClose={() => setPalette(false)}>
-          <Palette onAdd={addBlock} />
+          <Palette onAdd={addBlock} onAddCustom={addCustom} />
         </Sheet>
       )}
 
@@ -476,12 +633,24 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
   );
 }
 
-function Palette({ onAdd, compact = false }: { onAdd: (t: BlockType) => void; compact?: boolean }) {
+function Palette({ onAdd, onAddCustom, compact = false }: { onAdd: (t: BlockType) => void; onAddCustom: (p: SectionPreset) => void; compact?: boolean }) {
   return (
     <div className="stack">
-      {CATEGORIES.map((cat) => (
+      <div className="stack wb-palette">
+        <span className="label">Erkin dizayn — istalgan ko'rinish</span>
+        <div className={`wb-palette__grid ${compact ? "wb-palette__grid--compact" : ""}`}>
+          {SECTIONS.map((p) => (
+            <button key={p.key} className="wb-palette__item wb-palette__item--free" onClick={() => onAddCustom(p)}>
+              <span className="wb-palette__icon">{p.icon}</span>
+              <b>{p.title}</b>
+              <span className="hint">{p.desc}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      {CATEGORIES.filter((c) => c !== "Erkin").map((cat) => (
         <div key={cat} className="stack wb-palette">
-          <span className="label">{cat}</span>
+          <span className="label">Tayyor bloklar · {cat}</span>
           <div className={`wb-palette__grid ${compact ? "wb-palette__grid--compact" : ""}`}>
             {(Object.keys(BLOCK_SPECS) as BlockType[])
               .filter((t) => BLOCK_SPECS[t].category === cat)
@@ -696,6 +865,11 @@ function PagesTab({
 
 function BlockSheet({
   inline = false,
+  fonts,
+  selectedNode,
+  onSelectNode,
+  clipboard,
+  setClipboard,
   doc,
   block,
   index,
@@ -709,6 +883,11 @@ function BlockSheet({
   onClose,
 }: {
   inline?: boolean;
+  fonts: Record<string, string>;
+  selectedNode: string | null;
+  onSelectNode: (id: string | null) => void;
+  clipboard: WANode | null;
+  setClipboard: (n: WANode | null) => void;
   doc: AppDoc;
   block: WABlock;
   index: number;
@@ -735,7 +914,29 @@ function BlockSheet({
             <WebAppRuntime doc={single} appId="block-preview" mode="preview" mediaSrc={mediaUrl} botUsername={botUsername} branding={null} onSubmit={previewSubmit} />
           </div>
         )}
-        <SpecForm spec={spec.fields} value={block} onChange={(next) => onChange(next as WABlock)} ctx={ctx} />
+        {block.type === "custom" ? (
+          <CustomEditor
+            block={block}
+            onChange={(b) => onChange(b)}
+            selected={selectedNode}
+            onSelect={onSelectNode}
+            fonts={fonts}
+            ctx={ctx}
+            clipboard={clipboard}
+            setClipboard={setClipboard}
+          />
+        ) : (
+          <>
+            <SpecForm spec={spec.fields} value={block} onChange={(next) => onChange(next as WABlock)} ctx={ctx} />
+            <details className="de-block-style">
+              <summary>🎨 Uslub va animatsiya</summary>
+              {block.type !== "divider" && (
+                <StyleEditor value={block.style as WAStyle | null} onChange={(st) => onChange({ ...block, style: st } as WABlock)} fonts={fonts} ctx={ctx} compact />
+              )}
+              <AnimField value={block.anim} set={(a) => onChange({ ...block, anim: a } as WABlock)} />
+            </details>
+          </>
+        )}
         <button className="sf-toggle" onClick={() => onChange({ ...block, hidden: !block.hidden } as WABlock)}>
           <span>
             Yashirish
@@ -773,12 +974,7 @@ function BlockSheet({
 // Uslub
 // ------------------------------------------------------------
 
-const FONTS: [AppDoc["theme"]["font"], string][] = [
-  ["system", "Oddiy"],
-  ["rounded", "Yumaloq"],
-  ["serif", "Klassik"],
-  ["mono", "Texnik"],
-];
+const FONT_TITLES: Record<string, string> = { system: "Tizim", rounded: "Yumaloq", serif: "Klassik", mono: "Texnik" };
 
 function StyleTab({
   doc,
@@ -786,13 +982,16 @@ function StyleTab({
   themes,
   botUsername,
   showPreview,
+  fonts,
 }: {
   doc: AppDoc;
   update: (fn: (d: AppDoc) => void) => void;
   themes: WebAppState["themes"];
   botUsername: string;
   showPreview: boolean;
+  fonts: Record<string, string>;
 }) {
+  useGoogleFonts(Object.keys(fonts));
   const t = doc.theme;
   const setTheme = (patch: Partial<AppDoc["theme"]>) => update((d) => void (d.theme = { ...d.theme, ...patch }));
   const color = (key: "primary" | "background" | "surface" | "text", label: string) => (
@@ -846,10 +1045,11 @@ function StyleTab({
         </label>
         <div className="sf-field">
           <span className="sf-label">Shrift</span>
-          <div className="segmented segmented--small">
-            {FONTS.map(([v, l]) => (
-              <button key={v} className={t.font === v ? "is-selected" : ""} onClick={() => setTheme({ font: v })}>
-                {l}
+          <div className="wb-fonts">
+            {Object.entries(fonts).map(([k, family]) => (
+              <button key={k} className={`wb-font ${t.font === k ? "is-selected" : ""}`} style={{ fontFamily: fontStack(k) }} onClick={() => setTheme({ font: k })}>
+                <b>Aa</b>
+                <span>{FONT_TITLES[k] ?? family}</span>
               </button>
             ))}
           </div>
@@ -977,6 +1177,8 @@ function SettingsTab({
         </section>
       )}
 
+      <VersionsCard botId={botId} toast={toast} onRestored={onReplaced} />
+
       <section className="card stack">
         <span className="label">Boshqa shablon bilan boshlash</span>
         <p className="hint">Qoralama tanlangan shablon bilan almashtiriladi. E'lon qilingan ilova «E'lon» bosilmaguncha o'zgarmaydi.</p>
@@ -1003,6 +1205,52 @@ function SettingsTab({
         )}
       </section>
     </div>
+  );
+}
+
+function VersionsCard({ botId, toast, onRestored }: { botId: number; toast: Toast; onRestored: (i: WebAppInfo) => void }) {
+  const { data, refetch } = useQuery({ queryKey: ["webapp-versions", botId], queryFn: () => api.webAppVersions(botId) });
+  return (
+    <section className="card stack">
+      <span className="label">Versiyalar tarixi</span>
+      <p className="hint">Har bir «E'lon» saqlanadi. Tiklangan versiya qoralamaga yuklanadi — tekshirib, qayta e'lon qilasiz.</p>
+      {!data ? (
+        <div className="spinner spinner--center" />
+      ) : data.items.length === 0 ? (
+        <p className="hint">Hali e'lon qilinmagan.</p>
+      ) : (
+        <div className="wb-versions">
+          {data.items.map((v, i) => (
+            <div key={v.id} className="wb-version">
+              <span className="wb-version__body">
+                <b>
+                  {v.created_at ? new Date(v.created_at).toLocaleString("ru-RU") : `#${v.id}`}
+                  {v.current && <span className="tag">hozirgi</span>}
+                </b>
+                <span className="hint">
+                  {v.pages} sahifa · {v.blocks} blok{i === 0 ? " · oxirgi" : ""}
+                </span>
+              </span>
+              <button
+                className="btn btn--ghost btn--compact btn--inline"
+                onClick={async () => {
+                  if (!(await confirmDialog("Shu versiya qoralamaga yuklansinmi? Joriy saqlanmagan o'zgarishlar o'chadi."))) return;
+                  try {
+                    onRestored(await api.restoreWebAppVersion(botId, v.id));
+                    toast("Versiya qoralamaga yuklandi — tekshirib «E'lon» bosing");
+                    refetch();
+                  } catch (e) {
+                    toast((e as Error).message, "err");
+                  }
+                }}
+              >
+                Tiklash
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

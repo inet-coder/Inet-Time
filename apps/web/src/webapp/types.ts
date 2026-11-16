@@ -4,7 +4,72 @@ export type ActionType = "none" | "page" | "url" | "bot" | "phone" | "share" | "
 export type WAAction = { type: ActionType; page?: string | null; url?: string | null; phone?: string | null };
 export type WABtn = { text: string; action: WAAction };
 
-type Base = { id: string; hidden?: boolean };
+export type Anim = "none" | "fade" | "up" | "zoom" | "left" | "right";
+
+/** Uslub — har qanday blok yoki element uchun. Hammasi ixtiyoriy. */
+export type WAStyle = {
+  px?: number | null;
+  py?: number | null;
+  mt?: number | null;
+  mb?: number | null;
+  width?: "auto" | "full" | "fit" | null;
+  max_width?: number | null;
+  min_height?: number | null;
+  bg?: string | null;
+  bg2?: string | null;
+  bg_angle?: number;
+  bg_image?: number | null;
+  overlay?: number;
+  color?: string | null;
+  border?: number | null;
+  border_color?: string | null;
+  radius?: number | null;
+  shadow?: "none" | "s" | "m" | "l" | "glow" | null;
+  opacity?: number | null;
+  font?: string | null;
+  size?: number | null;
+  weight?: number | null;
+  align?: "left" | "center" | "right" | null;
+  line?: number | null;
+  letter?: number | null;
+  uppercase?: boolean;
+};
+
+type NodeBase = { id: string; hidden?: boolean; style?: WAStyle | null; wide?: WAStyle | null; anim?: Anim };
+export type BoxNode = NodeBase & {
+  kind: "box";
+  layout: "column" | "row" | "grid";
+  gap: number;
+  align: "start" | "center" | "end" | "stretch";
+  justify: "start" | "center" | "end" | "between" | "around";
+  wrap: boolean;
+  columns: number;
+  columns_wide?: number | null;
+  action?: WAAction | null;
+  children: WANode[];
+};
+export type TextNode = NodeBase & { kind: "text"; text: string; tag: "h1" | "h2" | "h3" | "p" | "small" };
+export type ImageNode = NodeBase & {
+  kind: "image";
+  media_id: number | null;
+  fit: "cover" | "contain";
+  ratio: "auto" | "1:1" | "4:3" | "16:9" | "3:4" | "21:9" | "9:16";
+  action?: WAAction | null;
+};
+export type ButtonNode = NodeBase & {
+  kind: "button";
+  text: string;
+  variant: "primary" | "secondary" | "outline" | "ghost" | "link";
+  icon?: string | null;
+  action: WAAction;
+};
+export type IconNode = NodeBase & { kind: "icon"; icon: string; size: number; emoji: string; action?: WAAction | null };
+export type SpacerNode = NodeBase & { kind: "spacer"; size: number };
+export type DividerNode = NodeBase & { kind: "divider" };
+export type WANode = BoxNode | TextNode | ImageNode | ButtonNode | IconNode | SpacerNode | DividerNode;
+export type NodeKind = WANode["kind"];
+
+type Base = { id: string; hidden?: boolean; style?: WAStyle | null; anim?: Anim };
 
 export type HeroBlock = Base & {
   type: "hero";
@@ -59,7 +124,8 @@ export type PricingBlock = Base & { type: "pricing"; items: PricingPlan[] };
 export type StatsBlock = Base & { type: "stats"; items: { value: string; label: string }[] };
 export type CountdownBlock = Base & { type: "countdown"; title: string; date: string; done_text: string };
 export type VideoBlock = Base & { type: "video"; url: string; caption: string };
-export type DividerBlock = Base & { type: "divider"; style: "line" | "space"; size: "s" | "m" | "l" };
+export type DividerBlock = Omit<Base, "style"> & { type: "divider"; style: "line" | "space"; size: "s" | "m" | "l" };
+export type CustomBlock = Base & { type: "custom"; name: string; root: BoxNode };
 
 export type WABlock =
   | HeroBlock
@@ -78,7 +144,8 @@ export type WABlock =
   | StatsBlock
   | CountdownBlock
   | VideoBlock
-  | DividerBlock;
+  | DividerBlock
+  | CustomBlock;
 
 export type BlockType = WABlock["type"];
 
@@ -92,7 +159,7 @@ export type WATheme = {
   surface: string;
   text: string;
   radius: number;
-  font: "system" | "rounded" | "serif" | "mono";
+  font: string;
 };
 
 export type WASettings = { title: string; currency: string; checkout_fields: FormField[]; checkout_success: string };

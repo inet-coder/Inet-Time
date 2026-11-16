@@ -16,6 +16,13 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
   (do'kon, restoran, xizmatlar, tadbir, portfolio, bo'sh). Qoralama/e'lon alohida; buyurtma narxi serverda
   qayta hisoblanadi; formalar va buyurtmalar egasiga botda keladi («Reply» bilan javob), arizalar qutisi;
   ilova bot menyu tugmasi va bot tugmalaridan ochiladi (`/app/<id>`)
+  - **Erkin dizayn**: «Erkin bo'lim» — konteyner (ustun/qator/to'r), matn, rasm, tugma, ikonka (120+),
+    bo'sh joy, chiziq; istalgan chuqurlikda (8 qavat). Har bir element va blokka uslub: fon, gradient, fon
+    rasmi va qoraytirish, masofalar, kenglik, chegara, burchak, soya, shaffoflik, shrift (12 Google Fonts),
+    o'lcham, qalinlik, tekislash; keng oyna uchun alohida qiymatlar; paydo bo'lish animatsiyalari
+  - Muharrir: elementlar daraxti, ko'rinishdan bosib tanlash (Tahrirlash / Sinash rejimi), bekor qilish /
+    qaytarish (Ctrl+Z / Ctrl+Y), nusxa olish / qo'yish (Ctrl+C / Ctrl+V), 9 ta tayyor erkin bo'lim,
+    versiyalar tarixi va tiklash
 
 **👤 Profil xizmatlari** (asosiy menyuda alohida bo'lim):
 

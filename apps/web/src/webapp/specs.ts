@@ -1,5 +1,6 @@
 // Har bir blok turi konstruktorda qanday tahrirlanishi — bitta umumiy forma (SpecForm) shu tavsiflardan quriladi.
-import { uid, type BlockType, type FormField, type WAAction, type WABlock } from "./types";
+import { SECTIONS } from "./sections";
+import { uid, type BlockType, type BoxNode, type FormField, type WAAction, type WABlock, type WANode } from "./types";
 
 export type Opt = [string | number, string];
 
@@ -16,7 +17,9 @@ export type FieldSpec =
   | { kind: "btn"; key: string; label: string }
   | { kind: "date"; key: string; label: string }
   | { kind: "lines"; key: string; label: string; max: number; hint?: string }
-  | { kind: "list"; key: string; label: string; max: number; item: FieldSpec[]; title: (item: any) => string; make: () => any };
+  | { kind: "list"; key: string; label: string; max: number; item: FieldSpec[]; title: (item: any) => string; make: () => any }
+  | { kind: "slider"; key: string; label: string; min: number; max: number; step?: number; suffix?: string; optional?: boolean }
+  | { kind: "icon"; key: string; label: string; optional?: boolean };
 
 export const NO_ACTION: WAAction = { type: "none", page: null, url: null, phone: null };
 
@@ -61,13 +64,26 @@ export type BlockSpec = {
   title: string;
   icon: string;
   desc: string;
-  category: "Asosiy" | "Media" | "Savdo" | "Ma'lumot" | "Forma";
+  category: "Erkin" | "Asosiy" | "Media" | "Savdo" | "Ma'lumot" | "Forma";
   make: () => Omit<WABlock, "id">;
   fields: FieldSpec[];
   summary: (b: any) => string;
 };
 
+export function countNodes(n: WANode): number {
+  return 1 + (n.kind === "box" ? n.children.reduce((s, c) => s + countNodes(c), 0) : 0);
+}
+
 export const BLOCK_SPECS: Record<BlockType, BlockSpec> = {
+  custom: {
+    title: "Erkin bo'lim",
+    icon: "🧩",
+    desc: "Istalgan dizayn: konteyner, matn, rasm, tugma, ikonka",
+    category: "Erkin",
+    make: () => ({ type: "custom", name: "Erkin bo'lim", root: SECTIONS[0].make() as BoxNode }),
+    fields: [],
+    summary: (b) => `${b.name} · ${countNodes(b.root)} element`,
+  },
   hero: {
     title: "Banner",
     icon: "🌟",
@@ -392,7 +408,7 @@ export const BLOCK_SPECS: Record<BlockType, BlockSpec> = {
   },
 };
 
-export const CATEGORIES: BlockSpec["category"][] = ["Asosiy", "Media", "Savdo", "Ma'lumot", "Forma"];
+export const CATEGORIES: BlockSpec["category"][] = ["Erkin", "Asosiy", "Media", "Savdo", "Ma'lumot", "Forma"];
 
 export function newBlock(type: BlockType): WABlock {
   return { id: uid("b"), hidden: false, ...BLOCK_SPECS[type].make() } as WABlock;
@@ -403,5 +419,12 @@ export function cloneBlock(block: WABlock): WABlock {
   const copy = JSON.parse(JSON.stringify(block)) as WABlock;
   copy.id = uid("b");
   if (copy.type === "products") copy.items = copy.items.map((p) => ({ ...p, id: uid("p") }));
+  if (copy.type === "custom") {
+    const walk = (n: WANode) => {
+      n.id = uid("n");
+      if (n.kind === "box") n.children.forEach(walk);
+    };
+    walk(copy.root);
+  }
   return copy;
 }

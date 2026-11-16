@@ -13,17 +13,20 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core import crypto
 from core.botapi import BotApiError, call
 from core.botbuilder import OWNER_START_HINT
-from core.db.models import MediaFile, User, UserBot, WebApp, WebAppSubmission
+from core.db.models import MediaFile, User, UserBot, WebApp, WebAppSubmission, WebAppVersion
 from core.entitlements import get_entitlement
 from core.webapp_auth import InitDataError, validate_init_data
 from core.webapp_builder import (
     BLOCK_TYPES,
+    FONT_KEYS,
+    GOOGLE_FONTS,
+    ICONS,
     MAX_BLOCKS,
     MAX_PAGES,
     THEME_PRESETS,
@@ -47,6 +50,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webapp", tags=["webapp-apps"])
 
 SUBMIT_LIMIT_PER_MINUTE = 6
+KEEP_VERSIONS = 30
 FEEDBACK_TTL = 30 * 24 * 3600  # botrunner: ub:{bot}:fb:{msg} — egasi «Reply» qilsa javob mijozga boradi
 
 
@@ -77,6 +81,8 @@ def _meta() -> dict:
         "templates": templates_public(),
         "themes": THEME_PRESETS,
         "block_types": BLOCK_TYPES,
+        "fonts": {k: GOOGLE_FONTS.get(k, k) for k in FONT_KEYS},
+        "icons": sorted(ICONS),
         "limits": {"pages": MAX_PAGES, "blocks": MAX_BLOCKS},
     }
 
@@ -157,8 +163,46 @@ async def publish(bot_id: int, user: User = Depends(current_user), db: AsyncSess
     app.draft = doc
     app.published = doc
     app.published_at = datetime.datetime.now(datetime.timezone.utc)
+    db.add(WebAppVersion(app_id=app.id, doc=doc))
+    await db.flush()
+    # Eng so'nggi KEEP_VERSIONS tasi saqlanadi
+    keep = select(WebAppVersion.id).where(WebAppVersion.app_id == app.id).order_by(WebAppVersion.id.desc()).limit(KEEP_VERSIONS)
+    await db.execute(delete(WebAppVersion).where(WebAppVersion.app_id == app.id, WebAppVersion.id.not_in(keep)))
     await db.commit()
     await _notify_runner()
+    return await _detail(app)
+
+
+@router.get("/bots/{bot_id}/app/versions")
+async def versions(bot_id: int, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    _, app = await _require_app(db, user, bot_id)
+    rows = list(await db.scalars(select(WebAppVersion).where(WebAppVersion.app_id == app.id).order_by(WebAppVersion.id.desc())))
+    return {
+        "items": [
+            {
+                "id": v.id,
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+                "pages": len(v.doc.get("pages", [])),
+                "blocks": sum(len(p.get("blocks", [])) for p in v.doc.get("pages", [])),
+                "current": v.doc == app.published,
+            }
+            for v in rows
+        ]
+    }
+
+
+@router.post("/bots/{bot_id}/app/versions/{version_id}/restore")
+async def restore_version(bot_id: int, version_id: int, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    """Versiya qoralamaga yuklanadi — ko'rib chiqib «E'lon» bosilgandagina foydalanuvchilarga chiqadi."""
+    _, app = await _require_app(db, user, bot_id)
+    version = await db.get(WebAppVersion, version_id)
+    if version is None or version.app_id != app.id:
+        raise HTTPException(404, "Versiya topilmadi")
+    try:
+        app.draft = validate_app(version.doc, await _owned_media(db, user, version.doc))
+    except WebAppError as exc:
+        raise HTTPException(400, f"Versiyani tiklab bo'lmadi: {exc}") from exc
+    await db.commit()
     return await _detail(app)
 
 

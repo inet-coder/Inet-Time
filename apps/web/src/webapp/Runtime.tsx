@@ -29,6 +29,7 @@ import {
   type WAPage,
   type WATheme,
 } from "./types";
+import { CustomView, collectFonts, cssRule, fontStack, useAppear, useGoogleFonts, type NodeCtx } from "./nodes";
 import "./runtime.css";
 
 export type RuntimeProps = {
@@ -45,13 +46,10 @@ export type RuntimeProps = {
   /** Konstruktor (kompyuter): ko'rinishdan blokni tanlash */
   selectedBlock?: string | null;
   onSelectBlock?: (blockId: string) => void;
-};
-
-const FONT_STACKS: Record<WATheme["font"], string> = {
-  system: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif',
-  rounded: 'ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", -apple-system, "Segoe UI", sans-serif',
-  serif: 'ui-serif, "New York", Georgia, "Times New Roman", serif',
-  mono: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+  /** Tahrirlash rejimi: bosish amallarni bajarmaydi, balki blok/elementni tanlaydi */
+  selectMode?: boolean;
+  selectedNode?: string | null;
+  onSelectNode?: (blockId: string, nodeId: string) => void;
 };
 
 function luminance(hex: string): number {
@@ -85,7 +83,7 @@ export function themeStyle(theme: WATheme, useTelegram: boolean): CSSProperties 
     "--wa-surface": surface,
     "--wa-text": text,
     "--wa-radius": `${theme.radius}px`,
-    "--wa-font": FONT_STACKS[theme.font] ?? FONT_STACKS.system,
+    "--wa-font": fontStack(theme.font),
     colorScheme: luminance(background) < 0.2 ? "dark" : "light",
   } as CSSProperties;
 }
@@ -181,6 +179,7 @@ export function WebAppRuntime(props: RuntimeProps) {
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [cart, changeCart, clearCart] = useCart(props.appId, mode === "live");
   const rootRef = useRef<HTMLDivElement>(null);
+  useGoogleFonts(useMemo(() => collectFonts(doc), [doc]));
 
   // Konstruktor boshqa sahifani tanlasa — o'sha sahifa ko'rsatiladi.
   useEffect(() => {
@@ -304,18 +303,7 @@ export function WebAppRuntime(props: RuntimeProps) {
         {view.kind === "page" &&
           pageObj.blocks
             .filter((b) => !b.hidden)
-            .map((b) =>
-              props.onSelectBlock ? (
-                <div key={b.id} className={`wa-blk ${props.selectedBlock === b.id ? "is-selected" : ""}`}>
-                  <BlockView block={b} ctx={ctx} />
-                  <button className="wa-blk__edit" onClick={() => props.onSelectBlock!(b.id)} aria-label="Tahrirlash" title="Tahrirlash">
-                    ✎
-                  </button>
-                </div>
-              ) : (
-                <BlockView key={b.id} block={b} ctx={ctx} />
-              ),
-            )}
+            .map((b) => <BlockFrame key={b.id} block={b} ctx={ctx} />)}
         {view.kind === "page" && pageObj.blocks.filter((b) => !b.hidden).length === 0 && (
           <div className="wa-empty">Bu sahifa hozircha bo'sh</div>
         )}
@@ -394,6 +382,41 @@ export function WebAppRuntime(props: RuntimeProps) {
             <X size={22} />
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+// Har bir blok: umumiy uslub (fon, masofa, burchak...), paydo bo'lish animatsiyasi va konstruktorda tanlash.
+function BlockFrame({ block, ctx }: { block: WABlock; ctx: BlockCtx }) {
+  const anim = block.anim && block.anim !== "none" ? block.anim : undefined;
+  const ref = useAppear<HTMLDivElement>(anim);
+  const style = typeof block.style === "object" ? block.style : null;
+  const editable = !!ctx.onSelectBlock;
+  const selected = ctx.selectedBlock === block.id;
+  const css = style ? cssRule(`[data-b="${block.id.replace(/[^A-Za-z0-9_-]/g, "")}"]`, style, null, ctx.mediaSrc) : "";
+  return (
+    <div
+      ref={ref}
+      data-b={block.id}
+      className={["wa-frame", anim ? `wa-anim wa-anim--${anim}` : "", editable ? "wa-blk" : "", selected ? "is-selected" : "", ctx.selectMode ? "is-selectable" : ""]
+        .filter(Boolean)
+        .join(" ")}
+      onClickCapture={(e) => {
+        // Tahrirlash rejimida oddiy bloklar bosilganda tanlanadi (erkin bo'lim elementlari o'zi tanlaydi)
+        if (ctx.selectMode && block.type !== "custom") {
+          e.preventDefault();
+          e.stopPropagation();
+          ctx.onSelectBlock?.(block.id);
+        }
+      }}
+    >
+      {css && <style>{css}</style>}
+      <BlockView block={block} ctx={ctx} />
+      {editable && !ctx.selectMode && (
+        <button className="wa-blk__edit" onClick={() => ctx.onSelectBlock!(block.id)} aria-label="Tahrirlash" title="Tahrirlash">
+          ✎
+        </button>
       )}
     </div>
   );
@@ -629,6 +652,18 @@ function BlockView({ block, ctx }: { block: WABlock; ctx: BlockCtx }): JSX.Eleme
           {block.caption && <figcaption>{block.caption}</figcaption>}
         </figure>
       );
+    }
+    case "custom": {
+      const nodeCtx: NodeCtx = {
+        blockId: block.id,
+        mediaSrc: ctx.mediaSrc,
+        runAction: (a) => ctx.runAction(a ?? undefined),
+        selectMode: ctx.selectMode,
+        selected: ctx.selectedBlock === block.id ? ctx.selectedNode : null,
+        onSelect: (nodeId) => ctx.onSelectNode?.(block.id, nodeId),
+        Rich,
+      };
+      return <CustomView blockId={block.id} root={block.root} ctx={nodeCtx} />;
     }
     case "divider":
       return block.style === "line" ? <hr className={`wa-divider wa-divider--${block.size}`} /> : <div className={`wa-space wa-space--${block.size}`} />;

@@ -192,6 +192,8 @@ export type WebAppState = {
   templates: { code: string; icon: string; title: string; desc: string }[];
   themes: Record<string, WAThemePreset>;
   block_types: string[];
+  fonts: Record<string, string>;
+  icons: string[];
   limits: { pages: number; blocks: number };
 };
 export type WASubmission = {
@@ -317,6 +319,13 @@ export const api = {
     request<{ items: WASubmission[] }>("GET", `/webapp/bots/${botId}/app/submissions${status ? `?status=${status}` : ""}`),
   setSubmissionStatus: (botId: number, id: number, status: "new" | "done") =>
     request<{ ok: boolean }>("POST", `/webapp/bots/${botId}/app/submissions/${id}/status`, { status }),
+  webAppVersions: (botId: number) =>
+    request<{ items: { id: number; created_at: string | null; pages: number; blocks: number; current: boolean }[] }>(
+      "GET",
+      `/webapp/bots/${botId}/app/versions`,
+    ),
+  restoreWebAppVersion: (botId: number, versionId: number) =>
+    request<WebAppInfo>("POST", `/webapp/bots/${botId}/app/versions/${versionId}/restore`),
   publicApp: (appId: number) => request<PublicAppData>("GET", `/webapp/apps/${appId}`),
   submitApp: (appId: number, body: SubmitPayload & { init_data: string }) =>
     request<{ ok: boolean; id: number; message: string }>("POST", `/webapp/apps/${appId}/submit`, body),

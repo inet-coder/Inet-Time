@@ -32,6 +32,25 @@ _YT = re.compile(r"(?:youtube\.com/(?:watch\?v=|embed/|shorts/)|youtu\.be/)([A-Z
 _EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[A-Za-z]{2,}$")
 
 FONTS = ("system", "rounded", "serif", "mono")
+# Google Fonts (ilova ochilganda kerak bo'lganlari yuklanadi): kalit -> oila nomi
+GOOGLE_FONTS: dict[str, str] = {
+    "inter": "Inter",
+    "manrope": "Manrope",
+    "montserrat": "Montserrat",
+    "rubik": "Rubik",
+    "nunito": "Nunito",
+    "poppins": "Poppins",
+    "raleway": "Raleway",
+    "playfair": "Playfair Display",
+    "lora": "Lora",
+    "oswald": "Oswald",
+    "comfortaa": "Comfortaa",
+    "jetbrains": "JetBrains Mono",
+}
+FONT_KEYS = FONTS + tuple(GOOGLE_FONTS)
+ICONS = frozenset(['Activity', 'AlertCircle', 'ArrowLeft', 'ArrowRight', 'ArrowUpRight', 'Award', 'Baby', 'Bath', 'BedDouble', 'Bell', 'Bike', 'Book', 'BookOpen', 'Box', 'Briefcase', 'Brush', 'Building', 'Building2', 'Cake', 'Calendar', 'CalendarCheck', 'Camera', 'Car', 'ChartBar', 'Check', 'ChevronRight', 'CircleCheck', 'CircleHelp', 'Clock', 'Cloud', 'Code', 'Coffee', 'Compass', 'Copy', 'Cpu', 'CreditCard', 'Crown', 'Database', 'Diamond', 'Dog', 'Download', 'Dumbbell', 'Eye', 'Filter', 'Flame', 'Flower2', 'Gem', 'Gift', 'Globe', 'GraduationCap', 'Hammer', 'Headphones', 'Heart', 'Hotel', 'House', 'Image', 'Info', 'Key', 'Laptop', 'Leaf', 'Link', 'Lock', 'Mail', 'Map', 'MapPin', 'MessageCircle', 'MessageSquare', 'Mic', 'Minus', 'Monitor', 'Moon', 'Music', 'Navigation', 'Package', 'Palette', 'PawPrint', 'Pen', 'PenLine', 'Percent', 'Phone', 'PieChart', 'Pill', 'Pizza', 'Plane', 'Play', 'Plus', 'Rocket', 'Scissors', 'Search', 'Send', 'Settings', 'Share2', 'Shield', 'ShieldCheck', 'Shirt', 'ShoppingBag', 'ShoppingCart', 'Smartphone', 'Smile', 'Sofa', 'Sparkles', 'Star', 'Stethoscope', 'Store', 'Sun', 'Tag', 'Target', 'ThumbsUp', 'Ticket', 'TrendingUp', 'Trophy', 'Truck', 'Umbrella', 'Upload', 'User', 'Users', 'Utensils', 'Video', 'Wallet', 'Wifi', 'Wrench', 'X', 'Zap'])
+MAX_NODES = 300
+MAX_DEPTH = 8
 THEME_PRESETS: dict[str, dict] = {
     "telegram": {"title": "Telegram mavzusi", "adaptive": True, "primary": "#2f80ed", "background": "#f1f2f6", "surface": "#ffffff", "text": "#111418"},
     "light": {"title": "Oq", "adaptive": False, "primary": "#2f80ed", "background": "#f4f6fb", "surface": "#ffffff", "text": "#111418"},
@@ -92,9 +111,149 @@ class Btn(_M):
     action: Action = Action()
 
 
+
+def _hex_or_none(v: str | None) -> str | None:
+    if v in (None, ""):
+        return None
+    if not _HEX.match(v):
+        raise ValueError("rang #RRGGBB ko'rinishida bo'lsin")
+    return v
+
+
+class Style(_M):
+    """Har qanday blok yoki element uchun uslub. Hammasi ixtiyoriy — berilmagani mavzudan olinadi."""
+
+    px: int | None = Field(default=None, ge=0, le=160)
+    py: int | None = Field(default=None, ge=0, le=200)
+    mt: int | None = Field(default=None, ge=-80, le=200)
+    mb: int | None = Field(default=None, ge=-80, le=200)
+    width: Literal["auto", "full", "fit"] | None = None
+    max_width: int | None = Field(default=None, ge=0, le=1600)
+    min_height: int | None = Field(default=None, ge=0, le=1200)
+    bg: str | None = None
+    bg2: str | None = None
+    bg_angle: int = Field(default=160, ge=0, le=360)
+    bg_image: int | None = None
+    overlay: int = Field(default=0, ge=0, le=90)
+    color: str | None = None
+    border: int | None = Field(default=None, ge=0, le=12)
+    border_color: str | None = None
+    radius: int | None = Field(default=None, ge=0, le=80)
+    shadow: Literal["none", "s", "m", "l", "glow"] | None = None
+    opacity: int | None = Field(default=None, ge=5, le=100)
+    font: str | None = None
+    size: int | None = Field(default=None, ge=8, le=120)
+    weight: int | None = Field(default=None, ge=100, le=900)
+    align: Literal["left", "center", "right"] | None = None
+    line: float | None = Field(default=None, ge=0.8, le=3)
+    letter: int | None = Field(default=None, ge=-10, le=40)
+    uppercase: bool = False
+
+    @model_validator(mode="after")
+    def _check(self):
+        for name in ("bg", "bg2", "color", "border_color"):
+            setattr(self, name, _hex_or_none(getattr(self, name)))
+        if self.font is not None and self.font not in FONT_KEYS:
+            raise ValueError("noma'lum shrift")
+        return self
+
+
+Anim = Literal["none", "fade", "up", "zoom", "left", "right"]
+
+
+class _Node(_M):
+    id: str
+    hidden: bool = False
+    style: Style | None = None
+    wide: Style | None = None  # keng oyna (≥560px) uchun ustiga yoziladigan qiymatlar
+    anim: Anim = "none"
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v: str) -> str:
+        if not _ID.match(v):
+            raise ValueError("element identifikatori noto'g'ri")
+        return v
+
+
+class BoxNode(_Node):
+    kind: Literal["box"]
+    layout: Literal["column", "row", "grid"] = "column"
+    gap: int = Field(default=12, ge=0, le=96)
+    align: Literal["start", "center", "end", "stretch"] = "stretch"
+    justify: Literal["start", "center", "end", "between", "around"] = "start"
+    wrap: bool = True
+    columns: int = Field(default=2, ge=1, le=6)
+    columns_wide: int | None = Field(default=None, ge=1, le=8)
+    action: "Action | None" = None
+    children: list["Node"] = Field(default_factory=list, max_length=60)
+
+
+class TextNode(_Node):
+    kind: Literal["text"]
+    text: str = Field(min_length=1, max_length=4000)
+    tag: Literal["h1", "h2", "h3", "p", "small"] = "p"
+
+
+class ImageNode(_Node):
+    kind: Literal["image"]
+    media_id: int | None = None
+    fit: Literal["cover", "contain"] = "cover"
+    ratio: Literal["auto", "1:1", "4:3", "16:9", "3:4", "21:9", "9:16"] = "auto"
+    action: "Action | None" = None
+
+
+class ButtonNode(_Node):
+    kind: Literal["button"]
+    text: str = Field(min_length=1, max_length=60)
+    variant: Literal["primary", "secondary", "outline", "ghost", "link"] = "primary"
+    icon: str | None = None
+    action: "Action" = Field(default_factory=lambda: Action())
+
+    @field_validator("icon")
+    @classmethod
+    def _icon(cls, v: str | None) -> str | None:
+        if v and v not in ICONS:
+            raise ValueError("noma'lum ikonka")
+        return v or None
+
+
+class IconNode(_Node):
+    kind: Literal["icon"]
+    icon: str
+    size: int = Field(default=28, ge=10, le=160)
+    emoji: str = Field(default="", max_length=8)  # ikonka o'rniga emoji
+    action: "Action | None" = None
+
+    @field_validator("icon")
+    @classmethod
+    def _icon(cls, v: str) -> str:
+        if v not in ICONS:
+            raise ValueError("noma'lum ikonka")
+        return v
+
+
+class SpacerNode(_Node):
+    kind: Literal["spacer"]
+    size: int = Field(default=16, ge=0, le=240)
+
+
+class DividerNode(_Node):
+    kind: Literal["divider"]
+
+
+Node = Annotated[
+    Union[BoxNode, TextNode, ImageNode, ButtonNode, IconNode, SpacerNode, DividerNode],
+    Field(discriminator="kind"),
+]
+NODE_KINDS = ["box", "text", "image", "button", "icon", "spacer", "divider"]
+
+
 class _Block(_M):
     id: str
     hidden: bool = False
+    style: Style | None = None  # har qanday blokka umumiy uslub (fon, masofa, burchak...)
+    anim: Anim = "none"
 
     @field_validator("id")
     @classmethod
@@ -326,15 +485,47 @@ class Divider(_Block):
     size: Literal["s", "m", "l"] = "m"
 
 
+class Custom(_Block):
+    """Erkin bo'lim: elementlar daraxti (konteyner, matn, rasm, tugma, ikonka...) — istalgan dizayn."""
+
+    type: Literal["custom"]
+    name: str = Field(default="Erkin bo'lim", max_length=60)
+    root: BoxNode
+
+    @model_validator(mode="after")
+    def _check(self):
+        count = 0
+
+        def walk(node, depth: int) -> None:
+            nonlocal count
+            count += 1
+            if depth > MAX_DEPTH:
+                raise ValueError(f"elementlar {MAX_DEPTH} qavatdan chuqur bo'lmasin")
+            for child in getattr(node, "children", []):
+                walk(child, depth + 1)
+
+        walk(self.root, 1)
+        if count > MAX_NODES:
+            raise ValueError(f"bitta bo'limda ko'pi bilan {MAX_NODES} ta element")
+        return self
+
+
 Block = Annotated[
-    Union[Hero, Heading, Text, Image, Gallery, ButtonBlock, Features, Links, Products, Form, Contacts, Faq, Pricing, Stats, Countdown, Video, Divider],
+    Union[Hero, Heading, Text, Image, Gallery, ButtonBlock, Features, Links, Products, Form, Contacts, Faq, Pricing, Stats, Countdown, Video, Divider, Custom],
     Field(discriminator="type"),
 ]
 
 BLOCK_TYPES = [
     "hero", "heading", "text", "image", "gallery", "button", "features", "links",
-    "products", "form", "contacts", "faq", "pricing", "stats", "countdown", "video", "divider",
+    "products", "form", "contacts", "faq", "pricing", "stats", "countdown", "video", "divider", "custom",
 ]
+
+
+BoxNode.model_rebuild()
+ImageNode.model_rebuild()
+ButtonNode.model_rebuild()
+IconNode.model_rebuild()
+Custom.model_rebuild()
 
 
 class Page(_M):
@@ -360,10 +551,12 @@ class Theme(_M):
     surface: str = "#ffffff"
     text: str = "#111418"
     radius: int = Field(default=16, ge=0, le=28)
-    font: Literal["system", "rounded", "serif", "mono"] = "system"
+    font: str = "system"
 
     @model_validator(mode="after")
     def _check(self):
+        if self.font not in FONT_KEYS:
+            raise ValueError("noma'lum shrift")
         for name in ("primary", "background", "surface", "text"):
             if not _HEX.match(getattr(self, name)):
                 raise ValueError("rang #RRGGBB ko'rinishida bo'lsin")
@@ -425,6 +618,13 @@ def _actions(block) -> list[Action]:
         out += [i.action for i in block.items]
     elif isinstance(block, Pricing):
         out += [p.button.action for p in block.items if p.button]
+    elif isinstance(block, Custom):
+        stack = [block.root]
+        while stack:
+            node = stack.pop()
+            if getattr(node, "action", None) is not None:
+                out.append(node.action)
+            stack.extend(getattr(node, "children", []))
     return out
 
 
@@ -497,6 +697,18 @@ def referenced_media(doc: dict) -> set[int]:
                 ids.add(int(m))
             if b.get("type") == "products":
                 ids |= {int(i["media_id"]) for i in b.get("items", []) if i.get("media_id")}
+            if (b.get("style") or {}).get("bg_image"):
+                ids.add(int(b["style"]["bg_image"]))
+            if b.get("type") == "custom" and b.get("root"):
+                stack = [b["root"]]
+                while stack:
+                    node = stack.pop()
+                    if node.get("media_id"):
+                        ids.add(int(node["media_id"]))
+                    for st in (node.get("style") or {}, node.get("wide") or {}):
+                        if st.get("bg_image"):
+                            ids.add(int(st["bg_image"]))
+                    stack.extend(node.get("children") or [])
     return ids
 
 

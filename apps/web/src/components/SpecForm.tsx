@@ -5,6 +5,7 @@ import { api, mediaUrl } from "../api";
 import { fileToJpegBase64 } from "../util";
 import { ACTION_TYPES, NO_ACTION, type FieldSpec, type Opt } from "../webapp/specs";
 import type { WAAction, WAPage } from "../webapp/types";
+import { WA_ICONS, WA_ICON_NAMES } from "../webapp/icons";
 
 type Ctx = { pages: WAPage[]; toast: (text: string, kind?: "ok" | "err") => void };
 type Obj = Record<string, any>;
@@ -165,7 +166,86 @@ function SpecField({ f, value, set, ctx }: { f: FieldSpec; value: any; set: (v: 
       );
     case "list":
       return <ListField f={f} value={value ?? []} set={set} ctx={ctx} />;
+    case "slider":
+      return <SliderField label={f.label} value={value ?? null} set={set} min={f.min} max={f.max} step={f.step} suffix={f.suffix} optional={f.optional} />;
+    case "icon":
+      return <IconField label={f.label} value={value ?? null} set={set} optional={f.optional} />;
   }
+}
+
+export function SliderField({
+  label,
+  value,
+  set,
+  min,
+  max,
+  step = 1,
+  suffix = "",
+  optional,
+}: {
+  label: string;
+  value: number | null;
+  set: (v: number | null) => void;
+  min: number;
+  max: number;
+  step?: number;
+  suffix?: string;
+  optional?: boolean;
+}) {
+  return (
+    <div className="sf-field">
+      <span className="sf-slider__head">
+        <span className="sf-label">{label}</span>
+        <span className="sf-slider__val">
+          {value === null ? "avto" : `${value}${suffix}`}
+          {optional && value !== null && (
+            <button type="button" className="sf-reset" onClick={() => set(null)} aria-label="Avto" title="Avto">
+              <X size={12} />
+            </button>
+          )}
+        </span>
+      </span>
+      <input type="range" min={min} max={max} step={step} value={value ?? min} onChange={(e) => set(Number(e.target.value))} />
+    </div>
+  );
+}
+
+export function IconField({ label, value, set, optional }: { label: string; value: string | null; set: (v: string | null) => void; optional?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const Current = value ? WA_ICONS[value] : null;
+  const list = WA_ICON_NAMES.filter((n) => n.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <div className="sf-field">
+      <Label text={label} />
+      <div className="row">
+        <span className="sf-icon-cur">{Current ? <Current size={22} /> : "—"}</span>
+        <button type="button" className="btn btn--ghost btn--compact btn--inline" onClick={() => setOpen(!open)}>
+          {open ? "Yopish" : "Tanlash"}
+        </button>
+        {optional && value && (
+          <button type="button" className="icon-btn" onClick={() => set(null)} aria-label="Olib tashlash">
+            <X size={18} />
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="sf-icons">
+          <input className="input" placeholder="Qidirish (inglizcha): star, phone…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="sf-icons__grid">
+            {list.map((n) => {
+              const I = WA_ICONS[n];
+              return (
+                <button key={n} type="button" title={n} className={value === n ? "is-selected" : ""} onClick={() => (set(n), setOpen(false))}>
+                  <I size={20} />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function EmojiField({ label, value, set }: { label: string; value: string; set: (v: string) => void }) {
@@ -196,7 +276,7 @@ async function upload(file: File): Promise<number> {
   return (await api.uploadMedia(await fileToJpegBase64(file))).id;
 }
 
-function MediaField({ label, value, set, optional, ctx }: { label: string; value: number | null; set: (v: number | null) => void; optional?: boolean; ctx: Ctx }) {
+export function MediaField({ label, value, set, optional, ctx }: { label: string; value: number | null; set: (v: number | null) => void; optional?: boolean; ctx: Ctx }) {
   const ref = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   return (
@@ -289,7 +369,7 @@ function MediasField({ label, value, set, max, ctx }: { label: string; value: nu
   );
 }
 
-function ActionField({ label, value, set, ctx }: { label: string; value: WAAction; set: (v: WAAction) => void; ctx: Ctx }) {
+export function ActionField({ label, value, set, ctx }: { label: string; value: WAAction; set: (v: WAAction) => void; ctx: Ctx }) {
   const a = { ...NO_ACTION, ...value };
   return (
     <div className="sf-field">

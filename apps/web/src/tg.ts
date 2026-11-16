@@ -18,6 +18,9 @@ type TelegramWebApp = {
   BackButton: { show: () => void; hide: () => void; onClick: (cb: () => void) => void; offClick: (cb: () => void) => void };
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
+  disableVerticalSwipes?: () => void;
+  themeParams?: Record<string, string | undefined>;
+  colorScheme?: "light" | "dark";
   version: string;
 };
 
@@ -44,7 +47,7 @@ export function matchChrome() {
   tg.setBackgroundColor?.("secondary_bg_color");
 }
 
-function versionAtLeast(version: string, min: string): boolean {
+export function versionAtLeast(version: string, min: string): boolean {
   const a = version.split(".").map(Number);
   const b = min.split(".").map(Number);
   for (let i = 0; i < Math.max(a.length, b.length); i++) {

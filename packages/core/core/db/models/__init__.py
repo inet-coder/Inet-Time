@@ -19,6 +19,7 @@ from core.db.models.system import Notification, SystemSetting, WorkerJob
 from core.db.models.telegram import EncryptedSession, TelegramAccount
 from core.db.models.user import User
 from core.db.models.userbot import BotBroadcast, BotSubscriber, UserBot
+from core.db.models.webapp import WebApp, WebAppSubmission
 
 __all__ = [
     "AccountAI",
@@ -51,4 +52,6 @@ __all__ = [
     "UserBot",
     "BotSubscriber",
     "BotBroadcast",
+    "WebApp",
+    "WebAppSubmission",
 ]

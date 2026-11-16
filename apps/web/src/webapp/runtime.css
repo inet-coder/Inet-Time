@@ -1,0 +1,854 @@
+/* Web App renderer. Hamma narsa .wa ichida — Studiya uslublariga aralashmaydi. */
+.wa {
+  --wa-hint: color-mix(in srgb, var(--wa-text) 55%, transparent);
+  --wa-line: color-mix(in srgb, var(--wa-text) 10%, transparent);
+  --wa-soft: color-mix(in srgb, var(--wa-primary) 12%, transparent);
+  --wa-r-sm: calc(var(--wa-radius) * 0.6);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--wa-bg);
+  color: var(--wa-text);
+  font: 15px/1.45 var(--wa-font);
+  -webkit-font-smoothing: antialiased;
+  text-align: left;
+}
+.wa--live {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.wa--preview {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.wa * {
+  box-sizing: border-box;
+}
+.wa button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: inherit;
+}
+.wa button:disabled {
+  cursor: default;
+}
+.wa a {
+  color: var(--wa-primary);
+  text-decoration: none;
+}
+.wa h1,
+.wa h2,
+.wa h3,
+.wa p,
+.wa figure {
+  margin: 0;
+}
+.wa-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 16px 20px;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+.wa-muted {
+  color: var(--wa-hint);
+}
+.wa-align-center {
+  text-align: center;
+}
+.wa-card {
+  background: var(--wa-surface);
+  border-radius: var(--wa-radius);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), inset 0 0 0 1px var(--wa-line);
+}
+.wa-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  font-weight: 650;
+  background: color-mix(in srgb, var(--wa-bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--wa-line);
+}
+.wa-icon-btn {
+  display: grid !important;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50% !important;
+}
+.wa-icon-btn:active {
+  background: var(--wa-line) !important;
+}
+
+/* Hero */
+.wa-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px 18px;
+  border-radius: var(--wa-radius);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--wa-primary) 22%, var(--wa-surface)), var(--wa-surface));
+  box-shadow: inset 0 0 0 1px var(--wa-line);
+}
+.wa-hero--center {
+  align-items: center;
+  text-align: center;
+}
+.wa-hero--left {
+  align-items: flex-start;
+}
+.wa-hero h1 {
+  font-size: 26px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.wa-hero p {
+  color: var(--wa-hint);
+  font-size: 15.5px;
+}
+.wa-hero__emoji {
+  font-size: 54px;
+  line-height: 1;
+}
+.wa-hero__img {
+  width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+  border-radius: var(--wa-r-sm);
+}
+.wa-hero .wa-btn {
+  width: auto;
+  min-width: 180px;
+  margin-top: 4px;
+}
+
+/* Matn */
+.wa-heading {
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.wa-heading--1 {
+  font-size: 26px;
+}
+.wa-heading--2 {
+  font-size: 20px;
+}
+.wa-heading--3 {
+  font-size: 17px;
+}
+.wa-text {
+  white-space: normal;
+  word-break: break-word;
+}
+.wa-text--muted {
+  color: var(--wa-hint);
+}
+
+/* Rasm */
+.wa-image img,
+.wa-gallery img {
+  display: block;
+  width: 100%;
+  border-radius: var(--wa-radius);
+  cursor: zoom-in;
+}
+.wa-image figcaption,
+.wa-video figcaption {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--wa-hint);
+  text-align: center;
+}
+.wa-gallery {
+  display: grid;
+  gap: 6px;
+}
+.wa-gallery--2 {
+  grid-template-columns: 1fr 1fr;
+}
+.wa-gallery--3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.wa-gallery img {
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--wa-r-sm);
+}
+.wa-video iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: var(--wa-radius);
+  background: #000;
+}
+
+/* Tugmalar */
+.wa-btn {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 14px 16px !important;
+  border-radius: var(--wa-r-sm) !important;
+  font-weight: 650 !important;
+  text-align: center !important;
+  transition: transform 0.1s, opacity 0.15s;
+}
+.wa-btn:active {
+  transform: scale(0.98);
+}
+.wa-btn:disabled {
+  opacity: 0.55;
+}
+.wa-btn--primary {
+  background: var(--wa-primary) !important;
+  color: var(--wa-on-primary) !important;
+}
+.wa-btn--secondary {
+  background: var(--wa-soft) !important;
+  color: var(--wa-primary) !important;
+}
+.wa-btn--outline {
+  box-shadow: inset 0 0 0 1.5px var(--wa-primary);
+  color: var(--wa-primary) !important;
+}
+.wa-btn--sm {
+  padding: 9px 12px !important;
+  font-size: 14px;
+}
+
+/* Imkoniyatlar */
+.wa-features {
+  display: grid;
+  gap: 10px;
+}
+.wa-features--2 {
+  grid-template-columns: 1fr 1fr;
+}
+.wa-feature {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+}
+.wa-feature__emoji {
+  font-size: 26px;
+  line-height: 1.1;
+  margin-bottom: 2px;
+}
+.wa-feature .wa-muted {
+  font-size: 13.5px;
+}
+
+/* Ro'yxat / kontaktlar */
+.wa-links {
+  padding: 4px 0;
+  overflow: hidden;
+}
+.wa-link {
+  position: relative;
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px !important;
+}
+.wa-link + .wa-link::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 0;
+  height: 1px;
+  background: var(--wa-line);
+}
+.wa-link:not(:disabled):active {
+  background: var(--wa-line) !important;
+}
+.wa-link__emoji {
+  font-size: 22px;
+  width: 30px;
+  text-align: center;
+}
+.wa-link__icon {
+  color: var(--wa-primary);
+  width: 30px;
+}
+.wa-link__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wa-link__body .wa-muted {
+  font-size: 13px;
+}
+
+/* Mahsulotlar */
+.wa-products {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wa-products__grid {
+  display: grid;
+  gap: 10px;
+}
+.wa-products__grid--2 {
+  grid-template-columns: 1fr 1fr;
+}
+.wa-product {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.wa-product--wide {
+  flex-direction: row;
+}
+.wa-product__media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  background: var(--wa-soft);
+  font-size: 46px;
+  overflow: hidden;
+}
+.wa-product--wide .wa-product__media {
+  width: 112px;
+  flex-shrink: 0;
+  font-size: 40px;
+}
+.wa-product__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wa-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: var(--wa-primary);
+  color: var(--wa-on-primary);
+}
+.wa-product__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px 12px;
+  min-width: 0;
+}
+.wa-product__title {
+  line-height: 1.25;
+}
+.wa-product__text {
+  font-size: 13px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.wa-product__price {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 6px;
+}
+.wa-product__price s {
+  font-size: 12.5px;
+}
+.wa-product .wa-btn,
+.wa-product .wa-stepper {
+  margin-top: auto;
+}
+.wa-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: var(--wa-r-sm);
+  background: var(--wa-soft);
+  color: var(--wa-primary);
+}
+.wa-stepper button {
+  display: grid !important;
+  place-items: center;
+  width: 40px;
+  height: 38px;
+}
+.wa-stepper--sm button {
+  width: 32px;
+  height: 32px;
+}
+.wa-stepper--sm {
+  gap: 2px;
+}
+
+/* Savatcha */
+.wa-cartbar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 4;
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 12px;
+  padding: 14px 18px !important;
+  border-radius: 999px !important;
+  background: var(--wa-primary) !important;
+  color: var(--wa-on-primary) !important;
+  font-weight: 650;
+  box-shadow: 0 10px 28px -10px color-mix(in srgb, var(--wa-primary) 80%, transparent);
+}
+.wa-cartbar span {
+  flex: 1;
+}
+.wa-tabbar ~ .wa-cartbar,
+.wa-cartbar:has(+ .wa-tabbar) {
+  bottom: 76px;
+}
+.wa-cart {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wa-cart__lines {
+  padding: 4px 14px;
+}
+.wa-cart__line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--wa-line);
+}
+.wa-cart__thumb {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--wa-r-sm);
+  background: var(--wa-soft);
+  font-size: 26px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.wa-cart__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wa-cart__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wa-cart__total {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 0 10px;
+  font-size: 17px;
+}
+
+/* Forma */
+.wa-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+.wa-form--done {
+  align-items: center;
+  text-align: center;
+}
+.wa-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wa-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wa-hint);
+}
+.wa-label i,
+.wa-check i {
+  color: #e5484d;
+  font-style: normal;
+  margin-left: 2px;
+}
+.wa-input {
+  width: 100%;
+  padding: 12px 13px;
+  border-radius: var(--wa-r-sm);
+  border: 1px solid var(--wa-line);
+  background: var(--wa-bg);
+  color: var(--wa-text);
+  font: inherit;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.wa-input:focus {
+  border-color: var(--wa-primary);
+  box-shadow: 0 0 0 3px var(--wa-soft);
+}
+.wa-input.is-err {
+  border-color: #e5484d;
+}
+.wa-error {
+  color: #e5484d;
+  font-size: 12.5px;
+}
+.wa-error--box {
+  padding: 10px 12px;
+  border-radius: var(--wa-r-sm);
+  background: color-mix(in srgb, #e5484d 10%, transparent);
+}
+.wa-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.wa-chips button {
+  padding: 8px 14px !important;
+  border-radius: 999px !important;
+  background: var(--wa-soft) !important;
+  color: var(--wa-primary) !important;
+  font-size: 14px;
+  font-weight: 550;
+}
+.wa-chips button.is-selected {
+  background: var(--wa-primary) !important;
+  color: var(--wa-on-primary) !important;
+}
+.wa-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14.5px;
+}
+.wa-check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--wa-primary);
+}
+.wa-check.is-err span {
+  color: #e5484d;
+}
+
+/* FAQ */
+.wa-faq {
+  overflow: hidden;
+}
+.wa-faq__item + .wa-faq__item {
+  border-top: 1px solid var(--wa-line);
+}
+.wa-faq__item > button {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 14px !important;
+}
+.wa-faq__item svg {
+  flex-shrink: 0;
+  transition: transform 0.2s;
+  color: var(--wa-hint);
+}
+.wa-faq__item.is-open svg {
+  transform: rotate(180deg);
+}
+.wa-faq__item p {
+  padding: 0 14px 14px;
+  font-size: 14.5px;
+}
+
+/* Tariflar */
+.wa-pricing {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wa-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+}
+.wa-plan.is-highlight {
+  box-shadow: inset 0 0 0 2px var(--wa-primary);
+}
+.wa-plan__name {
+  font-size: 15px;
+  color: var(--wa-primary);
+}
+.wa-plan__price {
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+.wa-plan__price .wa-muted {
+  font-size: 14px;
+  font-weight: 500;
+}
+.wa-plan ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+.wa-plan li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wa-plan li svg {
+  color: var(--wa-primary);
+}
+
+/* Raqamlar, sanoq */
+.wa-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 8px;
+}
+.wa-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 6px;
+  text-align: center;
+}
+.wa-stat b {
+  font-size: 22px;
+  color: var(--wa-primary);
+}
+.wa-stat .wa-muted {
+  font-size: 12.5px;
+}
+.wa-countdown {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+}
+.wa-countdown__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+.wa-countdown__grid div {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 4px;
+  border-radius: var(--wa-r-sm);
+  background: var(--wa-soft);
+}
+.wa-countdown__grid strong {
+  font-size: 24px;
+  color: var(--wa-primary);
+  font-variant-numeric: tabular-nums;
+}
+.wa-countdown__grid span {
+  font-size: 12px;
+}
+.wa-countdown__done {
+  font-size: 18px;
+  font-weight: 650;
+}
+
+/* Ajratgichlar */
+.wa-divider {
+  border: 0;
+  border-top: 1px solid var(--wa-line);
+  margin: 0;
+}
+.wa-divider--s {
+  margin: 0;
+}
+.wa-divider--l {
+  margin: 8px 0;
+}
+.wa-space--s {
+  height: 4px;
+}
+.wa-space--m {
+  height: 16px;
+}
+.wa-space--l {
+  height: 36px;
+}
+
+/* Bo'sh holat, yakun */
+.wa-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 16px;
+  color: var(--wa-hint);
+  text-align: center;
+}
+.wa-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 40px 12px;
+  text-align: center;
+  font-size: 16px;
+}
+.wa-done .wa-btn {
+  max-width: 260px;
+}
+.wa-done__icon {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--wa-primary);
+  color: var(--wa-on-primary);
+}
+.wa-done__icon--sm {
+  width: 48px;
+  height: 48px;
+}
+
+/* Pastki menyu */
+.wa-tabbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--wa-surface) 90%, transparent);
+  backdrop-filter: blur(16px) saturate(170%);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  border-top: 1px solid var(--wa-line);
+}
+.wa-tabbar button {
+  flex: 1;
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 2px !important;
+  border-radius: 12px !important;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--wa-hint) !important;
+  text-align: center !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wa-tabbar button.is-active {
+  color: var(--wa-primary) !important;
+  background: var(--wa-soft) !important;
+}
+.wa-tabbar__emoji {
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+/* Rasm kattalashtirish */
+.wa-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.92);
+  padding: 16px;
+}
+.wa--preview .wa-lightbox {
+  position: absolute;
+}
+.wa-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+}
+.wa-lightbox__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.15) !important;
+}
+
+.wa-branding {
+  align-self: center;
+  margin-top: 8px;
+  padding: 6px 10px !important;
+  font-size: 12px;
+  color: var(--wa-hint) !important;
+  text-align: center !important;
+}
+.wa-shell {
+  min-height: 100vh;
+  background: var(--wa-bg);
+}
+.wa-fallback {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  color: #8a8f98;
+  font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.wa-fallback p:first-child {
+  font-size: 42px;
+  margin: 0;
+}
+.wa-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid rgba(127, 127, 127, 0.25);
+  border-top-color: #2f80ed;
+  animation: wa-spin 0.8s linear infinite;
+}
+@keyframes wa-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -26,7 +26,7 @@ STATUS = {"active": "🟢 Ishlayapti", "paused": "⏸ To'xtatilgan", "error": "�
 MAIN_TEXT = (
     "🤖 <b>Inet-Time</b> — Telegram botlar konstruktori\n\n"
     "Kod yozmasdan o'z botingizni yarating: menyular va tugmalar, buyurtma va murojaatlarni qabul qilish, "
-    "obunachilarga xabar tarqatish.\n\n"
+    "obunachilarga xabar tarqatish — hamda bot ichida ochiladigan <b>Web App</b> (do'kon, menyu, yozilish formasi).\n\n"
     "{stats}\n\n"
     "Kerakli bo'limni tanlang:"
 )
@@ -163,7 +163,8 @@ async def _connect(message: Message, state: FSMContext, token: str, template: st
             "<b>Keyingi qadam — sozlash:</b>\n"
             "1. Pastdagi tugma orqali botingizga o'ting\n"
             "2. Boshqaruv paneli ochiladi (keyinchalik: /admin)\n"
-            "3. «🧩 Menyu va tugmalar» — matn, rasm va tugmalarni o'zgartiring\n\n"
+            "3. «🧩 Menyu va tugmalar» — matn, rasm va tugmalarni o'zgartiring\n"
+            "4. «🌐 Web App konstruktori» — bot ichida ochiladigan ilova yarating\n\n"
             "Murojaat va buyurtmalar sizga o'sha botning o'zida keladi."
         )
     await wait.edit_text(text, reply_markup=kb.bot_created(bot["username"]), parse_mode="HTML")

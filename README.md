@@ -10,6 +10,12 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
   rejimi (har bir xabar egasiga, «Reply» bilan javob), statistika. 15 ta tayyor shablon: qayta aloqa, do'kon,
   restoran, go'zallik saloni, klinika, avtoservis, ko'chmas mulk, turizm, o'quv markazi, tadbir, kanal,
   FAQ, anonim savollar, portfolio, bo'sh
+- 🌐 **Web App konstruktori** — har bir bot uchun kodsiz Telegram Mini App: sahifalar va 17 xil blok (banner,
+  matn, rasm, galereya, video, tugma, afzalliklar, ro'yxat, mahsulotlar + savatcha, tariflar, raqamlar, FAQ,
+  kontaktlar, ortga sanash, forma, ajratgich), 8 ta mavzu + istalgan rang, burchak va shrift, 6 ta shablon
+  (do'kon, restoran, xizmatlar, tadbir, portfolio, bo'sh). Qoralama/e'lon alohida; buyurtma narxi serverda
+  qayta hisoblanadi; formalar va buyurtmalar egasiga botda keladi («Reply» bilan javob), arizalar qutisi;
+  ilova bot menyu tugmasi va bot tugmalaridan ochiladi (`/app/<id>`)
 
 **👤 Profil xizmatlari** (asosiy menyuda alohida bo'lim):
 

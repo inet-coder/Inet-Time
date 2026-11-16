@@ -10,6 +10,7 @@ import {
   CircleAlert,
   ExternalLink,
   FileText,
+  Globe,
   Home,
   ImagePlus,
   Keyboard,
@@ -40,6 +41,7 @@ import {
 import { confirmDialog, haptic, tg } from "../tg";
 import { fileToJpegBase64 } from "../util";
 import { Sheet } from "./Sheet";
+import { WebAppPanel } from "./WebAppBuilder";
 
 type Toast = (text: string, kind?: "ok" | "err") => void;
 
@@ -52,6 +54,7 @@ const ACTIONS: { code: BotAction; title: string; icon: typeof FileText }[] = [
   { code: "feedback", title: "Adminga yozish", icon: MessageSquareText },
   { code: "back", title: "Orqaga", icon: Undo2 },
   { code: "home", title: "Bosh menyu", icon: Home },
+  { code: "webapp", title: "Web App", icon: Globe },
 ];
 
 const STATUS_TEXT = { active: "Ishlayapti", paused: "To'xtatilgan", error: "Xatolik" } as const;
@@ -230,7 +233,7 @@ function ConnectSheet({ data, onClose, onDone }: { data: BotsList; onClose: () =
 // Bot muharriri
 // ============================================================
 
-type EditorTab = "menu" | "broadcast" | "settings";
+type EditorTab = "menu" | "webapp" | "broadcast" | "settings";
 
 export function BotEditor({
   botId,
@@ -238,12 +241,14 @@ export function BotEditor({
   toast,
   onBack,
   standalone = false,
+  startTab,
 }: {
   botId: number;
   variables: { key: string; label: string }[];
   toast: Toast;
   onBack: () => void;
   standalone?: boolean;
+  startTab?: EditorTab;
 }) {
   const queryClient = useQueryClient();
   const { data: bot, refetch } = useQuery({
@@ -253,7 +258,7 @@ export function BotEditor({
   });
   const [draft, setDraft] = useState<BotMenu | null>(null);
   const [saved, setSaved] = useState<string>("");
-  const [tab, setTab] = useState<EditorTab>("menu");
+  const [tab, setTab] = useState<EditorTab>(startTab ?? "menu");
   const [editing, setEditing] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -368,6 +373,9 @@ export function BotEditor({
         <button className={tab === "menu" ? "is-selected" : ""} onClick={() => setTab("menu")}>
           <LayoutGrid size={15} /> Menyu
         </button>
+        <button className={tab === "webapp" ? "is-selected" : ""} onClick={() => setTab("webapp")}>
+          <Globe size={15} /> Web App
+        </button>
         <button className={tab === "broadcast" ? "is-selected" : ""} onClick={() => setTab("broadcast")}>
           <Send size={15} /> Xabar
         </button>
@@ -379,6 +387,7 @@ export function BotEditor({
       {tab === "menu" && <PagesList menu={draft} limit={Math.max(bot.pages_limit, draft.pages.length)} update={update} onOpen={setEditing} />}
       {tab === "broadcast" && <BroadcastTab bot={bot} toast={toast} refetch={refetch} />}
       {tab === "settings" && <SettingsTab menu={draft} update={update} onDelete={standalone ? undefined : remove} />}
+      {tab === "webapp" && <WebAppPanel botId={botId} toast={toast} autoOpen={startTab === "webapp"} />}
 
       {editing && draft.pages.some((p) => p.id === editing) && (
         <PageSheet
@@ -544,6 +553,7 @@ function PageSheet({
       } else toast("Orqaga — foydalanuvchi oldingi sahifasiga qaytadi");
     } else if (b.action === "url" && b.url) openLink(b.url);
     else if (b.action === "feedback") toast("Foydalanuvchi xabar yozadi — u sizga botda keladi, «Reply» qilib javob berasiz");
+    else if (b.action === "webapp") toast("Bu tugma botingizning Web App ilovasini ochadi");
   };
 
   const insertVar = (key: string) => {
@@ -922,6 +932,9 @@ function ButtonEditor({
       {b.action === "feedback" && <p className="hint">Foydalanuvchi keyingi xabarini sizga yuboradi (buyurtma, savol, ariza).</p>}
       {b.action === "back" && <p className="hint">Foydalanuvchi oldingi sahifasiga qaytadi.</p>}
       {b.action === "home" && <p className="hint">Bosh sahifani ochadi.</p>}
+      {b.action === "webapp" && (
+        <p className="hint">Botingizning Web App ilovasini ochadi. Ilova «Web App» bo'limida e'lon qilinmaguncha tugma ko'rinmaydi.</p>
+      )}
     </div>
   );
 }
@@ -1118,7 +1131,7 @@ function SettingsTab({ menu, update, onDelete }: { menu: BotMenu; update: (fn: (
 }
 
 // Foydalanuvchining o'z botidan ochilgan muharrir (/admin → «Menyu va tugmalar»): faqat shu bot, tabbarsiz.
-export function StandaloneBotEditor({ botId, toast }: { botId: number; toast: Toast }) {
+export function StandaloneBotEditor({ botId, toast, startTab }: { botId: number; toast: Toast; startTab?: "webapp" }) {
   const { data } = useQuery({ queryKey: ["bots"], queryFn: api.bots });
   return (
     <BotEditor
@@ -1126,6 +1139,7 @@ export function StandaloneBotEditor({ botId, toast }: { botId: number; toast: To
       variables={data?.variables ?? []}
       toast={toast}
       standalone
+      startTab={startTab}
       onBack={() => (tg ? tg.close() : window.history.back())}
     />
   );

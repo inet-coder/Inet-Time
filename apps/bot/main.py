@@ -64,7 +64,7 @@ async def webapp_url_watcher(bot: Bot) -> None:
 DESCRIPTION = (
     "Inet-Time — Telegram botlar konstruktori.\n\n"
     "Kod yozmasdan o'z botingizni yarating: menyular va tugmalar, buyurtma va murojaatlarni qabul qilish, "
-    "obunachilarga xabar tarqatish. 15 ta tayyor shablon.\n\n"
+    "obunachilarga xabar tarqatish, bot ichida ochiladigan Web App (do'kon, menyu, formalar). 15 ta tayyor shablon.\n\n"
     "«Start» ni bosing — birinchi bot 1 daqiqada tayyor."
 )
 SHORT_DESCRIPTION = "Telegram botlar konstruktori: kod yozmasdan bot yarating. Tayyor shablonlar, menyular, xabar tarqatish."

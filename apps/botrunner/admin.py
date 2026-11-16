@@ -32,6 +32,8 @@ HELP = (
     "❓ Botni boshqarish\n\n"
     "🧩 Menyu va tugmalar — sahifalar, matnlar, rasmlar va tugmalarni tahrirlash. "
     "O'zgarishlar «Saqlash» bosilishi bilan kuchga kiradi.\n\n"
+    "🌐 Web App — bot ichida ochiladigan ilova (do'kon, menyu, forma) — kodsiz quriladi va bot menyu tugmasiga "
+    "qo'yiladi. Buyurtma va arizalar sizga shu botda keladi.\n\n"
     "📨 Xabar tarqatish — botga istalgan xabar yuborasiz (matn, rasm, video, fayl, ovozli xabar), "
     "u barcha obunachilarga nusxalanadi.\n\n"
     "💬 Murojaatlar — foydalanuvchilar yozgan xabarlar sizga keladi. Javob berish uchun xabarga "
@@ -71,7 +73,9 @@ async def panel(runner: "Runner", bot: "RunningBot", chat_id: int, message: dict
     rows = []
     url = await discover_webapp_url()
     if url:
-        rows.append([{"text": "🧩 Menyu va tugmalar", "web_app": {"url": f"{url.split('?')[0]}?bot={bot.bot_id}"}}])
+        base = url.split("?")[0]
+        rows.append([{"text": "🧩 Menyu va tugmalar", "web_app": {"url": f"{base}?bot={bot.bot_id}"}}])
+        rows.append([{"text": "🌐 Web App konstruktori", "web_app": {"url": f"{base}?bot={bot.bot_id}&tab=webapp"}}])
     rows += [
         [{"text": "📨 Xabar tarqatish", "callback_data": "adm:bc"}],
         [{"text": f"💬 Murojaatlar: {'✅' if forward else '❌'} {forward_text}", "callback_data": "adm:fwd"}],

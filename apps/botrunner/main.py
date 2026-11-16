@@ -27,12 +27,13 @@ from sqlalchemy.dialects.postgresql import insert
 
 from core import crypto
 from core.botapi import BotApiError, call
-from core.botbuilder import page_by_id, render_text
+from core.botbuilder import OWNER_START_HINT, page_by_id, render_text
 from core.db.base import async_session
-from core.db.models import BotSubscriber, MediaFile, User, UserBot
+from core.db.models import BotSubscriber, MediaFile, User, UserBot, WebApp
 from core.entitlements import get_entitlement
 from core.notify import send_telegram
 from core.settings import settings
+from core.webapp_url import discover_webapp_url
 
 import admin
 
@@ -49,7 +50,6 @@ POLL_TIMEOUT = 25
 STATE_TTL = 30 * 24 * 3600
 SEEN_THROTTLE = 600
 NAV_DEPTH = 20
-OWNER_START_HINT = "Xabarlarni olish uchun o'z botingizga kirib /start bosing"
 
 
 @dataclass
@@ -62,6 +62,10 @@ class RunningBot:
     name: str
     menu: dict
     branding: str | None
+    # E'lon qilingan Web App manzili va bot menyu tugmasi (None — ilova yo'q yoki menyu tugmasi o'chiq)
+    webapp_url: str | None = None
+    menu_button: tuple | None = None
+    menu_button_applied: tuple | None = field(default=None)
     task: asyncio.Task | None = None
     conflict_reported: bool = False
     pending: set = field(default_factory=set)
@@ -71,18 +75,29 @@ def _k(bot_id: int, kind: str, key) -> str:
     return f"ub:{bot_id}:{kind}:{key}"
 
 
-def _keyboard(page: dict) -> dict | None:
-    rows = page.get("buttons") or []
+def _keyboard(page: dict, webapp_url: str | None = None) -> dict | None:
+    # «Web App» tugmasi faqat ilova e'lon qilingan bo'lsa chiqadi
+    rows = [[b for b in row if b["action"] != "webapp" or webapp_url] for row in page.get("buttons") or []]
+    rows = [row for row in rows if row]
     if not rows:
         return None
     if page.get("keyboard") == "reply":
-        return {"keyboard": [[{"text": b["text"]} for b in row] for row in rows], "resize_keyboard": True, "is_persistent": True}
+        return {
+            "keyboard": [
+                [{"text": b["text"], "web_app": {"url": webapp_url}} if b["action"] == "webapp" else {"text": b["text"]} for b in row]
+                for row in rows
+            ],
+            "resize_keyboard": True,
+            "is_persistent": True,
+        }
     inline = []
     for row in rows:
         line = []
         for b in row:
             if b["action"] == "url":
                 line.append({"text": b["text"], "url": b["url"]})
+            elif b["action"] == "webapp":
+                line.append({"text": b["text"], "web_app": {"url": webapp_url}})
             elif b["action"] == "page":
                 line.append({"text": b["text"], "callback_data": f"p:{b['target']}"})
             else:
@@ -118,8 +133,14 @@ class Runner:
 
     async def _desired(self) -> dict[int, RunningBot]:
         platform = await self._platform_username()
+        base = await discover_webapp_url()
+        base = base.split("?")[0].rstrip("/") if base else None
         result: dict[int, RunningBot] = {}
         async with async_session() as db:
+            apps = {
+                a.bot_id: a
+                for a in await db.scalars(select(WebApp).where(WebApp.published.is_not(None)))
+            }
             rows = (
                 await db.execute(
                     select(UserBot, User.telegram_user_id)
@@ -143,9 +164,13 @@ class Runner:
                     logger.exception("bot %s tokeni ochilmadi", bot.id)
                     continue
                 branding = None if ent.flags.get("bot_no_branding") or not platform else f"🤖 @{platform} orqali yaratilgan"
+                app = apps.get(bot.id)
+                webapp_url = f"{base}/app/{app.id}" if app is not None and base else None
                 result[bot.id] = RunningBot(
                     bot_id=bot.id, user_id=bot.user_id, owner_chat_id=owner_chat, token=token,
                     username=bot.username, name=bot.name, menu=bot.menu, branding=branding,
+                    webapp_url=webapp_url,
+                    menu_button=(app.menu_button_text, webapp_url) if webapp_url and app.menu_button else None,
                 )
         return result
 
@@ -162,9 +187,26 @@ class Runner:
                 # Menyu/sozlamalar darhol yangilanadi, polling uzilmaydi.
                 running.menu, running.branding, running.owner_chat_id = wanted.menu, wanted.branding, wanted.owner_chat_id
                 running.username, running.name = wanted.username, wanted.name
+                running.webapp_url, running.menu_button = wanted.webapp_url, wanted.menu_button
+                await self.apply_menu_button(running)
                 if running.task is not None and running.task.done():
                     self.bots.pop(bot_id, None)
                     self.start(wanted)
+
+    async def apply_menu_button(self, bot: RunningBot) -> None:
+        """Bot chatidagi menyu tugmasi: Web App e'lon qilingan bo'lsa — ilovani ochadi, aks holda buyruqlar ro'yxati."""
+        if bot.menu_button_applied == (bot.menu_button,):
+            return
+        if bot.menu_button:
+            text, url = bot.menu_button
+            button = {"type": "web_app", "text": text, "web_app": {"url": url}}
+        else:
+            button = {"type": "commands"}
+        try:
+            await call(self.http, bot.token, "setChatMenuButton", {"menu_button": button})
+            bot.menu_button_applied = (bot.menu_button,)
+        except BotApiError as exc:
+            logger.info("bot %s: menyu tugmasi o'rnatilmadi: %s", bot.bot_id, exc.description)
 
     def start(self, bot: RunningBot) -> None:
         bot.task = asyncio.create_task(self._poll(bot))
@@ -205,6 +247,7 @@ class Runner:
         except BotApiError:
             pass
         await admin.set_owner_commands(self, bot)
+        await self.apply_menu_button(bot)
         while True:
             try:
                 updates = await call(
@@ -307,7 +350,7 @@ class Runner:
         return {}, {"photo": ("photo.jpg", media.data, media.mime)}
 
     async def send_page(self, bot: RunningBot, chat_id: int, page: dict, user: dict, *, with_branding: bool = False) -> None:
-        markup = _keyboard(page)
+        markup = _keyboard(page, bot.webapp_url)
         text = self._text(bot, page, user, with_branding)
         media_id = page.get("media_id")
         if media_id:
@@ -347,7 +390,7 @@ class Runner:
                         "chat_id": chat_id,
                         "message_id": message["message_id"],
                         "text": self._text(bot, page, user, False),
-                        "reply_markup": _keyboard(page) or {"inline_keyboard": []},
+                        "reply_markup": _keyboard(page, bot.webapp_url) or {"inline_keyboard": []},
                         "disable_web_page_preview": True,
                     },
                 )

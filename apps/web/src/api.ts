@@ -1,4 +1,5 @@
 import { tg } from "./tg";
+import type { AppDoc, SubmitPayload } from "./webapp/types";
 
 export type Flags = Record<string, number | boolean>;
 
@@ -120,7 +121,7 @@ export type ScheduleSuggestion = { time: string; text: string };
 
 // --- Bot konstruktori ---
 
-export type BotAction = "page" | "url" | "back" | "home" | "feedback";
+export type BotAction = "page" | "url" | "back" | "home" | "feedback" | "webapp";
 export type BotButton = { text: string; action: BotAction; target: string | null; url: string | null };
 export type BotPage = {
   id: string;
@@ -164,6 +165,46 @@ export type BotDetail = UserBotShort & {
   stats: { subscribers: number; active_24h: number; new_7d: number; blocked: number };
   last_broadcast: BotBroadcastInfo | null;
 };
+
+// --- Web App konstruktori ---
+
+export type WAThemePreset = {
+  title: string;
+  adaptive: boolean;
+  primary: string;
+  background: string;
+  surface: string;
+  text: string;
+};
+export type WebAppInfo = {
+  id: number;
+  draft: AppDoc;
+  published: boolean;
+  published_at: string | null;
+  has_changes: boolean;
+  menu_button: boolean;
+  menu_button_text: string;
+  url: string | null;
+};
+export type WebAppState = {
+  app: WebAppInfo | null;
+  bot_username: string;
+  templates: { code: string; icon: string; title: string; desc: string }[];
+  themes: Record<string, WAThemePreset>;
+  block_types: string[];
+  limits: { pages: number; blocks: number };
+};
+export type WASubmission = {
+  id: number;
+  kind: "form" | "order";
+  title: string;
+  data: { items?: { id: string; title: string; price: number; qty: number; sum: number }[]; fields?: Record<string, string> };
+  total: number | null;
+  status: "new" | "done";
+  user: { id: number; name: string | null; username: string | null };
+  created_at: string | null;
+};
+export type PublicAppData = { id: number; doc: AppDoc; bot_username: string | null; branding: string | null };
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -265,6 +306,20 @@ export const api = {
   saveBotMenu: (id: number, menu: BotMenu) => request<{ ok: boolean; menu: BotMenu }>("PUT", `/webapp/bots/${id}/menu`, { menu }),
   setBotActive: (id: number, active: boolean) => request<UserBotShort>("POST", `/webapp/bots/${id}/status`, { active }),
   deleteBot: (id: number) => request<{ ok: boolean }>("DELETE", `/webapp/bots/${id}`),
+  webApp: (botId: number) => request<WebAppState>("GET", `/webapp/bots/${botId}/app`),
+  createWebApp: (botId: number, template: string) => request<WebAppState>("POST", `/webapp/bots/${botId}/app`, { template }),
+  saveWebAppDraft: (botId: number, doc: AppDoc) => request<WebAppInfo>("PUT", `/webapp/bots/${botId}/app/draft`, { doc }),
+  publishWebApp: (botId: number) => request<WebAppInfo>("POST", `/webapp/bots/${botId}/app/publish`),
+  unpublishWebApp: (botId: number) => request<WebAppInfo>("POST", `/webapp/bots/${botId}/app/unpublish`),
+  saveWebAppSettings: (botId: number, menuButton: boolean, menuButtonText: string) =>
+    request<WebAppInfo>("PUT", `/webapp/bots/${botId}/app/settings`, { menu_button: menuButton, menu_button_text: menuButtonText }),
+  webAppSubmissions: (botId: number, status?: "new" | "done") =>
+    request<{ items: WASubmission[] }>("GET", `/webapp/bots/${botId}/app/submissions${status ? `?status=${status}` : ""}`),
+  setSubmissionStatus: (botId: number, id: number, status: "new" | "done") =>
+    request<{ ok: boolean }>("POST", `/webapp/bots/${botId}/app/submissions/${id}/status`, { status }),
+  publicApp: (appId: number) => request<PublicAppData>("GET", `/webapp/apps/${appId}`),
+  submitApp: (appId: number, body: SubmitPayload & { init_data: string }) =>
+    request<{ ok: boolean; id: number; message: string }>("POST", `/webapp/apps/${appId}/submit`, body),
   botBroadcast: (id: number, text: string, mediaId: number | null) =>
     request<{ id: number; status: string }>("POST", `/webapp/bots/${id}/broadcast`, { text, media_id: mediaId }),
 };

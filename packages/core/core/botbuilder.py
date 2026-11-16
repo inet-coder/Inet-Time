@@ -27,6 +27,7 @@ Tugma amallari:
     back      — oldingi sahifaga qaytadi
     home      — bosh sahifaga
     feedback  — keyingi xabar egasiga yuboriladi, ega «reply» qilsa javob foydalanuvchiga qaytadi
+    webapp    — botning kodsiz Web App'ini ochadi (e'lon qilingan bo'lsa)
 """
 
 import copy
@@ -37,7 +38,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from core.bot_templates import TEMPLATES
 
-ACTIONS = ("page", "url", "back", "home", "feedback")
+ACTIONS = ("page", "url", "back", "home", "feedback", "webapp")
 KEYBOARDS = ("inline", "reply")
 MAX_ROWS = 10
 MAX_PER_ROW = 4
@@ -145,6 +146,9 @@ class Menu(BaseModel):
                         raise ValueError(f"«{page.title}» → «{button.text}»: bog'langan sahifa o'chirilgan")
         return self
 
+
+# Egasi o'z botiga hali /start bosmagan — Telegram unga xabar yuborishga ruxsat bermaydi.
+OWNER_START_HINT = "Xabarlarni olish uchun o'z botingizga kirib /start bosing"
 
 DEFAULT_TEXTS = {
     "fallback": "Menyudan tanlang 👇",

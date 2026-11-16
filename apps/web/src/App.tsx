@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import "./styles.css";
 import {
   Bot,
   ChevronRight,
@@ -80,7 +81,8 @@ function useToast(): [Toast, (text: string, kind?: "ok" | "err") => void] {
 
 // ?bot=<id> — muharrir foydalanuvchining o'z botidan ochilgan (asosiy botdan emas).
 const OWN_BOT_ID = Number(new URLSearchParams(window.location.search).get("bot")) || null;
-
+// ?tab=webapp — o'z botidan ochilganda to'g'ridan-to'g'ri Web App konstruktori
+const START_TAB = new URLSearchParams(window.location.search).get("tab");
 export function App() {
   const [authed, setAuthed] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -113,7 +115,7 @@ function OwnBot({ botId }: { botId: number }) {
   const [toast, showToast] = useToast();
   return (
     <div className="app app--standalone">
-      <StandaloneBotEditor botId={botId} toast={showToast} />
+      <StandaloneBotEditor botId={botId} toast={showToast} startTab={START_TAB === "webapp" ? "webapp" : undefined} />
       {toast && (
         <div className={`toast toast--${toast.kind}`}>
           {toast.kind === "ok" ? <CircleCheck size={18} /> : <CircleAlert size={18} />}

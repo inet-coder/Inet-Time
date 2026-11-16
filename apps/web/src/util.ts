@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 export function money(amount: number): string {
   return `${Math.round(amount).toLocaleString("ru-RU").replace(/,/g, " ")} so'm`;
 }
@@ -49,3 +51,21 @@ export function toDateInput(iso: string | null): string {
 export function fromDateInput(value: string): string | null {
   return value ? `${value}T23:59:59+05:00` : null;
 }
+
+
+// Ekran kengligiga qarab (telefon / kompyuter) boshqa joylashuv
+export const DESKTOP_QUERY = "(min-width: 1000px)";
+
+export function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => (typeof window !== "undefined" ? window.matchMedia(query).matches : false));
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const on = () => setMatches(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, [query]);
+  return matches;
+}
+
+export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);

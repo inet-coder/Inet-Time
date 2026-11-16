@@ -12,10 +12,13 @@ import {
   Globe,
   Inbox,
   LayoutTemplate,
+  Monitor,
+  MousePointerClick,
   Paintbrush,
   Plus,
   Rocket,
   Settings2,
+  Smartphone,
   Star,
   Trash2,
   X,
@@ -26,7 +29,9 @@ import { confirmDialog, haptic, tg } from "../tg";
 import { WebAppRuntime } from "../webapp/Runtime";
 import { BLOCK_SPECS, CATEGORIES, FORM_FIELD_SPEC, cloneBlock, newBlock, newField } from "../webapp/specs";
 import { formatMoney, uid, type AppDoc, type BlockType, type WABlock, type WAPage } from "../webapp/types";
-import { Sheet } from "./Sheet";
+import { Inspector, Sheet } from "./Sheet";
+import { useEscape, useSaveShortcut } from "../hooks";
+import { DESKTOP_QUERY, isMac, useMediaQuery } from "../util";
 import { SpecForm } from "./SpecForm";
 
 type Toast = (text: string, kind?: "ok" | "err") => void;
@@ -155,6 +160,8 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
   const [palette, setPalette] = useState(false);
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
+  const desktop = useMediaQuery(DESKTOP_QUERY);
+  const [device, setDevice] = useState<"phone" | "wide">("phone");
 
   const dirty = JSON.stringify(doc) !== saved;
   const page = doc.pages.find((p) => p.id === pageId) ?? doc.pages[0];
@@ -210,6 +217,11 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
     }
   };
 
+  useSaveShortcut(() => {
+    if (dirty && !busy) save();
+  }, dirty);
+  useEscape(editing ? () => setEditing(null) : palette ? () => setPalette(false) : preview ? () => setPreview(false) : null);
+
   const close = async () => {
     if (dirty && !(await confirmDialog("Saqlanmagan o'zgarishlar bor. Chiqilsinmi?"))) return;
     onClose();
@@ -230,135 +242,215 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
   const ctx = { pages: doc.pages, toast };
   const status = !info.published ? "Qoralama" : dirty || info.has_changes ? "O'zgarishlar e'lon qilinmagan" : "E'lon qilingan";
 
+  const tabs = (
+    <div className="segmented">
+      <button className={tab === "pages" ? "is-selected" : ""} onClick={() => setTab("pages")}>
+        <LayoutTemplate size={15} /> Sahifa
+      </button>
+      <button className={tab === "style" ? "is-selected" : ""} onClick={() => setTab("style")}>
+        <Paintbrush size={15} /> Uslub
+      </button>
+      <button className={tab === "settings" ? "is-selected" : ""} onClick={() => setTab("settings")}>
+        <Settings2 size={15} /> Sozlama
+      </button>
+      <button className={tab === "inbox" ? "is-selected" : ""} onClick={() => setTab("inbox")}>
+        <Inbox size={15} /> Arizalar
+      </button>
+    </div>
+  );
+
+  const tabContent = (
+    <>
+      {tab === "pages" && (
+        <PagesTab
+          doc={doc}
+          page={page}
+          setPageId={setPageId}
+          update={update}
+          updatePage={updatePage}
+          onEdit={setEditing}
+          onAdd={() => setPalette(true)}
+          maxPages={state.limits.pages}
+          botUsername={state.bot_username}
+          livePreview={!desktop}
+          selected={editing}
+        />
+      )}
+      {tab === "style" && <StyleTab doc={doc} update={update} themes={state.themes} botUsername={state.bot_username} showPreview={!desktop} />}
+      {tab === "settings" && (
+        <SettingsTab
+          botId={botId}
+          doc={doc}
+          update={update}
+          info={info}
+          setInfo={setInfo}
+          templates={state.templates}
+          toast={toast}
+          onReplaced={(next) => {
+            setInfo(next);
+            setDoc(clone(next.draft));
+            setSaved(JSON.stringify(next.draft));
+            setPageId(next.draft.start);
+          }}
+          ctx={ctx}
+        />
+      )}
+      {tab === "inbox" && <InboxTab botId={botId} currency={doc.settings.currency} />}
+    </>
+  );
+
+  const blockEditor = editingBlock && (
+    <BlockSheet
+      inline={desktop}
+      doc={doc}
+      block={editingBlock}
+      index={page.blocks.findIndex((b) => b.id === editingBlock.id)}
+      count={page.blocks.length}
+      botUsername={state.bot_username}
+      ctx={ctx}
+      onChange={(next) => updatePage((p) => (p.blocks = p.blocks.map((b) => (b.id === next.id ? next : b))))}
+      onMove={(d) =>
+        updatePage((p) => {
+          const i = p.blocks.findIndex((b) => b.id === editingBlock.id);
+          const j = i + d;
+          if (j < 0 || j >= p.blocks.length) return;
+          [p.blocks[i], p.blocks[j]] = [p.blocks[j], p.blocks[i]];
+        })
+      }
+      onDuplicate={() => {
+        const copy = cloneBlock(editingBlock);
+        updatePage((p) => p.blocks.splice(p.blocks.findIndex((b) => b.id === editingBlock.id) + 1, 0, copy));
+        setEditing(copy.id);
+      }}
+      onDelete={async () => {
+        if (!(await confirmDialog(`«${BLOCK_SPECS[editingBlock.type].title}» bloki o'chirilsinmi?`))) return;
+        updatePage((p) => (p.blocks = p.blocks.filter((b) => b.id !== editingBlock.id)));
+        setEditing(null);
+      }}
+      onClose={() => setEditing(null)}
+    />
+  );
+
   return (
-    <div className="wb">
+    <div className={`wb ${desktop ? "wb--desktop" : ""}`}>
       <header className="wb-bar">
         <button className="icon-btn icon-btn--round" onClick={close} aria-label="Yopish">
           <X size={18} />
         </button>
         <div className="wb-bar__title">
-          <b>Web App</b>
+          <b>{desktop ? `Web App · ${doc.settings.title || state.bot_username}` : "Web App"}</b>
           <span className={`wb-bar__status ${info.published && !dirty && !info.has_changes ? "is-live" : ""}`}>{status}</span>
         </div>
-        <button className="icon-btn icon-btn--soft" onClick={() => setPreview(true)} aria-label="Ko'rish">
-          <Eye size={19} />
-        </button>
+        {!desktop && (
+          <button className="icon-btn icon-btn--soft" onClick={() => setPreview(true)} aria-label="Ko'rish">
+            <Eye size={19} />
+          </button>
+        )}
+        {desktop && info.published && (
+          <button className="btn btn--ghost btn--compact btn--inline" onClick={() => openLink(`https://t.me/${state.bot_username}`)}>
+            <ExternalLink size={16} /> Botda ochish
+          </button>
+        )}
         {dirty && (
           <button className="btn btn--ghost btn--compact btn--inline" disabled={busy} onClick={save}>
-            Saqlash
+            Saqlash {desktop && <span className="kbd">{isMac ? "⌘S" : "Ctrl+S"}</span>}
           </button>
         )}
         <button className="btn btn--primary btn--compact btn--inline" disabled={busy || (info.published && !dirty && !info.has_changes)} onClick={publish}>
-          <Rocket size={16} /> E'lon
+          <Rocket size={16} /> {desktop ? "E'lon qilish" : "E'lon"}
         </button>
       </header>
 
-      <div className="wb-body">
-        <div className="segmented">
-          <button className={tab === "pages" ? "is-selected" : ""} onClick={() => setTab("pages")}>
-            <LayoutTemplate size={15} /> Sahifa
-          </button>
-          <button className={tab === "style" ? "is-selected" : ""} onClick={() => setTab("style")}>
-            <Paintbrush size={15} /> Uslub
-          </button>
-          <button className={tab === "settings" ? "is-selected" : ""} onClick={() => setTab("settings")}>
-            <Settings2 size={15} /> Sozlama
-          </button>
-          <button className={tab === "inbox" ? "is-selected" : ""} onClick={() => setTab("inbox")}>
-            <Inbox size={15} /> Arizalar
-          </button>
-        </div>
-
-        {tab === "pages" && (
-          <PagesTab
-            doc={doc}
-            page={page}
-            setPageId={setPageId}
-            update={update}
-            updatePage={updatePage}
-            onEdit={setEditing}
-            onAdd={() => setPalette(true)}
-            maxPages={state.limits.pages}
-            botUsername={state.bot_username}
-          />
-        )}
-        {tab === "style" && <StyleTab doc={doc} update={update} themes={state.themes} botUsername={state.bot_username} />}
-        {tab === "settings" && (
-          <SettingsTab
-            botId={botId}
-            doc={doc}
-            update={update}
-            info={info}
-            setInfo={setInfo}
-            templates={state.templates}
-            toast={toast}
-            onReplaced={(next) => {
-              setInfo(next);
-              setDoc(clone(next.draft));
-              setSaved(JSON.stringify(next.draft));
-              setPageId(next.draft.start);
-            }}
-            ctx={ctx}
-          />
-        )}
-        {tab === "inbox" && <InboxTab botId={botId} currency={doc.settings.currency} />}
-      </div>
-
-      {palette && (
-        <Sheet title="Blok qo'shish" icon={<Plus size={20} />} onClose={() => setPalette(false)}>
-          <div className="stack">
-            {CATEGORIES.map((cat) => (
-              <div key={cat} className="stack wb-palette">
-                <span className="label">{cat}</span>
-                <div className="wb-palette__grid">
-                  {(Object.keys(BLOCK_SPECS) as BlockType[])
-                    .filter((t) => BLOCK_SPECS[t].category === cat)
-                    .map((t) => (
-                      <button key={t} className="wb-palette__item" onClick={() => addBlock(t)}>
-                        <span className="wb-palette__icon">{BLOCK_SPECS[t].icon}</span>
-                        <b>{BLOCK_SPECS[t].title}</b>
-                        <span className="hint">{BLOCK_SPECS[t].desc}</span>
-                      </button>
-                    ))}
+      {desktop ? (
+        <div className="wb-desk">
+          <aside className="wb-left">
+            {tabs}
+            {tabContent}
+          </aside>
+          <main className="wb-stage">
+            <div className="wb-stage__bar">
+              <div className="segmented segmented--small">
+                <button className={device === "phone" ? "is-selected" : ""} onClick={() => setDevice("phone")}>
+                  <Smartphone size={14} /> Telefon
+                </button>
+                <button className={device === "wide" ? "is-selected" : ""} onClick={() => setDevice("wide")}>
+                  <Monitor size={14} /> Keng oyna
+                </button>
+              </div>
+              <span className="hint">
+                {page.emoji} {page.title} · sinov rejimi
+              </span>
+            </div>
+            <div className={`wb-stage__frame ${device === "wide" ? "is-wide" : ""}`}>
+              <WebAppRuntime
+                doc={doc}
+                appId={`stage-${botId}`}
+                mode="preview"
+                mediaSrc={mediaUrl}
+                botUsername={state.bot_username}
+                branding={null}
+                page={page.id}
+                onPageChange={setPageId}
+                onSubmit={previewSubmit}
+                selectedBlock={editing}
+                onSelectBlock={(id) => {
+                  setPalette(false);
+                  setTab("pages");
+                  setEditing(id);
+                }}
+              />
+            </div>
+          </main>
+          <aside className="wb-right">
+            {blockEditor ? (
+              blockEditor
+            ) : palette ? (
+              <div className="stack">
+                <div className="bb-inspector__head">
+                  <Plus size={20} />
+                  <h2>Blok qo'shish</h2>
+                  <button className="icon-btn icon-btn--round" onClick={() => setPalette(false)} aria-label="Yopish">
+                    <X size={18} />
+                  </button>
+                </div>
+                <Palette onAdd={addBlock} compact />
+              </div>
+            ) : (
+              <div className="wb-right__empty">
+                <MousePointerClick size={30} />
+                <b>Sozlash paneli</b>
+                <span className="hint">Blokni chapdagi ro'yxatdan yoki markazdagi ko'rinishda ✎ belgisi orqali tanlang.</span>
+                <button className="btn btn--primary btn--compact" onClick={() => setPalette(true)}>
+                  <Plus size={16} /> Blok qo'shish
+                </button>
+                <div className="wb-shortcuts">
+                  <span>
+                    <span className="kbd">{isMac ? "⌘S" : "Ctrl+S"}</span> saqlash
+                  </span>
+                  <span>
+                    <span className="kbd">Esc</span> panelni yopish
+                  </span>
                 </div>
               </div>
-            ))}
-          </div>
+            )}
+          </aside>
+        </div>
+      ) : (
+        <div className="wb-body">
+          {tabs}
+          {tabContent}
+        </div>
+      )}
+
+      {!desktop && palette && (
+        <Sheet title="Blok qo'shish" icon={<Plus size={20} />} onClose={() => setPalette(false)}>
+          <Palette onAdd={addBlock} />
         </Sheet>
       )}
 
-      {editingBlock && (
-        <BlockSheet
-          doc={doc}
-          block={editingBlock}
-          index={page.blocks.findIndex((b) => b.id === editingBlock.id)}
-          count={page.blocks.length}
-          botUsername={state.bot_username}
-          ctx={ctx}
-          onChange={(next) => updatePage((p) => (p.blocks = p.blocks.map((b) => (b.id === next.id ? next : b))))}
-          onMove={(d) =>
-            updatePage((p) => {
-              const i = p.blocks.findIndex((b) => b.id === editingBlock.id);
-              const j = i + d;
-              if (j < 0 || j >= p.blocks.length) return;
-              [p.blocks[i], p.blocks[j]] = [p.blocks[j], p.blocks[i]];
-            })
-          }
-          onDuplicate={() => {
-            const copy = cloneBlock(editingBlock);
-            updatePage((p) => p.blocks.splice(p.blocks.findIndex((b) => b.id === editingBlock.id) + 1, 0, copy));
-            setEditing(copy.id);
-          }}
-          onDelete={async () => {
-            if (!(await confirmDialog(`«${BLOCK_SPECS[editingBlock.type].title}» bloki o'chirilsinmi?`))) return;
-            updatePage((p) => (p.blocks = p.blocks.filter((b) => b.id !== editingBlock.id)));
-            setEditing(null);
-          }}
-          onClose={() => setEditing(null)}
-        />
-      )}
+      {!desktop && blockEditor}
 
-      {preview && (
+      {preview && !desktop && (
         <div className="wb-preview">
           <div className="wb-preview__bar">
             <span>Ko'rinish · sinov rejimi</span>
@@ -384,6 +476,29 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
   );
 }
 
+function Palette({ onAdd, compact = false }: { onAdd: (t: BlockType) => void; compact?: boolean }) {
+  return (
+    <div className="stack">
+      {CATEGORIES.map((cat) => (
+        <div key={cat} className="stack wb-palette">
+          <span className="label">{cat}</span>
+          <div className={`wb-palette__grid ${compact ? "wb-palette__grid--compact" : ""}`}>
+            {(Object.keys(BLOCK_SPECS) as BlockType[])
+              .filter((t) => BLOCK_SPECS[t].category === cat)
+              .map((t) => (
+                <button key={t} className="wb-palette__item" onClick={() => onAdd(t)}>
+                  <span className="wb-palette__icon">{BLOCK_SPECS[t].icon}</span>
+                  <b>{BLOCK_SPECS[t].title}</b>
+                  <span className="hint">{BLOCK_SPECS[t].desc}</span>
+                </button>
+              ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ------------------------------------------------------------
 // Sahifalar
 // ------------------------------------------------------------
@@ -398,6 +513,8 @@ function PagesTab({
   onAdd,
   maxPages,
   botUsername,
+  livePreview,
+  selected,
 }: {
   doc: AppDoc;
   page: WAPage;
@@ -408,6 +525,8 @@ function PagesTab({
   onAdd: () => void;
   maxPages: number;
   botUsername: string;
+  livePreview: boolean;
+  selected: string | null;
 }) {
   const [showPreview, setShowPreview] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -466,7 +585,7 @@ function PagesTab({
         )}
       </div>
 
-      <section className="card card--flush">
+      {livePreview && <section className="card card--flush">
         <button className="wb-collapse" onClick={() => setShowPreview(!showPreview)}>
           <Eye size={16} /> Jonli ko'rinish
           <span className="hint">{showPreview ? "yashirish" : "ko'rsatish"}</span>
@@ -486,7 +605,7 @@ function PagesTab({
             />
           </div>
         )}
-      </section>
+      </section>}
 
       <section className="card card--flush">
         <button className="wb-collapse" onClick={() => setShowSettings(!showSettings)}>
@@ -539,7 +658,7 @@ function PagesTab({
       ) : (
         <section className="card card--list">
           {page.blocks.map((b, i) => (
-            <div key={b.id} className={`wb-block ${b.hidden ? "is-hidden" : ""}`}>
+            <div key={b.id} className={`wb-block ${b.hidden ? "is-hidden" : ""} ${selected === b.id ? "is-selected" : ""}`}>
               <button className="wb-block__main" onClick={() => onEdit(b.id)}>
                 <span className="wb-block__icon">{BLOCK_SPECS[b.type].icon}</span>
                 <span className="list-item__body">
@@ -568,7 +687,7 @@ function PagesTab({
           ))}
         </section>
       )}
-      <button className="btn btn--primary" onClick={onAdd}>
+      <button className="btn btn--primary wb-sticky-action" onClick={onAdd}>
         <Plus size={18} /> Blok qo'shish
       </button>
     </div>
@@ -576,6 +695,7 @@ function PagesTab({
 }
 
 function BlockSheet({
+  inline = false,
   doc,
   block,
   index,
@@ -588,6 +708,7 @@ function BlockSheet({
   onDelete,
   onClose,
 }: {
+  inline?: boolean;
   doc: AppDoc;
   block: WABlock;
   index: number;
@@ -607,11 +728,13 @@ function BlockSheet({
     [doc, block],
   );
   return (
-    <Sheet title={spec.title} icon={<span className="wb-sheet-icon">{spec.icon}</span>} onClose={onClose}>
+    <Inspector inline={inline} title={spec.title} icon={<span className="wb-sheet-icon">{spec.icon}</span>} onClose={onClose}>
       <div className="stack">
-        <div className="wb-frame wb-frame--block">
-          <WebAppRuntime doc={single} appId="block-preview" mode="preview" mediaSrc={mediaUrl} botUsername={botUsername} branding={null} onSubmit={previewSubmit} />
-        </div>
+        {!inline && (
+          <div className="wb-frame wb-frame--block">
+            <WebAppRuntime doc={single} appId="block-preview" mode="preview" mediaSrc={mediaUrl} botUsername={botUsername} branding={null} onSubmit={previewSubmit} />
+          </div>
+        )}
         <SpecForm spec={spec.fields} value={block} onChange={(next) => onChange(next as WABlock)} ctx={ctx} />
         <button className="sf-toggle" onClick={() => onChange({ ...block, hidden: !block.hidden } as WABlock)}>
           <span>
@@ -636,11 +759,13 @@ function BlockSheet({
             <Trash2 size={16} /> O'chirish
           </button>
         </div>
-        <button className="btn btn--primary" onClick={onClose}>
-          Tayyor
-        </button>
+        {!inline && (
+          <button className="btn btn--primary" onClick={onClose}>
+            Tayyor
+          </button>
+        )}
       </div>
-    </Sheet>
+    </Inspector>
   );
 }
 
@@ -660,11 +785,13 @@ function StyleTab({
   update,
   themes,
   botUsername,
+  showPreview,
 }: {
   doc: AppDoc;
   update: (fn: (d: AppDoc) => void) => void;
   themes: WebAppState["themes"];
   botUsername: string;
+  showPreview: boolean;
 }) {
   const t = doc.theme;
   const setTheme = (patch: Partial<AppDoc["theme"]>) => update((d) => void (d.theme = { ...d.theme, ...patch }));
@@ -729,10 +856,14 @@ function StyleTab({
         </div>
       </section>
 
-      <span className="label">Ko'rinish</span>
-      <div className="wb-frame">
-        <WebAppRuntime doc={doc} appId="style-preview" mode="preview" mediaSrc={mediaUrl} botUsername={botUsername} branding={null} onSubmit={previewSubmit} />
-      </div>
+      {showPreview && (
+        <>
+          <span className="label">Ko'rinish</span>
+          <div className="wb-frame">
+            <WebAppRuntime doc={doc} appId="style-preview" mode="preview" mediaSrc={mediaUrl} botUsername={botUsername} branding={null} onSubmit={previewSubmit} />
+          </div>
+        </>
+      )}
     </div>
   );
 }

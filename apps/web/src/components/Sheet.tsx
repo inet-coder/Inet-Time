@@ -30,3 +30,37 @@ export function Sheet({ title, icon, onClose, children }: { title: string; icon?
     </div>
   );
 }
+
+/** Kompyuterda yon panel (inline), telefonda pastdan chiqadigan oyna. */
+export function Inspector({
+  title,
+  icon,
+  onClose,
+  inline,
+  children,
+}: {
+  title: string;
+  icon?: ReactNode;
+  onClose: () => void;
+  inline: boolean;
+  children: ReactNode;
+}) {
+  if (!inline)
+    return (
+      <Sheet title={title} icon={icon} onClose={onClose}>
+        {children}
+      </Sheet>
+    );
+  return (
+    <section className="card bb-inspector">
+      <div className="bb-inspector__head">
+        {icon}
+        <h2>{title}</h2>
+        <button className="icon-btn icon-btn--round" onClick={onClose} aria-label="Yopish">
+          <X size={18} />
+        </button>
+      </div>
+      {children}
+    </section>
+  );
+}

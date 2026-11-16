@@ -279,6 +279,15 @@ function Main() {
       )}
 
       <nav className="tabbar">
+        <div className="tabbar__brand">
+          <span className="tabbar__logo">
+            <Bot size={20} />
+          </span>
+          <span>
+            <b>Inet-Time</b>
+            <small>Bot konstruktori</small>
+          </span>
+        </div>
         {TABS.filter(([key]) => key !== "admin" || state.is_admin).map(([key, Icon, label]) => (
           <button
             key={key}

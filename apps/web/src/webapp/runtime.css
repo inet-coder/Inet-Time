@@ -1,3 +1,7 @@
+html,
+body {
+  margin: 0;
+}
 /* Web App renderer. Hamma narsa .wa ichida — Studiya uslublariga aralashmaydi. */
 .wa {
   --wa-hint: color-mix(in srgb, var(--wa-text) 55%, transparent);
@@ -850,5 +854,124 @@
 @keyframes wa-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* Konstruktor: ko'rinishdan blokni tanlash */
+.wa-blk {
+  position: relative;
+  border-radius: calc(var(--wa-radius) + 4px);
+}
+.wa-blk::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow 0.15s;
+}
+.wa-blk:hover::after {
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--wa-primary) 45%, transparent);
+}
+.wa-blk.is-selected::after {
+  box-shadow: 0 0 0 2px var(--wa-primary);
+}
+.wa-blk__edit {
+  position: absolute !important;
+  top: -10px;
+  right: -6px;
+  z-index: 2;
+  display: grid !important;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50% !important;
+  font-size: 14px;
+  background: var(--wa-primary) !important;
+  color: var(--wa-on-primary) !important;
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.wa-blk:hover .wa-blk__edit,
+.wa-blk.is-selected .wa-blk__edit {
+  opacity: 1;
+  transform: none;
+}
+
+/* Keng oyna (Telegram Desktop, planshet): ilova o'zi kengayadi */
+.wa {
+  container-type: inline-size;
+}
+@container (min-width: 560px) {
+  .wa-main {
+    max-width: 920px;
+    padding: 24px 28px 32px;
+    gap: 18px;
+  }
+  .wa-hero {
+    padding: 40px 32px;
+  }
+  .wa-hero h1 {
+    font-size: 36px;
+  }
+  .wa-hero__emoji {
+    font-size: 68px;
+  }
+  .wa-products__grid--2 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .wa-products__grid--2 .wa-product__media {
+    aspect-ratio: 4 / 3;
+  }
+  .wa-products__grid--1 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .wa-features--2 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .wa-gallery--2 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .wa-gallery--3 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .wa-pricing {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+  .wa-form,
+  .wa-cart {
+    width: 100%;
+    max-width: 620px;
+    margin: 0 auto;
+  }
+  .wa-tabbar {
+    justify-content: center;
+  }
+  .wa-tabbar button {
+    flex: 0 1 160px;
+  }
+  .wa-cartbar {
+    width: min(520px, calc(100% - 32px));
+    margin: 0 auto 16px;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .wa-btn:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+  .wa-link:not(:disabled):hover,
+  .wa-faq__item > button:hover {
+    background: color-mix(in srgb, var(--wa-text) 5%, transparent) !important;
+  }
+  .wa-product {
+    transition: transform 0.15s, box-shadow 0.2s;
+  }
+  .wa-product:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px -16px rgba(0, 0, 0, 0.35), inset 0 0 0 1px var(--wa-line);
   }
 }

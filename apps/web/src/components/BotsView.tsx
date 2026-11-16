@@ -39,8 +39,9 @@ import {
   type State,
 } from "../api";
 import { confirmDialog, haptic, tg } from "../tg";
-import { fileToJpegBase64 } from "../util";
-import { Sheet } from "./Sheet";
+import { DESKTOP_QUERY, fileToJpegBase64, isMac, useMediaQuery } from "../util";
+import { useSaveShortcut } from "../hooks";
+import { Inspector, Sheet } from "./Sheet";
 import { WebAppPanel } from "./WebAppBuilder";
 
 type Toast = (text: string, kind?: "ok" | "err") => void;
@@ -141,7 +142,7 @@ export function BotsView({ state, toast, goPlans }: { state: State; toast: Toast
         {data.plan_name} tarifi: {data.bots.length}/{data.limit} bot · har birida {data.pages_limit} tagacha sahifa
       </p>
       {canAdd ? (
-        <button className="btn btn--primary" onClick={() => setConnecting(true)}>
+        <button className="btn btn--primary btn--fit" onClick={() => setConnecting(true)}>
           <Plus size={18} /> Bot ulash
         </button>
       ) : (
@@ -270,6 +271,13 @@ export function BotEditor({
   }, [bot, draft]);
 
   const dirty = draft !== null && JSON.stringify(draft) !== saved;
+  const desktop = useMediaQuery(DESKTOP_QUERY);
+
+  // Kompyuterda bosh sahifa darhol muharrirda ochiq turadi
+  useEffect(() => {
+    if (desktop && draft && editing === null && tab === "menu") setEditing(draft.start);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [desktop, draft === null, tab]);
 
   const back = async () => {
     if (dirty && !(await confirmDialog("O'zgarishlar saqlanmagan. Chiqib ketilsinmi?"))) return;
@@ -293,6 +301,10 @@ export function BotEditor({
       setSaving(false);
     }
   };
+
+  useSaveShortcut(() => {
+    if (dirty && !saving) save();
+  }, dirty);
 
   if (!bot || !draft) return <div className="spinner spinner--center" />;
 
@@ -384,12 +396,41 @@ export function BotEditor({
         </button>
       </div>
 
-      {tab === "menu" && <PagesList menu={draft} limit={Math.max(bot.pages_limit, draft.pages.length)} update={update} onOpen={setEditing} />}
+      {tab === "menu" &&
+        (desktop ? (
+          <div className="bb-layout">
+            <div className="bb-layout__list">
+              <PagesList menu={draft} limit={Math.max(bot.pages_limit, draft.pages.length)} update={update} onOpen={setEditing} />
+            </div>
+            {editing && draft.pages.some((p) => p.id === editing) ? (
+              <PageSheet
+                inline
+                menu={draft}
+                pageId={editing}
+                botName={bot.name}
+                variables={variables}
+                limit={Math.max(bot.pages_limit, draft.pages.length)}
+                update={update}
+                onNavigate={setEditing}
+                onClose={() => setEditing(null)}
+                toast={toast}
+              />
+            ) : (
+              <section className="card bb-inspector bb-inspector--empty">
+                <FileText size={32} />
+                <b>Sahifani tanlang</b>
+                <span className="hint">Chapdagi ro'yxatdan sahifani tanlang — shu yerda tahrirlanadi va jonli ko'rinadi.</span>
+              </section>
+            )}
+          </div>
+        ) : (
+          <PagesList menu={draft} limit={Math.max(bot.pages_limit, draft.pages.length)} update={update} onOpen={setEditing} />
+        ))}
       {tab === "broadcast" && <BroadcastTab bot={bot} toast={toast} refetch={refetch} />}
       {tab === "settings" && <SettingsTab menu={draft} update={update} onDelete={standalone ? undefined : remove} />}
       {tab === "webapp" && <WebAppPanel botId={botId} toast={toast} autoOpen={startTab === "webapp"} />}
 
-      {editing && draft.pages.some((p) => p.id === editing) && (
+      {!desktop && editing && draft.pages.some((p) => p.id === editing) && (
         <PageSheet
           menu={draft}
           pageId={editing}
@@ -410,6 +451,7 @@ export function BotEditor({
           </button>
           <button className="btn btn--primary" disabled={saving} onClick={save}>
             {saving ? "Saqlanmoqda…" : "Saqlash"}
+            {desktop && !saving && <span className="kbd kbd--on-accent">{isMac ? "⌘S" : "Ctrl+S"}</span>}
           </button>
         </div>
       )}
@@ -511,6 +553,7 @@ function PageSheet({
   onNavigate,
   onClose,
   toast,
+  inline = false,
 }: {
   menu: BotMenu;
   pageId: string;
@@ -521,6 +564,7 @@ function PageSheet({
   onNavigate: (id: string) => void;
   onClose: () => void;
   toast: Toast;
+  inline?: boolean;
 }) {
   const page = menu.pages.find((p) => p.id === pageId)!;
   const [selected, setSelected] = useState<[number, number] | null>(null);
@@ -609,7 +653,7 @@ function PageSheet({
   const sel = selected && page.buttons[selected[0]]?.[selected[1]] ? selected : null;
 
   return (
-    <Sheet title={page.title} icon={page.id === menu.start ? <Home size={20} /> : <FileText size={20} />} onClose={onClose}>
+    <Inspector inline={inline} title={page.title} icon={page.id === menu.start ? <Home size={20} /> : <FileText size={20} />} onClose={onClose}>
       <div className="stack">
         <PagePreview menu={menu} page={page} botName={botName} onPress={pressPreview} />
         <p className="hint center">Ko'rinishdagi tugmalarni bosib sahifalar bo'ylab yuring.</p>
@@ -759,7 +803,7 @@ function PageSheet({
           )}
         </div>
       </div>
-    </Sheet>
+    </Inspector>
   );
 }
 

@@ -42,6 +42,9 @@ export type RuntimeProps = {
   /** Konstruktor: qaysi sahifa ko'rsatilsin (tahrirlanayotgan sahifa) */
   page?: string;
   onPageChange?: (pageId: string) => void;
+  /** Konstruktor (kompyuter): ko'rinishdan blokni tanlash */
+  selectedBlock?: string | null;
+  onSelectBlock?: (blockId: string) => void;
 };
 
 const FONT_STACKS: Record<WATheme["font"], string> = {
@@ -299,7 +302,20 @@ export function WebAppRuntime(props: RuntimeProps) {
 
       <main className="wa-main">
         {view.kind === "page" &&
-          pageObj.blocks.filter((b) => !b.hidden).map((b) => <BlockView key={b.id} block={b} ctx={ctx} />)}
+          pageObj.blocks
+            .filter((b) => !b.hidden)
+            .map((b) =>
+              props.onSelectBlock ? (
+                <div key={b.id} className={`wa-blk ${props.selectedBlock === b.id ? "is-selected" : ""}`}>
+                  <BlockView block={b} ctx={ctx} />
+                  <button className="wa-blk__edit" onClick={() => props.onSelectBlock!(b.id)} aria-label="Tahrirlash" title="Tahrirlash">
+                    ✎
+                  </button>
+                </div>
+              ) : (
+                <BlockView key={b.id} block={b} ctx={ctx} />
+              ),
+            )}
         {view.kind === "page" && pageObj.blocks.filter((b) => !b.hidden).length === 0 && (
           <div className="wa-empty">Bu sahifa hozircha bo'sh</div>
         )}

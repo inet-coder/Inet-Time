@@ -121,15 +121,34 @@ export type ScheduleSuggestion = { time: string; text: string };
 
 // --- Bot konstruktori ---
 
-export type BotAction = "page" | "url" | "back" | "home" | "feedback" | "webapp";
-export type BotButton = { text: string; action: BotAction; target: string | null; url: string | null };
+export type BotAction =
+  | "page"
+  | "url"
+  | "back"
+  | "home"
+  | "feedback"
+  | "webapp"
+  | "alert"
+  | "form"
+  | "set"
+  | "share"
+  | "check_sub"
+  | "contact"
+  | "location"
+  | "notify"
+  | "random";
+// Qolgan maydonlar (alert, var, cond...) botning o'zidagi chat-muharrirda sozlanadi va shu yerda o'zgarmay saqlanadi
+export type BotButton = { text: string; action: BotAction; target: string | null; url: string | null; [extra: string]: unknown };
+export type BotMessage = { type: string; text: string; file_id: string | null; media_id: number | null };
 export type BotPage = {
   id: string;
   title: string;
   text: string;
   media_id: number | null;
+  messages?: BotMessage[];
   keyboard: "inline" | "reply";
   buttons: BotButton[][];
+  [extra: string]: unknown;
 };
 export type BotMenu = {
   start: string;

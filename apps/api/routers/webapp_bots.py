@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from arq_pool import get_pool
 from core import crypto
 from core.botapi import BotApiError, get_me, looks_like_token
-from core.botbuilder import VARIABLES, MenuError, template_menu, templates_public, validate_menu
+from core.botbuilder import VARIABLES, MenuError, menu_media, template_menu, templates_public, validate_menu
 from core.db.models import BotBroadcast, BotSubscriber, MediaFile, User, UserBot
 from core.entitlements import get_entitlement
 from core.settings import settings
@@ -174,9 +174,10 @@ class MenuIn(BaseModel):
 async def save_menu(bot_id: int, payload: MenuIn, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)) -> dict:
     bot = await _owned_bot(db, user, bot_id)
     ent = await get_entitlement(db, user.id)
-    media_ids = {
-        p.get("media_id") for p in payload.menu.get("pages", []) if isinstance(p, dict) and isinstance(p.get("media_id"), int)
-    }
+    try:
+        media_ids = menu_media(payload.menu)
+    except (TypeError, ValueError, AttributeError):
+        media_ids = set()
     owned = set(
         await db.scalars(select(MediaFile.id).where(MediaFile.id.in_(media_ids or {0}), MediaFile.user_id == user.id))
     )

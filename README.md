@@ -10,6 +10,21 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
   rejimi (har bir xabar egasiga, «Reply» bilan javob), statistika. 15 ta tayyor shablon: qayta aloqa, do'kon,
   restoran, go'zallik saloni, klinika, avtoservis, ko'chmas mulk, turizm, o'quv markazi, tadbir, kanal,
   FAQ, anonim savollar, portfolio, bo'sh
+  - **Botning o'zida tuzish** (`/edit`, MenuBuilder uslubi): bot foydalanuvchi kabi aylaniladi, har sahifa
+    ostida tahrirlash kartasi — kontent (istalgan xabar: formatlangan matn, rasm, video, fayl, ovoz, stiker,
+    GIF; bir nechta xabar), tugmalar qo'shish (`📦 Katalog | 🛒 Savat` — qatorlar bilan, har biri o'z sahifasi
+    bilan), ko'chirish (⬅️➡️⬆️⬇️, alohida qator), nomlash, inline ⇄ klaviatura, ko'rinish sharti
+    (`ball >= 10`), faqat admin uchun tugma, sahifa sozlamalari (nusxa taqiqi, ochilganda xabar, chuqur havola)
+  - **15 xil tugma vazifasi**: sahifa, havola, orqaga, bosh menyu, adminga yozish, Web App, ogohlantirish
+    (alert), forma, o'zgaruvchi (`ball +1`), ulashish/referal, obunani tekshirish, telefon va joylashuv so'rash,
+    adminga bildirish, tasodifiy sahifa
+  - **O'zgaruvchilar** — har bir foydalanuvchi uchun ID bo'yicha eslab qolinadi (yoki bot uchun umumiy) va
+    matnda `{ball}` ko'rinishida qayta yuboriladi; tizim o'zgaruvchilari `{name}` `{user_id}` `{ref_link}`
+    `{ref_count}` `{date}`...
+  - `/admin`: kalit so'zlar (aynan / ichida / boshida), buyruqlar (`/katalog`), formalar (matn, son, telefon,
+    email, rasm, tanlov, joylashuv; javoblar egasiga keladi, CSV), referal tizimi (mukofot, tayyor taklif
+    sahifasi), majburiy obuna (kanallar), adminlar, foydalanuvchilarni topish / xabar yuborish / bloklash /
+    o'zgaruvchilarini tahrirlash, ro'yxatni CSV yuklash, xabar tarqatish
 - 🌐 **Web App konstruktori** — har bir bot uchun kodsiz Telegram Mini App: sahifalar va 17 xil blok (banner,
   matn, rasm, galereya, video, tugma, afzalliklar, ro'yxat, mahsulotlar + savatcha, tariflar, raqamlar, FAQ,
   kontaktlar, ortga sanash, forma, ajratgich), 8 ta mavzu + istalgan rang, burchak va shrift, 6 ta shablon

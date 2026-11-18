@@ -57,6 +57,18 @@ const ACTIONS: { code: BotAction; title: string; icon: typeof FileText }[] = [
   { code: "home", title: "Bosh menyu", icon: Home },
   { code: "webapp", title: "Web App", icon: Globe },
 ];
+// Botning o'zida (✏️ Tahrirlash) sozlanadigan murakkab vazifalar
+const CHAT_ACTIONS: Partial<Record<BotAction, string>> = {
+  alert: "🔔 Ogohlantirish",
+  form: "📝 Forma",
+  set: "🔢 O'zgaruvchi",
+  share: "📤 Ulashish",
+  check_sub: "✅ Obunani tekshirish",
+  contact: "📱 Telefon so'rash",
+  location: "📍 Joylashuv so'rash",
+  notify: "🔔 Adminga bildirish",
+  random: "🎲 Tasodifiy sahifa",
+};
 
 const STATUS_TEXT = { active: "Ishlayapti", paused: "To'xtatilgan", error: "Xatolik" } as const;
 
@@ -684,9 +696,21 @@ function PageSheet({
             rows={5}
             maxLength={limitText}
             value={page.text}
-            onChange={(e) => edit((p) => void (p.text = e.target.value))}
+            onChange={(e) =>
+              edit((p) => {
+                p.text = e.target.value;
+                // Matn shu yerda o'zgartirilsa — botda yuborilgan kontent (rasm, video...) o'rniga shu matn ishlaydi
+                if (p.messages?.length) p.messages = [];
+              })
+            }
           />
         </label>
+        {page.messages?.length ? (
+          <p className="hint bb-chat-note">
+            💬 Bu sahifa kontenti botning o'zida sozlangan ({page.messages.length} ta xabar: rasm, video, formatlangan matn...). Matnni shu yerda
+            o'zgartirsangiz, u botdagi kontent o'rniga ishlaydi. Media va formatlash uchun botda /edit dan foydalaning.
+          </p>
+        ) : null}
         <div className="chips">
           {variables.map((v) => (
             <button key={v.key} className="chip-btn" onClick={() => insertVar(v.key)} title={v.label}>
@@ -972,6 +996,11 @@ function ButtonEditor({
           value={b.url ?? ""}
           onChange={(e) => set((x) => void (x.url = e.target.value.trim() || null))}
         />
+      )}
+      {CHAT_ACTIONS[b.action] && (
+        <p className="hint bb-chat-note">
+          Bu tugma vazifasi botning o'zida sozlangan: <b>{CHAT_ACTIONS[b.action]}</b>. Uni botda /edit → 🔘 Tugmalar orqali o'zgartirasiz.
+        </p>
       )}
       {b.action === "feedback" && <p className="hint">Foydalanuvchi keyingi xabarini sizga yuboradi (buyurtma, savol, ariza).</p>}
       {b.action === "back" && <p className="hint">Foydalanuvchi oldingi sahifasiga qaytadi.</p>}

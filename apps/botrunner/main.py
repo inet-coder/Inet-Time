@@ -14,28 +14,45 @@ Holat redis'da (bot qayta ishga tushsa ham saqlanadi):
 
 import asyncio
 import datetime
+import html
+import json
 import logging
+import random
+import re
 import uuid
 from dataclasses import dataclass, field
+from urllib.parse import quote
 
 import httpx
 from arq import create_pool
 from arq.connections import RedisSettings
 from redis.asyncio import Redis
-from sqlalchemy import select, update
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import func, literal, select, update
+from sqlalchemy.dialects.postgresql import JSONB, insert
 
 from core import crypto
 from core.botapi import BotApiError, call
-from core.botbuilder import OWNER_START_HINT, page_by_id, render_text
+from core.botbuilder import (
+    CAPTIONLESS,
+    OWNER_START_HINT,
+    apply_op,
+    check_cond,
+    fill,
+    form_by_id,
+    html_to_plain,
+    now_values,
+    page_by_id,
+    render_text,
+)
 from core.db.base import async_session
-from core.db.models import BotSubscriber, MediaFile, User, UserBot, WebApp
+from core.db.models import BotFormAnswer, BotSubscriber, MediaFile, User, UserBot, WebApp
 from core.entitlements import get_entitlement
 from core.notify import send_telegram
 from core.settings import settings
 from core.webapp_url import discover_webapp_url
 
 import admin
+import editor
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)  # URL ichida token bor
@@ -50,6 +67,11 @@ POLL_TIMEOUT = 25
 STATE_TTL = 30 * 24 * 3600
 SEEN_THROTTLE = 600
 NAV_DEPTH = 20
+CANCEL_TEXT = "❌ Bekor qilish"
+
+
+def json_param(value: dict):
+    return literal(value, type_=JSONB)
 
 
 @dataclass
@@ -66,6 +88,9 @@ class RunningBot:
     webapp_url: str | None = None
     menu_button: tuple | None = None
     menu_button_applied: tuple | None = field(default=None)
+    # Bot darajasidagi (global) o'zgaruvchilar
+    globals: dict = field(default_factory=dict)
+    commands_applied: tuple | None = None
     task: asyncio.Task | None = None
     conflict_reported: bool = False
     pending: set = field(default_factory=set)
@@ -73,37 +98,6 @@ class RunningBot:
 
 def _k(bot_id: int, kind: str, key) -> str:
     return f"ub:{bot_id}:{kind}:{key}"
-
-
-def _keyboard(page: dict, webapp_url: str | None = None) -> dict | None:
-    # «Web App» tugmasi faqat ilova e'lon qilingan bo'lsa chiqadi
-    rows = [[b for b in row if b["action"] != "webapp" or webapp_url] for row in page.get("buttons") or []]
-    rows = [row for row in rows if row]
-    if not rows:
-        return None
-    if page.get("keyboard") == "reply":
-        return {
-            "keyboard": [
-                [{"text": b["text"], "web_app": {"url": webapp_url}} if b["action"] == "webapp" else {"text": b["text"]} for b in row]
-                for row in rows
-            ],
-            "resize_keyboard": True,
-            "is_persistent": True,
-        }
-    inline = []
-    for row in rows:
-        line = []
-        for b in row:
-            if b["action"] == "url":
-                line.append({"text": b["text"], "url": b["url"]})
-            elif b["action"] == "webapp":
-                line.append({"text": b["text"], "web_app": {"url": webapp_url}})
-            elif b["action"] == "page":
-                line.append({"text": b["text"], "callback_data": f"p:{b['target']}"})
-            else:
-                line.append({"text": b["text"], "callback_data": {"back": "b", "home": "h", "feedback": "f"}[b["action"]]})
-        inline.append(line)
-    return {"inline_keyboard": inline}
 
 
 class Runner:
@@ -168,7 +162,7 @@ class Runner:
                 webapp_url = f"{base}/app/{app.id}" if app is not None and base else None
                 result[bot.id] = RunningBot(
                     bot_id=bot.id, user_id=bot.user_id, owner_chat_id=owner_chat, token=token,
-                    username=bot.username, name=bot.name, menu=bot.menu, branding=branding,
+                    username=bot.username, name=bot.name, menu=bot.menu, branding=branding, globals=dict(bot.vars or {}),
                     webapp_url=webapp_url,
                     menu_button=(app.menu_button_text, webapp_url) if webapp_url and app.menu_button else None,
                 )
@@ -188,7 +182,9 @@ class Runner:
                 running.menu, running.branding, running.owner_chat_id = wanted.menu, wanted.branding, wanted.owner_chat_id
                 running.username, running.name = wanted.username, wanted.name
                 running.webapp_url, running.menu_button = wanted.webapp_url, wanted.menu_button
+                running.globals = wanted.globals
                 await self.apply_menu_button(running)
+                await self.apply_commands(running)
                 if running.task is not None and running.task.done():
                     self.bots.pop(bot_id, None)
                     self.start(wanted)
@@ -207,6 +203,21 @@ class Runner:
             bot.menu_button_applied = (bot.menu_button,)
         except BotApiError as exc:
             logger.info("bot %s: menyu tugmasi o'rnatilmadi: %s", bot.bot_id, exc.description)
+
+    async def apply_commands(self, bot: RunningBot) -> None:
+        """Foydalanuvchilar uchun buyruqlar menyusi (/start + bot hujjatidagi buyruqlar)."""
+        commands = [{"command": "start", "description": "Bosh menyu"}] + [
+            {"command": c["command"], "description": (c.get("description") or c["command"])[:256]} for c in bot.menu.get("commands") or []
+        ]
+        sig = tuple((c["command"], c["description"]) for c in commands)
+        if bot.commands_applied == sig:
+            return
+        try:
+            await call(self.http, bot.token, "setMyCommands", {"commands": commands})
+            bot.commands_applied = sig
+            await admin.set_owner_commands(self, bot)
+        except BotApiError as exc:
+            logger.info("bot %s: buyruqlar o'rnatilmadi: %s", bot.bot_id, exc.description)
 
     def start(self, bot: RunningBot) -> None:
         bot.task = asyncio.create_task(self._poll(bot))
@@ -246,7 +257,7 @@ class Runner:
             await call(self.http, bot.token, "deleteWebhook", {"drop_pending_updates": False})
         except BotApiError:
             pass
-        await admin.set_owner_commands(self, bot)
+        await self.apply_commands(bot)
         await self.apply_menu_button(bot)
         while True:
             try:
@@ -309,11 +320,22 @@ class Runner:
     async def api(self, bot: RunningBot, method: str, data: dict | None = None, files: dict | None = None):
         return await call(self.http, bot.token, method, data, files, timeout=30)
 
-    async def _touch(self, bot: RunningBot, user: dict, force: bool = False) -> None:
+    def is_admin(self, bot: RunningBot, chat_id: int) -> bool:
+        return chat_id == bot.owner_chat_id or chat_id in (bot.menu.get("admins") or [])
+
+    def admin_chats(self, bot: RunningBot) -> list[int]:
+        chats = [bot.owner_chat_id] if bot.owner_chat_id else []
+        return chats + [a for a in bot.menu.get("admins") or [] if a not in chats]
+
+    async def _touch(self, bot: RunningBot, user: dict, force: bool = False) -> bool:
+        """Obunachini yozib qo'yadi. Yangi obunachi bo'lsa True qaytaradi."""
         if not force and not await self.redis.set(_k(bot.bot_id, "seen", user["id"]), "1", nx=True, ex=SEEN_THROTTLE):
-            return
+            return False
         now = datetime.datetime.now(datetime.timezone.utc)
         async with async_session() as db:
+            existed = await db.scalar(
+                select(BotSubscriber.id).where(BotSubscriber.bot_id == bot.bot_id, BotSubscriber.tg_user_id == user["id"])
+            )
             stmt = insert(BotSubscriber).values(
                 bot_id=bot.bot_id, tg_user_id=user["id"], first_name=(user.get("first_name") or "")[:128],
                 username=(user.get("username") or None), started_at=now, last_active_at=now, blocked=False,
@@ -324,6 +346,7 @@ class Runner:
             )
             await db.execute(stmt)
             await db.commit()
+        return existed is None
 
     async def _set_blocked(self, bot: RunningBot, chat_id: int, blocked: bool) -> None:
         async with async_session() as db:
@@ -332,12 +355,155 @@ class Runner:
             )
             await db.commit()
 
-    def _text(self, bot: RunningBot, page: dict, user: dict, with_branding: bool) -> str:
-        text = render_text(page["text"], name=user.get("first_name"), username=user.get("username"), bot=bot.name)
-        limit = 1024 if page.get("media_id") else 4096
-        if with_branding and bot.branding:
-            text = f"{text[: limit - len(bot.branding) - 2]}\n\n{bot.branding}"
-        return text[:limit]
+    # --- O'zgaruvchilar ---
+
+    async def subscriber(self, bot: RunningBot, user_id: int) -> dict:
+        async with async_session() as db:
+            row = (
+                await db.execute(
+                    select(BotSubscriber.data, BotSubscriber.ref_count, BotSubscriber.banned, BotSubscriber.referred_by).where(
+                        BotSubscriber.bot_id == bot.bot_id, BotSubscriber.tg_user_id == user_id
+                    )
+                )
+            ).first()
+        if row is None:
+            return {"data": {}, "ref_count": 0, "banned": False, "referred_by": None}
+        return {"data": dict(row.data or {}), "ref_count": row.ref_count or 0, "banned": bool(row.banned), "referred_by": row.referred_by}
+
+    def _scope(self, bot: RunningBot, key: str) -> str:
+        for v in bot.menu.get("variables") or []:
+            if v["key"] == key:
+                return v.get("scope", "user")
+        return "user"
+
+    async def set_vars(self, bot: RunningBot, user_id: int, changes: dict[str, str]) -> None:
+        """O'zgaruvchilarni saqlaydi: foydalanuvchiniki — obunachi yozuviga, globallari — botga."""
+        user_vars = {k: v for k, v in changes.items() if self._scope(bot, k) == "user"}
+        global_vars = {k: v for k, v in changes.items() if self._scope(bot, k) == "global"}
+        async with async_session() as db:
+            if user_vars:
+                await db.execute(
+                    update(BotSubscriber)
+                    .where(BotSubscriber.bot_id == bot.bot_id, BotSubscriber.tg_user_id == user_id)
+                    .values(data=BotSubscriber.data.op("||")(json_param(user_vars)))
+                )
+            if global_vars:
+                await db.execute(update(UserBot).where(UserBot.id == bot.bot_id).values(vars=UserBot.vars.op("||")(json_param(global_vars))))
+                bot.globals.update(global_vars)
+            await db.commit()
+
+    async def apply_ops(self, bot: RunningBot, user_id: int, ops: list[dict], vals: dict | None = None) -> dict[str, str]:
+        if not ops:
+            return {}
+        vals = vals if vals is not None else await self.values(bot, {"id": user_id})
+        changes: dict[str, str] = {}
+        for op in ops:
+            key = op["var"]
+            cur = changes.get(key, vals.get(key))
+            changes[key] = apply_op(cur, op.get("op", "set"), fill(op.get("value", ""), vals, escape=False))
+        await self.set_vars(bot, user_id, changes)
+        if vals is not None:
+            vals.update(changes)
+        return changes
+
+    async def _subscribers_count(self, bot: RunningBot) -> int:
+        cached = await self.redis.get(_k(bot.bot_id, "subs", "n"))
+        if cached:
+            return int(cached)
+        async with async_session() as db:
+            n = await db.scalar(select(func.count(BotSubscriber.id)).where(BotSubscriber.bot_id == bot.bot_id, BotSubscriber.blocked == False))  # noqa: E712
+        await self.redis.set(_k(bot.bot_id, "subs", "n"), n or 0, ex=300)
+        return n or 0
+
+    async def values(self, bot: RunningBot, user: dict, sub: dict | None = None, *, need_subs: bool = False) -> dict[str, str]:
+        sub = sub if sub is not None else await self.subscriber(bot, user["id"])
+        name = user.get("first_name") or "do'stim"
+        vals: dict[str, str] = {}
+        for v in bot.menu.get("variables") or []:
+            vals[v["key"]] = v.get("default", "")
+        vals.update({k: str(v) for k, v in (bot.globals or {}).items()})
+        vals.update({k: str(v) for k, v in sub["data"].items()})
+        vals.update(now_values())
+        vals.update(
+            {
+                "name": name,
+                "first_name": name,
+                "last_name": user.get("last_name") or "",
+                "username": f"@{user['username']}" if user.get("username") else name,
+                "user_id": str(user["id"]),
+                "mention": f'<a href="tg://user?id={int(user["id"])}">{html.escape(name, quote=False)}</a>',
+                "bot": bot.name,
+                "bot_username": f"@{bot.username}",
+                "ref_link": f"https://t.me/{bot.username}?start=r{user['id']}",
+                "ref_count": str(sub["ref_count"]),
+            }
+        )
+        if need_subs:
+            vals["subscribers"] = str(await self._subscribers_count(bot))
+        return vals
+
+    # --- Sahifani yuborish ---
+
+    def _visible(self, bot: RunningBot, page: dict, vals: dict, admin: bool) -> list[list[tuple[int, int, dict]]]:
+        rows = []
+        for r, row in enumerate(page.get("buttons") or []):
+            line = []
+            for c, b in enumerate(row):
+                if b.get("action") == "webapp" and not bot.webapp_url:
+                    continue
+                if b.get("admin_only") and not admin:
+                    continue
+                if not check_cond(b.get("cond"), vals):
+                    continue
+                line.append((r, c, b))
+            if line:
+                rows.append(line)
+        return rows
+
+    def keyboard(self, bot: RunningBot, page: dict, vals: dict, admin: bool = False) -> dict | None:
+        rows = self._visible(bot, page, vals, admin)
+        if not rows:
+            return None
+        label = lambda b: fill(b["text"], vals, escape=False)[:64]  # noqa: E731
+        if page.get("keyboard") == "reply":
+            out = []
+            for row in rows:
+                line = []
+                for _, _, b in row:
+                    item: dict = {"text": label(b)}
+                    if b["action"] == "webapp":
+                        item["web_app"] = {"url": bot.webapp_url}
+                    elif b["action"] == "contact":
+                        item["request_contact"] = True
+                    elif b["action"] == "location":
+                        item["request_location"] = True
+                    line.append(item)
+                out.append(line)
+            markup = {"keyboard": out, "resize_keyboard": True, "is_persistent": True}
+            if page.get("placeholder"):
+                markup["input_field_placeholder"] = fill(page["placeholder"], vals, escape=False)[:64]
+            return markup
+        inline = []
+        for row in rows:
+            line = []
+            for r, c, b in row:
+                a = b["action"]
+                if a == "url":
+                    line.append({"text": label(b), "url": fill(b["url"], vals, escape=False)})
+                elif a == "webapp":
+                    line.append({"text": label(b), "web_app": {"url": bot.webapp_url}})
+                elif a == "share":
+                    text = fill(b.get("share_text") or "{ref_link}", vals, escape=False)
+                    link = vals.get("ref_link", "")
+                    line.append({"text": label(b), "url": f"https://t.me/share/url?url={quote(link)}&text={quote(text.replace(link, '').strip())}"})
+                elif a == "page":
+                    line.append({"text": label(b), "callback_data": f"p:{b['target']}"})
+                elif a in ("back", "home", "feedback"):
+                    line.append({"text": label(b), "callback_data": {"back": "b", "home": "h", "feedback": "f"}[a]})
+                else:
+                    line.append({"text": label(b), "callback_data": f"x:{page['id']}:{r}:{c}"})
+            inline.append(line)
+        return {"inline_keyboard": inline}
 
     async def _photo_arg(self, bot: RunningBot, media_id: int) -> tuple[dict, dict | None]:
         cached = await self.redis.get(_k(bot.bot_id, "file", media_id))
@@ -349,18 +515,79 @@ class Runner:
             return {}, None
         return {}, {"photo": ("photo.jpg", media.data, media.mime)}
 
-    async def send_page(self, bot: RunningBot, chat_id: int, page: dict, user: dict, *, with_branding: bool = False) -> None:
-        markup = _keyboard(page, bot.webapp_url)
-        text = self._text(bot, page, user, with_branding)
-        media_id = page.get("media_id")
-        if media_id:
-            photo, files = await self._photo_arg(bot, media_id)
-            if photo or files:
-                result = await self.api(bot, "sendPhoto", {"chat_id": chat_id, "caption": text, "reply_markup": markup, **photo}, files)
+    def _page_messages(self, bot: RunningBot, page: dict, vals: dict, user: dict, with_branding: bool) -> list[dict]:
+        """Sahifaning xabarlari: yangi (HTML, istalgan media) yoki eski (oddiy matn + rasm) formatda."""
+        if page.get("messages"):
+            msgs = [dict(m, text=fill(m.get("text") or "", vals, escape=True), html=True) for m in page["messages"]]
+            brand = html.escape(bot.branding, quote=False) if with_branding and bot.branding else None
+        else:
+            text = render_text(page["text"], name=user.get("first_name"), username=user.get("username"), bot=bot.name)
+            text = fill(text, vals, escape=False)
+            msgs = [{"type": "photo" if page.get("media_id") else "text", "text": text, "media_id": page.get("media_id"), "file_id": None, "html": False}]
+            brand = bot.branding if with_branding and bot.branding else None
+        if brand:
+            last = msgs[-1]
+            if last["type"] in CAPTIONLESS:
+                msgs.append({"type": "text", "text": brand, "html": last.get("html", False), "file_id": None, "media_id": None})
+            else:
+                limit = 4096 if last["type"] == "text" else 1024
+                last["text"] = f"{last['text'][: limit - len(brand) - 2]}\n\n{brand}"
+        return msgs
+
+    async def send_msgs(self, bot: RunningBot, chat_id: int, msgs: list[dict], markup: dict | None, *, protect: bool = False) -> dict | None:
+        result = None
+        for i, m in enumerate(msgs):
+            last = i == len(msgs) - 1
+            base: dict = {"chat_id": chat_id}
+            if last and markup:
+                base["reply_markup"] = markup
+            if protect:
+                base["protect_content"] = True
+            parse = {"parse_mode": "HTML"} if m.get("html") else {}
+            kind = m["type"]
+            if kind == "text":
+                limit = 4096
+                result = await self.api(bot, "sendMessage", {**base, "text": m["text"][:limit] or "…", "disable_web_page_preview": True, **parse})
+                continue
+            caption = {"caption": m["text"][:1024], **parse} if kind not in CAPTIONLESS and m.get("text") else {}
+            if kind == "photo" and not m.get("file_id"):
+                photo, files = await self._photo_arg(bot, m["media_id"]) if m.get("media_id") else ({}, None)
+                if not photo and not files:
+                    if m.get("text"):
+                        result = await self.api(bot, "sendMessage", {**base, "text": m["text"], **parse})
+                    continue
+                result = await self.api(bot, "sendPhoto", {**base, **caption, **photo}, files)
                 if files:
-                    await self.redis.set(_k(bot.bot_id, "file", media_id), result["photo"][-1]["file_id"], ex=STATE_TTL)
-                return
-        await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": text, "reply_markup": markup, "disable_web_page_preview": True})
+                    await self.redis.set(_k(bot.bot_id, "file", m["media_id"]), result["photo"][-1]["file_id"], ex=STATE_TTL)
+                continue
+            method = "send" + {"video_note": "VideoNote"}.get(kind, kind.capitalize())
+            result = await self.api(bot, method, {**base, kind: m["file_id"], **caption})
+        return result
+
+    async def send_page(self, bot: RunningBot, chat_id: int, page: dict, user: dict, *, with_branding: bool = False, vals: dict | None = None) -> None:
+        vals = vals if vals is not None else await self.values(bot, user, need_subs=self._needs_subs(page))
+        admin = self.is_admin(bot, chat_id)
+        msgs = self._page_messages(bot, page, vals, user, with_branding)
+        await self.send_msgs(bot, chat_id, msgs, self.keyboard(bot, page, vals, admin), protect=bool(page.get("protect")))
+        if admin:
+            await editor.after_page(self, bot, chat_id, page)
+
+    @staticmethod
+    def _needs_subs(page: dict) -> bool:
+        return "{subscribers}" in page.get("text", "") or any("{subscribers}" in (m.get("text") or "") for m in page.get("messages") or [])
+
+    async def _on_open(self, bot: RunningBot, chat_id: int, page: dict, user: dict, vals: dict) -> None:
+        if page.get("ops"):
+            await self.apply_ops(bot, user["id"], page["ops"], vals)
+        if page.get("notify") and not self.is_admin(bot, chat_id):
+            who = user.get("first_name") or "Foydalanuvchi"
+            if user.get("username"):
+                who += f" (@{user['username']})"
+            for admin_chat in self.admin_chats(bot):
+                try:
+                    await self.api(bot, "sendMessage", {"chat_id": admin_chat, "text": f"👁 {who} [{user['id']}] «{page['title']}» sahifasini ochdi"})
+                except BotApiError:
+                    pass
 
     async def open_page(self, bot: RunningBot, chat_id: int, page_id: str, user: dict, *, message: dict | None = None, push: bool = True) -> None:
         page = page_by_id(bot.menu, page_id) or page_by_id(bot.menu, bot.menu.get("start"))
@@ -374,31 +601,44 @@ class Runner:
             await self.redis.ltrim(nav_key, -NAV_DEPTH, -1)
             await self.redis.expire(nav_key, STATE_TTL)
         await self.redis.set(cur_key, page["id"], ex=STATE_TTL)
+        vals = await self.values(bot, user, need_subs=self._needs_subs(page))
+        await self._on_open(bot, chat_id, page, user, vals)
+        await self.show_page(bot, chat_id, page, user, vals, message=message)
 
-        # Inline menyuda xabar o'rnida tahrirlanadi (chat to'lib ketmaydi) — rasmsiz sahifalar uchun.
+    async def show_page(self, bot: RunningBot, chat_id: int, page: dict, user: dict, vals: dict, *, message: dict | None = None) -> None:
+        """Inline menyuda bitta matnli xabardan iborat sahifa joyida tahrirlanadi (chat to'lib ketmaydi)."""
+        msgs = self._page_messages(bot, page, vals, user, False)
+        admin = self.is_admin(bot, chat_id)
         if (
             message is not None
             and page.get("keyboard") != "reply"
-            and not page.get("media_id")
-            and "photo" not in message
+            and len(msgs) == 1
+            and msgs[0]["type"] == "text"
+            and "text" in message
+            and not (admin and await editor.editing(self, bot, chat_id))
         ):
             try:
-                await self.api(
-                    bot,
-                    "editMessageText",
-                    {
-                        "chat_id": chat_id,
-                        "message_id": message["message_id"],
-                        "text": self._text(bot, page, user, False),
-                        "reply_markup": _keyboard(page, bot.webapp_url) or {"inline_keyboard": []},
-                        "disable_web_page_preview": True,
-                    },
-                )
+                data = {
+                    "chat_id": chat_id,
+                    "message_id": message["message_id"],
+                    "text": msgs[0]["text"][:4096],
+                    "reply_markup": self.keyboard(bot, page, vals, admin) or {"inline_keyboard": []},
+                    "disable_web_page_preview": True,
+                }
+                if msgs[0].get("html"):
+                    data["parse_mode"] = "HTML"
+                await self.api(bot, "editMessageText", data)
                 return
             except BotApiError as exc:
                 if "not modified" in exc.description:
                     return
-        await self.send_page(bot, chat_id, page, user)
+        await self.send_msgs(bot, chat_id, msgs, self.keyboard(bot, page, vals, admin), protect=bool(page.get("protect")))
+        if admin:
+            await editor.after_page(self, bot, chat_id, page)
+
+    async def current_page(self, bot: RunningBot, chat_id: int) -> dict | None:
+        current = await self.redis.get(_k(bot.bot_id, "cur", chat_id))
+        return page_by_id(bot.menu, current.decode() if current else None) or page_by_id(bot.menu, bot.menu.get("start"))
 
     async def go_back(self, bot: RunningBot, chat_id: int, user: dict, message: dict | None) -> None:
         previous = await self.redis.rpop(_k(bot.bot_id, "nav", chat_id))
@@ -413,16 +653,288 @@ class Runner:
         await self.redis.set(_k(bot.bot_id, "st", chat_id), "fb", ex=3600)
         await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": bot.menu.get("feedback_prompt") or "✍️ Xabaringizni yozing."})
 
-    async def run_action(self, bot: RunningBot, chat_id: int, button: dict, user: dict, message: dict | None) -> None:
+    async def answer(self, bot: RunningBot, query_id: str | None, text: str = "", alert: bool = False) -> None:
+        if not query_id:
+            return
+        try:
+            await self.api(bot, "answerCallbackQuery", {"callback_query_id": query_id, "text": text[:200] or None, "show_alert": alert or None})
+        except BotApiError:
+            pass
+
+    # --- Tugma amallari ---
+
+    async def run_action(
+        self, bot: RunningBot, chat_id: int, button: dict, user: dict, message: dict | None, *, query_id: str | None = None
+    ) -> None:
         action = button["action"]
+        target = button.get("target")
         if action == "page":
-            await self.open_page(bot, chat_id, button["target"], user, message=message)
+            await self.answer(bot, query_id)
+            await self.open_page(bot, chat_id, target, user, message=message)
         elif action == "back":
+            await self.answer(bot, query_id)
             await self.go_back(bot, chat_id, user, message)
         elif action == "home":
+            await self.answer(bot, query_id)
             await self.go_home(bot, chat_id, user, message)
         elif action == "feedback":
+            await self.answer(bot, query_id)
             await self.ask_feedback(bot, chat_id)
+        elif action == "alert":
+            vals = await self.values(bot, user)
+            await self.answer(bot, query_id, html_to_plain(fill(button["alert"], vals, escape=False)), alert=True)
+        elif action == "form":
+            await self.answer(bot, query_id)
+            await self.start_form(bot, chat_id, button["form"], user)
+        elif action == "set":
+            vals = await self.values(bot, user)
+            await self.apply_ops(bot, user["id"], [{"var": button["var"], "op": button.get("op", "set"), "value": button.get("value", "")}], vals)
+            if button.get("alert"):
+                await self.answer(bot, query_id, html_to_plain(fill(button["alert"], vals, escape=False)), alert=False)
+            else:
+                await self.answer(bot, query_id, "✅")
+            if target:
+                await self.open_page(bot, chat_id, target, user, message=message)
+            else:
+                page = await self.current_page(bot, chat_id)
+                if page is not None:
+                    await self.show_page(bot, chat_id, page, user, vals, message=message)
+        elif action == "share":
+            await self.answer(bot, query_id)
+            vals = await self.values(bot, user)
+            text = fill(button.get("share_text") or "{ref_link}", vals, escape=False)
+            link = vals["ref_link"]
+            await self.api(
+                bot,
+                "sendMessage",
+                {
+                    "chat_id": chat_id,
+                    "text": text if link in text else f"{text}\n{link}",
+                    "reply_markup": {"inline_keyboard": [[{"text": "📤 Ulashish", "url": f"https://t.me/share/url?url={quote(link)}"}]]},
+                },
+            )
+        elif action == "check_sub":
+            missing = await self.missing_channels(bot, user["id"], fresh=True)
+            if missing:
+                await self.answer(bot, query_id, "❗ Avval kanallarga obuna bo'ling", alert=True)
+                await self.ask_subscribe(bot, chat_id, missing)
+            else:
+                await self.answer(bot, query_id, "✅ Rahmat!")
+                await self.open_page(bot, chat_id, target or bot.menu.get("start"), user, message=message)
+        elif action in ("contact", "location"):
+            await self.answer(bot, query_id)
+            await self.redis.set(_k(bot.bot_id, "ask", chat_id), json.dumps({"var": button["var"], "kind": action, "target": target}), ex=3600)
+            request = {"request_contact": True} if action == "contact" else {"request_location": True}
+            await self.api(
+                bot,
+                "sendMessage",
+                {
+                    "chat_id": chat_id,
+                    "text": "📱 Telefon raqamingizni yuborish uchun pastdagi tugmani bosing." if action == "contact" else "📍 Joylashuvingizni yuborish uchun pastdagi tugmani bosing.",
+                    "reply_markup": {
+                        "keyboard": [[{"text": button["text"] if len(button["text"]) > 2 else "📱 Yuborish", **request}], [{"text": CANCEL_TEXT}]],
+                        "resize_keyboard": True,
+                        "one_time_keyboard": True,
+                    },
+                },
+            )
+        elif action == "notify":
+            vals = await self.values(bot, user)
+            note = fill(button.get("alert") or "", vals, escape=False)
+            who = user.get("first_name") or "Foydalanuvchi"
+            if user.get("username"):
+                who += f" (@{user['username']})"
+            for admin_chat in self.admin_chats(bot):
+                try:
+                    await self.api(bot, "sendMessage", {"chat_id": admin_chat, "text": f"🔔 {who} [{user['id']}] «{button['text']}» tugmasini bosdi" + (f"\n\n{note}" if note else "")})
+                except BotApiError:
+                    pass
+            await self.answer(bot, query_id, "✅ Yuborildi")
+            if target:
+                await self.open_page(bot, chat_id, target, user, message=message)
+            elif not query_id:
+                await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": "✅ Yuborildi"})
+        elif action == "random":
+            await self.answer(bot, query_id)
+            await self.open_page(bot, chat_id, random.choice(button["targets"]), user, message=message)
+        else:
+            await self.answer(bot, query_id)
+
+    def _button_at(self, bot: RunningBot, page_id: str, r: int, c: int) -> dict | None:
+        page = page_by_id(bot.menu, page_id)
+        try:
+            return page["buttons"][r][c] if page else None
+        except (IndexError, KeyError):
+            return None
+
+    # --- Majburiy obuna ---
+
+    async def missing_channels(self, bot: RunningBot, user_id: int, *, fresh: bool = False) -> list[dict]:
+        channels = bot.menu.get("channels") or []
+        if not channels:
+            return []
+        ok_key = _k(bot.bot_id, "subok", user_id)
+        if not fresh and await self.redis.get(ok_key):
+            return []
+        missing = []
+        for ch in channels:
+            try:
+                member = await self.api(bot, "getChatMember", {"chat_id": ch["chat"], "user_id": user_id})
+                status = member.get("status")
+                if status in ("left", "kicked") or (status == "restricted" and not member.get("is_member")):
+                    missing.append(ch)
+            except BotApiError as exc:
+                # Bot kanalda admin emas — foydalanuvchini bloklab qo'ymaymiz, egasini ogohlantiramiz (kuniga bir marta)
+                if await self.redis.set(_k(bot.bot_id, "subwarn", ch["chat"]), "1", nx=True, ex=86400):
+                    for admin_chat in self.admin_chats(bot):
+                        try:
+                            await self.api(
+                                bot,
+                                "sendMessage",
+                                {"chat_id": admin_chat, "text": f"⚠️ {ch['chat']} kanalida obunani tekshirib bo'lmadi: botni kanalga admin qiling.\n({exc.description})"},
+                            )
+                        except BotApiError:
+                            pass
+        if not missing:
+            await self.redis.set(ok_key, "1", ex=600)
+        return missing
+
+    async def ask_subscribe(self, bot: RunningBot, chat_id: int, missing: list[dict]) -> None:
+        rows = [[{"text": f"➕ {ch.get('title') or ch['chat']}", "url": ch["url"]}] for ch in missing if ch.get("url")]
+        rows.append([{"text": "✅ Tekshirish", "callback_data": "sub"}])
+        await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": bot.menu.get("sub_text") or "📢 Kanallarga obuna bo'ling", "reply_markup": {"inline_keyboard": rows}})
+
+    # --- Formalar ---
+
+    async def start_form(self, bot: RunningBot, chat_id: int, form_id: str, user: dict) -> None:
+        form = form_by_id(bot.menu, form_id)
+        if form is None:
+            return
+        await self.redis.set(_k(bot.bot_id, "form", chat_id), json.dumps({"form": form_id, "step": 0, "data": {}}), ex=STATE_TTL)
+        await self.ask_step(bot, chat_id, form, 0, user)
+
+    async def ask_step(self, bot: RunningBot, chat_id: int, form: dict, index: int, user: dict) -> None:
+        step = form["steps"][index]
+        vals = await self.values(bot, user)
+        rows: list[list[dict]] = []
+        if step["type"] == "choice":
+            opts = step.get("options") or []
+            rows = [opts[i : i + 2] for i in range(0, len(opts), 2)]
+            rows = [[{"text": o} for o in row] for row in rows]
+        elif step["type"] in ("phone", "contact"):
+            rows = [[{"text": "📱 Raqamni yuborish", "request_contact": True}]]
+        elif step["type"] == "location":
+            rows = [[{"text": "📍 Joylashuvni yuborish", "request_location": True}]]
+        rows.append([{"text": CANCEL_TEXT}])
+        progress = f"<i>{index + 1}/{len(form['steps'])}</i>\n" if len(form["steps"]) > 1 else ""
+        await self.api(
+            bot,
+            "sendMessage",
+            {
+                "chat_id": chat_id,
+                "text": progress + fill(step["question"], vals, escape=True),
+                "parse_mode": "HTML",
+                "reply_markup": {"keyboard": rows, "resize_keyboard": True, "one_time_keyboard": step["type"] == "choice"},
+            },
+        )
+
+    def _form_answer(self, step: dict, message: dict) -> tuple[str | None, str | None]:
+        """(qiymat, xato). Qiymat None bo'lsa — xato matni qaytariladi."""
+        text = (message.get("text") or "").strip()
+        kind = step["type"]
+        if kind in ("phone", "contact"):
+            if message.get("contact"):
+                return message["contact"].get("phone_number", ""), None
+            if kind == "phone" and re.match(r"^\+?[0-9 ()-]{7,20}$", text):
+                return text, None
+            return None, "📱 Telefon raqamini to'g'ri kiriting yoki tugmani bosing"
+        if kind == "location":
+            loc = message.get("location")
+            if loc:
+                return f"{loc['latitude']:.6f},{loc['longitude']:.6f}", None
+            return None, "📍 Joylashuvni tugma orqali yuboring"
+        if kind == "photo":
+            if message.get("photo"):
+                return message["photo"][-1]["file_id"], None
+            return None, "🖼 Rasm yuboring"
+        if not text:
+            return None, "✍️ Javobni matn ko'rinishida yozing"
+        if kind == "number":
+            try:
+                float(text.replace(",", ".").replace(" ", ""))
+            except ValueError:
+                return None, "🔢 Son kiriting"
+        if kind == "email" and not re.match(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$", text):
+            return None, "📧 Email manzilini to'g'ri kiriting"
+        if kind == "choice" and text not in (step.get("options") or []):
+            return None, "👇 Variantlardan birini tanlang"
+        return text[:1000], None
+
+    async def on_form_message(self, bot: RunningBot, chat_id: int, message: dict, user: dict, state: dict) -> None:
+        form = form_by_id(bot.menu, state["form"])
+        if form is None or state["step"] >= len(form["steps"]):
+            await self.redis.delete(_k(bot.bot_id, "form", chat_id))
+            return
+        if (message.get("text") or "").strip() in (CANCEL_TEXT, "/cancel"):
+            await self.redis.delete(_k(bot.bot_id, "form", chat_id))
+            await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": "❌ Bekor qilindi.", "reply_markup": {"remove_keyboard": True}})
+            page = await self.current_page(bot, chat_id)
+            if page is not None:
+                await self.send_page(bot, chat_id, page, user)
+            return
+        step = form["steps"][state["step"]]
+        value, error = self._form_answer(step, message)
+        if value is None:
+            await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": error})
+            return
+        state["data"][step["key"]] = value
+        state["step"] += 1
+        if state["step"] < len(form["steps"]):
+            await self.redis.set(_k(bot.bot_id, "form", chat_id), json.dumps(state), ex=STATE_TTL)
+            await self.ask_step(bot, chat_id, form, state["step"], user)
+            return
+        await self.redis.delete(_k(bot.bot_id, "form", chat_id))
+        await self.finish_form(bot, chat_id, form, state["data"], user)
+
+    async def finish_form(self, bot: RunningBot, chat_id: int, form: dict, data: dict, user: dict) -> None:
+        await self.set_vars(bot, user["id"], data)
+        async with async_session() as db:
+            db.add(BotFormAnswer(bot_id=bot.bot_id, tg_user_id=user["id"], form_id=form["id"], data=data))
+            await db.commit()
+        vals = await self.values(bot, user)
+        await self.api(
+            bot,
+            "sendMessage",
+            {"chat_id": chat_id, "text": fill(form.get("done_text") or "✅ Qabul qilindi", vals, escape=True), "parse_mode": "HTML", "reply_markup": {"remove_keyboard": True}},
+        )
+        if form.get("notify", True):
+            who = html.escape(user.get("first_name") or "Foydalanuvchi", quote=False)
+            if user.get("username"):
+                who += f" (@{user['username']})"
+            lines = [f"📝 <b>{html.escape(form['title'], quote=False)}</b>", f"👤 {who} · <code>{user['id']}</code>", ""]
+            photos = []
+            for step in form["steps"]:
+                value = data.get(step["key"], "")
+                if step["type"] == "photo":
+                    photos.append(value)
+                    value = "🖼 (rasm pastda)"
+                elif step["type"] == "location" and value:
+                    value = f'<a href="https://maps.google.com/?q={value}">📍 xaritada</a>'
+                else:
+                    value = html.escape(str(value), quote=False)
+                lines.append(f"<b>{html.escape(html_to_plain(step['question'])[:60], quote=False)}</b>\n{value}")
+            for admin_chat in self.admin_chats(bot):
+                try:
+                    head = await self.api(bot, "sendMessage", {"chat_id": admin_chat, "text": "\n".join(lines)[:4096], "parse_mode": "HTML", "disable_web_page_preview": True})
+                    await self.redis.set(_k(bot.bot_id, "fb", f"{admin_chat}:{head['message_id']}"), chat_id, ex=STATE_TTL)
+                    for file_id in photos:
+                        await self.api(bot, "sendPhoto", {"chat_id": admin_chat, "photo": file_id})
+                except BotApiError:
+                    pass
+        target = form.get("target")
+        page = page_by_id(bot.menu, target) if target else await self.current_page(bot, chat_id)
+        if page is not None:
+            await self.open_page(bot, chat_id, page["id"], user, push=bool(target))
 
     # --- Updatelar ---
 
@@ -441,26 +953,66 @@ class Runner:
         data = query.get("data") or ""
         message = query.get("message")
         user = query["from"]
-        try:
-            await self.api(bot, "answerCallbackQuery", {"callback_query_id": query["id"]})
-        except BotApiError:
-            pass
         if message is None:
+            await self.answer(bot, query["id"])
             return
         chat_id = message["chat"]["id"]
-        if data.startswith("adm:"):
-            if chat_id == bot.owner_chat_id:
-                await admin.on_callback(self, bot, chat_id, data, message, user)
+        if data.startswith(("adm:", "e:")):
+            await self.answer(bot, query["id"])
+            if self.is_admin(bot, chat_id):
+                if data.startswith("adm:"):
+                    await admin.on_callback(self, bot, chat_id, data, message, user)
+                else:
+                    await editor.on_callback(self, bot, chat_id, data, message, user)
             return
         await self._touch(bot, user)
+        sub = await self.subscriber(bot, user["id"])
+        if sub["banned"]:
+            await self.answer(bot, query["id"])
+            return
+        if data == "sub":
+            missing = await self.missing_channels(bot, user["id"], fresh=True)
+            if missing:
+                await self.answer(bot, query["id"], "❗ Hali hamma kanallarga obuna bo'lmadingiz", alert=True)
+                return
+            await self.answer(bot, query["id"], "✅ Rahmat!")
+            try:
+                await self.api(bot, "deleteMessage", {"chat_id": chat_id, "message_id": message["message_id"]})
+            except BotApiError:
+                pass
+            await self.go_home(bot, chat_id, user, None)
+            return
+        if not self.is_admin(bot, chat_id):
+            missing = await self.missing_channels(bot, user["id"])
+            if missing:
+                await self.answer(bot, query["id"], "❗ Avval kanallarga obuna bo'ling", alert=True)
+                await self.ask_subscribe(bot, chat_id, missing)
+                return
         if data.startswith("p:"):
+            await self.answer(bot, query["id"])
             await self.open_page(bot, chat_id, data[2:], user, message=message)
         elif data == "b":
+            await self.answer(bot, query["id"])
             await self.go_back(bot, chat_id, user, message)
         elif data == "h":
+            await self.answer(bot, query["id"])
             await self.go_home(bot, chat_id, user, message)
         elif data == "f":
+            await self.answer(bot, query["id"])
             await self.ask_feedback(bot, chat_id)
+        elif data.startswith("x:"):
+            try:
+                _, page_id, r, c = data.split(":")
+                button = self._button_at(bot, page_id, int(r), int(c))
+            except ValueError:
+                button = None
+            if button is None:
+                await self.answer(bot, query["id"], "Bu tugma eskirgan — /start", alert=False)
+                return
+            await self.redis.set(_k(bot.bot_id, "cur", chat_id), page_id, ex=STATE_TTL)
+            await self.run_action(bot, chat_id, button, user, message, query_id=query["id"])
+        else:
+            await self.answer(bot, query["id"])
 
     async def on_message(self, bot: RunningBot, message: dict) -> None:
         chat = message.get("chat", {})
@@ -469,10 +1021,14 @@ class Runner:
         chat_id = chat["id"]
         user = message["from"]
         text = (message.get("text") or "").strip()
+        is_admin = self.is_admin(bot, chat_id)
 
-        # Egasi kelgan xabarga «reply» qildi — javob o'sha odamga qaytadi.
-        if chat_id == bot.owner_chat_id and message.get("reply_to_message"):
-            target = await self.redis.get(_k(bot.bot_id, "fb", message["reply_to_message"]["message_id"]))
+        # Admin kelgan xabarga «reply» qildi — javob o'sha odamga qaytadi.
+        if is_admin and message.get("reply_to_message"):
+            reply_id = message["reply_to_message"]["message_id"]
+            target = await self.redis.get(_k(bot.bot_id, "fb", f"{chat_id}:{reply_id}")) or (
+                await self.redis.get(_k(bot.bot_id, "fb", reply_id)) if chat_id == bot.owner_chat_id else None
+            )
             if target:
                 try:
                     await self.api(bot, "copyMessage", {"chat_id": int(target), "from_chat_id": chat_id, "message_id": message["message_id"]})
@@ -489,22 +1045,53 @@ class Runner:
                     update(UserBot).where(UserBot.id == bot.bot_id, UserBot.error_message == OWNER_START_HINT).values(error_message=None)
                 )
                 await db.commit()
-        if chat_id == bot.owner_chat_id and await admin.on_message(self, bot, message):
-            await self._touch(bot, user)
-            return
+        if is_admin:
+            if await editor.on_message(self, bot, message):
+                return
+            if await admin.on_message(self, bot, message):
+                await self._touch(bot, user)
+                return
 
         if text.startswith("/start"):
-            await self._touch(bot, user, force=True)
-            await self.redis.delete(_k(bot.bot_id, "st", chat_id), _k(bot.bot_id, "nav", chat_id), _k(bot.bot_id, "cur", chat_id))
-            start = page_by_id(bot.menu, bot.menu.get("start"))
-            if start is not None:
-                await self.redis.set(_k(bot.bot_id, "cur", chat_id), start["id"], ex=STATE_TTL)
-                await self.send_page(bot, chat_id, start, user, with_branding=True)
-            if chat_id == bot.owner_chat_id:
-                await admin.owner_started(self, bot, chat_id)
+            await self.on_start(bot, chat_id, user, text)
             return
 
         await self._touch(bot, user)
+        sub = await self.subscriber(bot, user["id"])
+        if sub["banned"]:
+            return
+
+        # Forma to'ldirilmoqda
+        form_state = await self.redis.get(_k(bot.bot_id, "form", chat_id))
+        if form_state:
+            await self.on_form_message(bot, chat_id, message, user, json.loads(form_state))
+            return
+
+        if not is_admin:
+            missing = await self.missing_channels(bot, user["id"])
+            if missing:
+                await self.ask_subscribe(bot, chat_id, missing)
+                return
+
+        # Telefon / joylashuv so'ralgan edi
+        ask = await self.redis.get(_k(bot.bot_id, "ask", chat_id))
+        if ask:
+            ask = json.loads(ask)
+            value = None
+            if ask["kind"] == "contact" and message.get("contact"):
+                value = message["contact"].get("phone_number")
+            elif ask["kind"] == "location" and message.get("location"):
+                value = f"{message['location']['latitude']:.6f},{message['location']['longitude']:.6f}"
+            if value is not None or text in (CANCEL_TEXT, "/cancel"):
+                await self.redis.delete(_k(bot.bot_id, "ask", chat_id))
+                if value is not None:
+                    await self.set_vars(bot, user["id"], {ask["var"]: value})
+                await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": "✅ Qabul qilindi" if value else "❌ Bekor qilindi", "reply_markup": {"remove_keyboard": True}})
+                target = ask.get("target") if value is not None else None
+                page = page_by_id(bot.menu, target) if target else await self.current_page(bot, chat_id)
+                if page is not None:
+                    await self.open_page(bot, chat_id, page["id"], user, push=bool(target))
+                return
 
         if await self.redis.get(_k(bot.bot_id, "st", chat_id)) == b"fb" and text != "/cancel":
             await self.redis.delete(_k(bot.bot_id, "st", chat_id))
@@ -513,17 +1100,100 @@ class Runner:
         if text == "/cancel":
             await self.redis.delete(_k(bot.bot_id, "st", chat_id))
 
-        button = await self._find_reply_button(bot, chat_id, text) if text else None
-        if button is not None:
-            await self.run_action(bot, chat_id, button, user, None)
-            return
+        if text.startswith("/"):
+            cmd = text[1:].split()[0].split("@")[0].lower()
+            for c in bot.menu.get("commands") or []:
+                if c["command"] == cmd:
+                    await self.open_page(bot, chat_id, c["target"], user)
+                    return
+
+        if text:
+            vals = await self.values(bot, user, sub)
+            button, page_id = await self._find_reply_button(bot, chat_id, text, vals)
+            if button is not None:
+                await self.redis.set(_k(bot.bot_id, "cur", chat_id), page_id, ex=STATE_TTL)
+                await self.run_action(bot, chat_id, button, user, None)
+                return
+            if await self.on_keyword(bot, chat_id, text, user, vals):
+                return
         # Qayta aloqa rejimi: menyuda yo'q har qanday xabar (matn, rasm, ovoz...) egasiga boradi.
-        if bot.menu.get("forward_all") and chat_id != bot.owner_chat_id and not text.startswith("/"):
+        if bot.menu.get("forward_all") and not is_admin and not text.startswith("/"):
             await self.forward_feedback(bot, message, user)
             return
         await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": bot.menu.get("fallback") or "Menyudan tanlang 👇"})
 
-    async def _find_reply_button(self, bot: RunningBot, chat_id: int, text: str) -> dict | None:
+    async def on_start(self, bot: RunningBot, chat_id: int, user: dict, text: str) -> None:
+        payload = text.split(maxsplit=1)[1].strip() if " " in text else ""
+        is_new = await self._touch(bot, user, force=True)
+        sub = await self.subscriber(bot, user["id"])
+        if sub["banned"]:
+            return
+        await self.redis.delete(*(_k(bot.bot_id, kind, chat_id) for kind in ("st", "nav", "cur", "form", "ask")))
+        if is_new and payload.startswith("r") and payload[1:].isdigit():
+            await self.on_referral(bot, user, int(payload[1:]))
+        if chat_id == bot.owner_chat_id:
+            await admin.owner_started(self, bot, chat_id)
+        if not self.is_admin(bot, chat_id):
+            missing = await self.missing_channels(bot, user["id"], fresh=True)
+            if missing:
+                await self.ask_subscribe(bot, chat_id, missing)
+                return
+        target = bot.menu.get("start")
+        if payload.startswith("p_") and page_by_id(bot.menu, payload[2:]):
+            target = payload[2:]
+        elif is_new and bot.menu.get("first_start"):
+            target = bot.menu["first_start"]
+        page = page_by_id(bot.menu, target)
+        if page is None:
+            return
+        await self.redis.set(_k(bot.bot_id, "cur", chat_id), page["id"], ex=STATE_TTL)
+        vals = await self.values(bot, user, sub, need_subs=self._needs_subs(page))
+        await self._on_open(bot, chat_id, page, user, vals)
+        await self.send_page(bot, chat_id, page, user, with_branding=True, vals=vals)
+
+    async def on_referral(self, bot: RunningBot, user: dict, referrer: int) -> None:
+        ref = bot.menu.get("referral") or {}
+        if not ref.get("enabled") or referrer == user["id"]:
+            return
+        async with async_session() as db:
+            row = await db.scalar(select(BotSubscriber).where(BotSubscriber.bot_id == bot.bot_id, BotSubscriber.tg_user_id == referrer))
+            if row is None:
+                return
+            await db.execute(
+                update(BotSubscriber).where(BotSubscriber.bot_id == bot.bot_id, BotSubscriber.tg_user_id == user["id"]).values(referred_by=referrer)
+            )
+            row.ref_count = (row.ref_count or 0) + 1
+            reward = int(ref.get("reward") or 0)
+            if reward:
+                key = ref.get("var") or "balance"
+                data = dict(row.data or {})
+                data[key] = apply_op(str(data.get(key, "0")), "add", str(reward))
+                row.data = data
+            await db.commit()
+        if ref.get("notify", True):
+            text = fill(ref.get("text") or "", {"name": user.get("first_name") or "Do'stingiz", "reward": str(ref.get("reward") or 0)}, escape=False)
+            try:
+                await self.api(bot, "sendMessage", {"chat_id": referrer, "text": text})
+            except BotApiError:
+                pass
+
+    async def on_keyword(self, bot: RunningBot, chat_id: int, text: str, user: dict, vals: dict) -> bool:
+        low = text.lower()
+        for kw in bot.menu.get("keywords") or []:
+            match = kw.get("match", "exact")
+            hit = any(
+                (low == w) if match == "exact" else (low.startswith(w) if match == "start" else w in low) for w in kw.get("words") or []
+            )
+            if not hit:
+                continue
+            if kw.get("reply"):
+                await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": fill(kw["reply"], vals, escape=True), "parse_mode": "HTML", "disable_web_page_preview": True})
+            if kw.get("target"):
+                await self.open_page(bot, chat_id, kw["target"], user)
+            return True
+        return False
+
+    async def _find_reply_button(self, bot: RunningBot, chat_id: int, text: str, vals: dict) -> tuple[dict | None, str | None]:
         current = await self.redis.get(_k(bot.bot_id, "cur", chat_id))
         current_id = current.decode() if current else bot.menu.get("start")
         # Avval joriy sahifa, keyin bosh sahifa, keyin qolgan reply-sahifalar (doimiy klaviatura eski bo'lishi mumkin).
@@ -534,13 +1204,14 @@ class Runner:
         for page in pages:
             for row in page.get("buttons", []):
                 for button in row:
-                    if button["text"] == text:
-                        return button
-        return None
+                    if button["text"] == text or fill(button["text"], vals, escape=False)[:64] == text:
+                        return button, page["id"]
+        return None, None
 
     async def forward_feedback(self, bot: RunningBot, message: dict, user: dict) -> None:
         chat_id = message["chat"]["id"]
-        if not bot.owner_chat_id:
+        admins = self.admin_chats(bot)
+        if not admins:
             await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": "⚠️ Hozircha xabar qabul qilinmayapti."})
             return
         if bot.menu.get("feedback_anonymous"):
@@ -551,17 +1222,22 @@ class Runner:
                 who += f" (@{user['username']})"
             header = f"📨 Yangi xabar: {who}\n🆔 {user['id']}"
         header += "\n\n↩️ Javob berish uchun pastdagi xabarga «Reply» qiling."
-        try:
-            head = await self.api(bot, "sendMessage", {"chat_id": bot.owner_chat_id, "text": header})
-            copied = await self.api(bot, "copyMessage", {"chat_id": bot.owner_chat_id, "from_chat_id": chat_id, "message_id": message["message_id"]})
-        except BotApiError as exc:
-            logger.info("bot %s: egasiga yetkazilmadi: %s", bot.bot_id, exc.description)
-            # Egasi botga hali /start bosmagan.
-            await self._set_error(bot, OWNER_START_HINT, stop=False)
+        delivered = False
+        for admin_chat in admins:
+            try:
+                head = await self.api(bot, "sendMessage", {"chat_id": admin_chat, "text": header})
+                copied = await self.api(bot, "copyMessage", {"chat_id": admin_chat, "from_chat_id": chat_id, "message_id": message["message_id"]})
+            except BotApiError as exc:
+                logger.info("bot %s: %s ga yetkazilmadi: %s", bot.bot_id, admin_chat, exc.description)
+                if admin_chat == bot.owner_chat_id:
+                    await self._set_error(bot, OWNER_START_HINT, stop=False)
+                continue
+            delivered = True
+            for msg_id in (head["message_id"], copied["message_id"]):
+                await self.redis.set(_k(bot.bot_id, "fb", f"{admin_chat}:{msg_id}"), chat_id, ex=STATE_TTL)
+        if not delivered:
             await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": "⚠️ Xabar yetkazilmadi, keyinroq urinib ko'ring."})
             return
-        for msg_id in (head["message_id"], copied["message_id"]):
-            await self.redis.set(_k(bot.bot_id, "fb", msg_id), chat_id, ex=STATE_TTL)
         await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": bot.menu.get("feedback_done") or "✅ Yuborildi."})
 
     # --- Asosiy sikl ---

@@ -162,9 +162,8 @@ async def _connect(message: Message, state: FSMContext, token: str, template: st
             "Botingiz ishga tushdi va hozirning o'zida foydalanuvchilarga javob beradi.\n\n"
             "<b>Keyingi qadam — sozlash:</b>\n"
             "1. Pastdagi tugma orqali botingizga o'ting\n"
-            "2. Boshqaruv paneli ochiladi (keyinchalik: /admin)\n"
-            "3. «🧩 Menyu va tugmalar» — matn, rasm va tugmalarni o'zgartiring\n"
-            "4. «🌐 Web App konstruktori» — bot ichida ochiladigan ilova yarating\n\n"
+            "2. /edit — botni o'zida tuzing: matn, rasm, video, tugmalar (inline/klaviatura), vazifalar\n"
+            "3. /admin — kalit so'zlar, formalar, referal, majburiy obuna, foydalanuvchilar, tarqatish\n\n"
             "Murojaat va buyurtmalar sizga o'sha botning o'zida keladi."
         )
     await wait.edit_text(text, reply_markup=kb.bot_created(bot["username"]), parse_mode="HTML")
@@ -234,7 +233,7 @@ def _card_text(bot: dict) -> str:
         f"🆕 7 kunda yangi: {stats['new_7d']} · 🚫 bloklagan: {stats['blocked']}",
         f"📄 Menyu sahifalari: {bot['pages']}",
         "",
-        "Sozlash (menyu, tugmalar, xabar tarqatish) — botingizning o'zida: /admin",
+        "Tuzish — botingizning o'zida: /edit · boshqaruv: /admin",
     ]
     return "\n".join(lines)
 

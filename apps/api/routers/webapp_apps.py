@@ -425,3 +425,38 @@ async def _notify(db: AsyncSession, bot: UserBot, app: WebApp, item: WebAppSubmi
                 await call(client, token, "sendMessage", {"chat_id": item.tg_user_id, "text": f"✅ {summary}\nJavob shu chatga keladi."})
             except BotApiError:
                 pass
+
+
+# --- InetTime AI: ilovani suhbat orqali yaratish ---
+
+
+class AIBuildIn(BaseModel):
+    prompt: str = Field(min_length=3, max_length=4000)
+    doc: dict | None = None  # konstruktordagi joriy (saqlanmagan bo'lishi mumkin) hujjat
+    history: list[dict] = Field(default_factory=list, max_length=20)
+
+
+@router.post("/bots/{bot_id}/app/ai")
+async def ai_build(bot_id: int, payload: AIBuildIn, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    from core import ai, bot_ai
+
+    _, app = await _require_app(db, user, bot_id)
+    try:
+        config = await ai.ensure_available(db)
+    except ai.AIError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    ent = await get_entitlement(db, user.id)
+    limit = bot_ai.daily_limit(ent.flags)
+    redis = get_redis()
+    if not await bot_ai.take_quota(redis, user.id, limit):
+        raise HTTPException(429, f"Bugungi InetTime AI limiti tugadi ({limit} ta) — ertaga davom eting yoki tarifni yangilang")
+    current = payload.doc if isinstance(payload.doc, dict) and payload.doc.get("pages") else app.draft
+    allowed = await _owned_media(db, user, current)
+    try:
+        reply, doc, results = await bot_ai.build_webapp(config["model"], current, payload.history, payload.prompt, allowed)
+    except ai.AIError as exc:
+        await bot_ai.refund_quota(redis, user.id)
+        raise HTTPException(502, str(exc)) from exc
+    for r in results:
+        await ai.log_usage(db, user.id, "webapp_builder", r)
+    return {"reply": reply, "doc": doc, "used": await bot_ai.used_today(redis, user.id), "limit": limit}

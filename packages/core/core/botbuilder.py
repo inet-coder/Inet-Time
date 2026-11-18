@@ -390,8 +390,13 @@ class Channel(_M):
         return self
 
 
+STYLES = ("reply", "inline", "hybrid")
+
+
 class Menu(_M):
     start: str
+    # Yangi bo'limlar uslubi: reply — klaviatura tugmalari; inline — xabar ostidagi tugmalar; hybrid — ikkalasi
+    style: Literal["reply", "inline", "hybrid"] = "reply"
     first_start: str | None = None
     pages: list[Page] = Field(min_length=1)
     keywords: list[Keyword] = Field(default_factory=list, max_length=100)

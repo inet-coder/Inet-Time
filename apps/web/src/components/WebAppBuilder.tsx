@@ -22,6 +22,7 @@ import {
   Plus,
   Redo2,
   Rocket,
+  Sparkles,
   Settings2,
   Smartphone,
   Star,
@@ -188,6 +189,7 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
   const [editing, setEditing] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
   const [gallery, setGallery] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
   const previewLoader = useMemo<DataLoader>(
@@ -538,8 +540,24 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
     />
   );
 
+  const applyAI = (next: AppDoc) => {
+    history.current.last = 0;
+    update((d) => {
+      for (const k of Object.keys(d)) delete (d as Record<string, unknown>)[k];
+      Object.assign(d, clone(next));
+    });
+    setPageId(next.start);
+    setEditing(null);
+    setSelectedNode(null);
+    setAiOpen(false);
+    toast("🤖 Ilova yangilandi — yoqmasa «Bekor qilish» (Ctrl+Z) bilan qaytaring");
+  };
+
   const undoRedo = (
     <>
+      <button className="btn btn--ghost btn--compact btn--inline wb-ai-btn" onClick={() => setAiOpen(true)} title="InetTime AI bilan yaratish">
+        <Sparkles size={16} /> AI
+      </button>
       <button className="icon-btn" disabled={!history.current.past.length} onClick={undo} aria-label="Bekor qilish" title={`Bekor qilish (${isMac ? "⌘Z" : "Ctrl+Z"})`}>
         <Undo2 size={18} />
       </button>
@@ -701,6 +719,8 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
       )}
 
       {!desktop && blockEditor}
+
+      {aiOpen && <AISheet botId={botId} doc={doc} toast={toast} onApply={applyAI} onClose={() => setAiOpen(false)} />}
 
       {gallery && (
         <ComponentGallery
@@ -1511,5 +1531,118 @@ function InboxTab({ botId, currency }: { botId: number; currency: string }) {
       )}
       <p className="hint center">Har bir ariza sizga botda ham keladi — «Reply» qilib javob bering.</p>
     </div>
+  );
+}
+
+
+// ------------------------------------------------------------
+// InetTime AI — ilovani suhbat orqali yaratish
+// ------------------------------------------------------------
+
+const AI_EXAMPLES = [
+  "Pitsa yetkazib berish ilovasi: menyu (pitsa, ichimliklar, desert) savatcha bilan, aksiyalar, manzil va aloqa. Qizil-qora zamonaviy dizayn.",
+  "Go'zallik saloni: xizmatlar va narxlar, ustalar, onlayn yozilish formasi, sharhlar. Yumshoq pushti, premium uslub.",
+  "IT kurslar markazi: kurslar, narxlar (3 tarif), o'qituvchilar, FAQ, ro'yxatdan o'tish. Tun rejimi, neon aksentlar.",
+  "Hozirgi ilovaga «Biz haqimizda» sahifasi va statistikalar bloki qo'sh, ranglarni yashil qil.",
+];
+
+function AISheet({
+  botId,
+  doc,
+  toast,
+  onApply,
+  onClose,
+}: {
+  botId: number;
+  doc: AppDoc;
+  toast: Toast;
+  onApply: (d: AppDoc) => void;
+  onClose: () => void;
+}) {
+  const [prompt, setPrompt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [chat, setChat] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [result, setResult] = useState<AppDoc | null>(null);
+  const [quota, setQuota] = useState<string>("");
+
+  const send = async () => {
+    const text = prompt.trim();
+    if (text.length < 3 || busy) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      const res = await api.webappAI(botId, { prompt: text, doc, history: chat });
+      setChat((c) => [...c, { role: "user", content: text }, { role: "assistant", content: res.reply }]);
+      setResult(res.doc);
+      setQuota(`Bugun: ${res.used}/${res.limit}`);
+      setPrompt("");
+    } catch (e) {
+      toast((e as Error).message, "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const blocks = result ? result.pages.reduce((n, p) => n + p.blocks.length, 0) : 0;
+  return (
+    <Sheet title="InetTime AI" icon={<Sparkles size={20} />} onClose={onClose}>
+      <div className="stack ai-sheet">
+        <p className="hint">
+          Ilovangiz qanday bo'lishini oddiy so'z bilan yozing — AI sahifalar, bloklar, dizayn va matnlarni tayyorlaydi. Natijani qo'llagandan keyin istalgan
+          qismini qo'lda o'zgartirasiz. Suhbatni davom ettirib aniqlashtirish mumkin.
+        </p>
+        {chat.length === 0 && (
+          <div className="ai-examples">
+            {AI_EXAMPLES.map((ex) => (
+              <button key={ex} className="chip-btn" onClick={() => setPrompt(ex)}>
+                {ex}
+              </button>
+            ))}
+          </div>
+        )}
+        {chat.length > 0 && (
+          <div className="ai-chat">
+            {chat.map((m, i) => (
+              <div key={i} className={`ai-msg ai-msg--${m.role}`}>
+                {m.content}
+              </div>
+            ))}
+          </div>
+        )}
+        {result && (
+          <div className="card-inset card-inset--pad ai-result">
+            <b>
+              ✨ Tayyor: {result.pages.length} sahifa · {blocks} blok
+            </b>
+            <span className="hint">{result.pages.map((p) => `${p.emoji || "📄"} ${p.title}`).join(" · ")}</span>
+            <div className="row">
+              <button className="btn btn--primary btn--compact" onClick={() => onApply(result)}>
+                Qo'llash
+              </button>
+              <button className="btn btn--ghost btn--compact" onClick={() => setResult(null)}>
+                Kerak emas
+              </button>
+            </div>
+          </div>
+        )}
+        <textarea
+          className="input"
+          rows={4}
+          maxLength={4000}
+          placeholder="Masalan: kofe do'koni uchun ilova — menyu, savatcha, aksiyalar, manzil. Iliq jigarrang dizayn."
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send();
+          }}
+        />
+        <div className="row ai-actions">
+          <button className="btn btn--primary" disabled={busy || prompt.trim().length < 3} onClick={send}>
+            <Sparkles size={16} /> {busy ? "Loyihalanmoqda… (20–60 s)" : chat.length ? "Yuborish" : "Yaratish"}
+          </button>
+          {quota && <span className="hint">{quota}</span>}
+        </div>
+      </div>
+    </Sheet>
   );
 }

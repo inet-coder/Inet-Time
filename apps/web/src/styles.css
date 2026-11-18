@@ -4609,3 +4609,54 @@ input[type="range"] {
   border-radius: 12px;
   background: var(--soft);
 }
+
+/* --- InetTime AI --- */
+.wb-ai-btn {
+  color: #7c3aed;
+}
+.ai-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ai-examples .chip-btn {
+  text-align: left;
+  white-space: normal;
+  line-height: 1.35;
+  padding: 9px 12px;
+  height: auto;
+}
+.ai-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 38vh;
+  overflow-y: auto;
+}
+.ai-msg {
+  padding: 9px 12px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  max-width: 88%;
+}
+.ai-msg--user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.ai-msg--assistant {
+  align-self: flex-start;
+  background: var(--soft);
+}
+.ai-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1.5px solid #7c3aed;
+}
+.ai-actions {
+  align-items: center;
+  gap: 12px;
+}

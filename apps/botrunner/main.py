@@ -52,6 +52,7 @@ from core.settings import settings
 from core.webapp_url import discover_webapp_url
 
 import admin
+import ai_chat
 import editor
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -504,7 +505,10 @@ class Runner:
     def reply_rows(self, bot: RunningBot, page: dict, vals: dict, admin: bool, *, editing: bool = False, selected: tuple | None = None) -> list:
         rows = []
         if page.get("keyboard") != "reply":
-            return rows  # eski inline sahifa: tugmalari xabar ostida
+            # inline bo'lim: tugmalari xabar ostida; muharrirda — faqat navigatsiya
+            if editing and page["id"] != bot.menu.get("start"):
+                rows.append([{"text": NAV_BACK}, {"text": NAV_HOME}])
+            return rows
         for row in self._visible(bot, page, vals, admin, editing=editing):
             line = []
             for r, c, b in row:
@@ -1083,11 +1087,13 @@ class Runner:
             await self.answer(bot, query["id"])
             return
         chat_id = message["chat"]["id"]
-        if data.startswith(("adm:", "e:")):
+        if data.startswith(("adm:", "e:", "ai:")):
             await self.answer(bot, query["id"])
             if self.is_admin(bot, chat_id):
                 if data.startswith("adm:"):
                     await admin.on_callback(self, bot, chat_id, data, message, user)
+                elif data.startswith("ai:"):
+                    await ai_chat.on_callback(self, bot, chat_id, data, message, user)
                 else:
                     await editor.on_callback(self, bot, chat_id, data, message, user)
             return
@@ -1123,7 +1129,9 @@ class Runner:
             if prev:
                 await self.open_page(bot, chat_id, prev.decode(), user, message=message, push=False)
             else:
-                await self.go_back(bot, chat_id, user, message)
+                # inline tarix tugadi — foydalanuvchi turgan menyuga qaytamiz
+                cur = await self.current_page(bot, chat_id)
+                await self.open_page(bot, chat_id, (cur or {}).get("id") or bot.menu.get("start"), user, message=message, push=False)
         elif data == "h":
             await self.answer(bot, query["id"])
             await self.go_home(bot, chat_id, user, message)

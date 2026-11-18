@@ -19,6 +19,13 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
     (⬆️⬇️ ✏️ 🗑 ➕ inline tugma), «➕ Post qo'shish» (istalgan xabar, formatlash saqlanadi), «➕ Savol qo'shish»
     (javob o'zgaruvchiga saqlanadi va keyingi postlarda ishlatiladi). Tugmasi yo'q bo'lim — faqat postlari
     chiqadi, ichiga tugma qo'shilsa menyu bo'ladi («⬅️ Orqaga | 🏠 Bosh menyu» avtomatik)
+  - **Istalgan uslub**: har bir bo'lim ⌨️ klaviatura, 💬 inline (xabar ostida, joyida almashadi) yoki 🔀 aralash;
+    bot bo'yicha standart uslub (/admin → Sozlamalar → 🎨) va har bir bo'limni alohida almashtirish (🔁)
+  - **🤖 InetTime AI**: egasi botning o'zida AI bilan suhbatlashadi («restoran uchun bot: menyu, buyurtma formasi,
+    referal…») — AI to'liq botni loyihalaydi (bo'limlar, postlar, tugmalar, formalar, o'zgaruvchilar, kalit so'zlar,
+    buyruqlar, referal), tuzilma daraxti ko'rsatiladi, «✅ Qo'llash» → darhol ishlaydi, «↩️ Oldingi holat» bilan
+    qaytariladi; suhbatni davom ettirib o'zgartiriladi. Javob avtomatik tekshiriladi, xato bo'lsa AI o'zi tuzatadi.
+    Web App konstruktorida ham «✨ AI» — ilovani tasvirlab yaratish. Kunlik limit tarif bo'yicha (`builder_ai_daily`)
   - **15 xil tugma vazifasi**: sahifa, havola, orqaga, bosh menyu, adminga yozish, Web App, ogohlantirish
     (alert), forma, o'zgaruvchi (`ball +1`), ulashish/referal, obunani tekshirish, telefon va joylashuv so'rash,
     adminga bildirish, tasodifiy sahifa

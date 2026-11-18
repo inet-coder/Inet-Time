@@ -21,6 +21,7 @@ PLAN_LIMITS = [
     {"key": "ai_daily_limit", "title": "AI so'rovlar / kun", "min": 0, "max": 5000},
     {"key": "bot_limit", "title": "O'z botlari (konstruktor)", "min": 0, "max": 50},
     {"key": "bot_pages_limit", "title": "Bot menyusi: sahifalar", "min": 3, "max": 500},
+    {"key": "builder_ai_daily", "title": "InetTime AI: bot/Web App yaratish / kun", "min": 0, "max": 1000},
 ]
 PLAN_FEATURES = [
     {"key": "schedule_service", "title": "Jadval", "service": "schedule"},

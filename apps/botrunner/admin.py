@@ -140,10 +140,21 @@ def settings_menu(bot: "RunningBot") -> tuple[str, list]:
         [{"text": f"🔢 O'zgaruvchilar · {len(m.get('variables') or [])}", "callback_data": "adm:var"}, {"text": f"📝 Formalar · {len(m.get('forms') or [])}", "callback_data": "adm:form"}],
         [{"text": "👥 Referal tizimi", "callback_data": "adm:ref"}, {"text": f"📢 Majburiy obuna · {len(m.get('channels') or [])}", "callback_data": "adm:ch"}],
         [{"text": f"👮 Adminlar · {len(m.get('admins') or [])}", "callback_data": "adm:adm"}, {"text": "💬 Qayta aloqa", "callback_data": "adm:fbk"}],
+        [{"text": f"🎨 Tugmalar uslubi: {STYLE_LABELS[m.get('style', 'reply')]}", "callback_data": "adm:sty"}],
         [{"text": "✍️ Javob topilmaganda matn", "callback_data": "adm:txt"}],
         [{"text": "⬅️ Panel", "callback_data": "adm:st"}],
     ]
     return text, rows
+
+
+STYLE_LABELS = {"reply": "⌨️ Klaviatura", "inline": "💬 Inline", "hybrid": "🔀 Aralash"}
+STYLE_HELP = (
+    "🎨 <b>Tugmalar uslubi</b> — yangi qo'shiladigan bo'limlar qanday bo'lsin:\n\n"
+    "⌨️ <b>Klaviatura</b> — tugmalar yozish maydoni o'rnida (MenuBuilder kabi)\n"
+    "💬 <b>Inline</b> — tugmalar xabar ostida, bosilganda xabar joyida almashadi\n"
+    "🔀 <b>Aralash</b> — menyular klaviaturada, postlar ostida inline tugmalar\n\n"
+    "Har bir bo'limni alohida ham almashtirish mumkin: 🎛 Tugmalar muharriri → 🔁 Klaviatura ⇄ Inline."
+)
 
 
 def _pages_rows(bot: "RunningBot", prefix: str, back: str) -> list:
@@ -383,6 +394,7 @@ async def owner_started(runner: "Runner", bot: "RunningBot", chat_id: int) -> No
                 "text": "ℹ️ Siz ushbu botning egasisiz — klaviaturangizda qo'shimcha tugmalar bor:\n\n"
                 "🎛 Tugmalar muharriri — tugmalarni qo'shish, ko'chirish, vazifa berish\n"
                 "📝 Postlar muharriri — har bir tugmaning xabarlari (matn, rasm, video...)\n"
+                "🤖 InetTime AI — botni suhbat orqali tuzish: «restoran boti kerak…» deb yozasiz\n"
                 "⚙️ Admin panel — sozlamalar, foydalanuvchilar, xabar tarqatish\n\n"
                 "Foydalanuvchilar bu tugmalarni ko'rmaydi.",
             },
@@ -433,6 +445,15 @@ async def on_callback(runner: "Runner", bot: "RunningBot", chat_id: int, data: s
     elif action == "cfg":
         await set_state(runner, bot, chat_id, None)
         await view(settings_menu(bot))
+    elif action == "sty":
+        order = ["reply", "inline", "hybrid"]
+
+        def cycle(m):
+            m["style"] = order[(order.index(m.get("style", "reply")) + 1) % 3]
+
+        if await save(runner, bot, chat_id, cycle):
+            tr = settings_menu(bot)
+            await view((STYLE_HELP + "\n\nHozir: <b>" + STYLE_LABELS[bot.menu["style"]] + "</b>", tr[1]))
 
     # Kalit so'zlar
     elif action == "kw":

@@ -62,7 +62,11 @@ ADD_BTN = "➕ Tugma qo'shish"
 ADD_POST = "➕ Post qo'shish"
 ADD_Q = "➕ Savol qo'shish"
 PASTE = "📋 Qo'yish: "
-CONTROLS = (BTN_EDITOR, POST_EDITOR, ADMIN_PANEL, STOP, ADD_BTN, ADD_POST, ADD_Q)
+TOGGLE_KB = "🔁 Klaviatura ⇄ Inline"
+AI_BTN = "🤖 InetTime AI"
+AI_RESET = "🧹 Yangi suhbat"
+AI_EXIT = "🚪 AI'dan chiqish"
+CONTROLS = (BTN_EDITOR, POST_EDITOR, ADMIN_PANEL, STOP, ADD_BTN, ADD_POST, ADD_Q, TOGGLE_KB, AI_BTN)
 
 INPUT_LABELS = {"text": "📝 Matn", "number": "🔢 Son", "phone": "📱 Telefon", "email": "📧 Email", "photo": "🖼 Rasm", "choice": "🔘 Tanlov", "location": "📍 Joylashuv"}
 
@@ -154,15 +158,17 @@ async def set_state(runner: "Runner", bot: "RunningBot", chat_id: int, state: di
 
 async def admin_rows(runner: "Runner", bot: "RunningBot", chat_id: int, current: str | None) -> list:
     if current == "buttons":
-        rows = [[ADD_BTN]]
+        rows = [[ADD_BTN, TOGGLE_KB]]
         c = await clip(runner, bot, chat_id)
         if c:
             rows.append([(PASTE + c["button"]["text"])[:64]])
         rows.append([STOP, POST_EDITOR])
     elif current == "posts":
         rows = [[ADD_POST, ADD_Q], [STOP, BTN_EDITOR]]
+    elif current == "ai":
+        rows = [[AI_RESET, AI_EXIT]]
     else:
-        rows = [[BTN_EDITOR, POST_EDITOR], [ADMIN_PANEL]]
+        rows = [[BTN_EDITOR, POST_EDITOR], [AI_BTN, ADMIN_PANEL]]
     return [[{"text": t} for t in row] for row in rows]
 
 
@@ -187,22 +193,14 @@ async def send(runner: "Runner", bot: "RunningBot", chat_id: int, text: str, row
 
 
 def normalize(menu: dict, pid: str) -> None:
-    """Eski sahifani MenuBuilder modeliga keltiradi: postlar ro'yxati + klaviatura menyusi.
-    Eski «inline» tugmalar oxirgi post ostiga ko'chadi (foydalanuvchi uchun ko'rinish o'zgarmaydi)."""
+    """Eski sahifada postlar ro'yxati bo'lmasa — matni/rasmi post qilinadi (ko'rinish o'zgarmaydi)."""
     p = page_by_id(menu, pid)
-    if p is None:
+    if p is None or p.get("messages"):
         return
-    if not p.get("messages"):
-        p["messages"] = [
-            {"type": "photo" if p.get("media_id") else "text", "text": esc(p.get("text") or p["title"]), "media_id": p.get("media_id"), "file_id": None, "buttons": []}
-        ]
-        p["media_id"] = None
-    if p.get("keyboard") != "reply":
-        if p.get("buttons"):
-            p["messages"][-1].setdefault("buttons", [])
-            p["messages"][-1]["buttons"] = (p["messages"][-1]["buttons"] + p["buttons"])[:MAX_ROWS]
-        p["buttons"] = []
-        p["keyboard"] = "reply"
+    p["messages"] = [
+        {"type": "photo" if p.get("media_id") else "text", "text": esc(p.get("text") or p["title"]), "media_id": p.get("media_id"), "file_id": None, "buttons": []}
+    ]
+    p["media_id"] = None
 
 
 def sync_text(p: dict) -> None:
@@ -210,16 +208,18 @@ def sync_text(p: dict) -> None:
     p["text"] = (first or p["title"])[:4096]
 
 
-def new_leaf(title: str) -> dict:
+def new_leaf(title: str, style: str = "reply") -> dict:
+    """Yangi bo'lim: bitta post. Inline uslubda — «⬅️ Orqaga» inline tugmasi bilan."""
+    inline = style == "inline"
     return {
         "id": new_page_id(),
         "title": title[:64],
         "text": title[:64],
         "media_id": None,
         "messages": [{"type": "text", "text": f"<b>{esc(title)}</b>\n\nBu bo'lim posti. O'zgartirish: 📝 Postlar muharriri", "file_id": None, "media_id": None, "buttons": []}],
-        "keyboard": "reply",
-        "buttons": [],
-        "nav": True,
+        "keyboard": "inline" if inline else "reply",
+        "buttons": [[{"text": "⬅️ Orqaga", "action": "back"}]] if inline else [],
+        "nav": not inline,
     }
 
 
@@ -465,18 +465,89 @@ def action_picker(bot: "RunningBot", loc: str) -> tuple[str, list]:
     return text, rows
 
 
+# --- Tahrirlanayotgan bo'lim (muharrirning o'z joyi va tarixi) ---
+
+
+async def section(runner: "Runner", bot: "RunningBot", chat_id: int) -> dict:
+    raw = await runner.redis.get(_k(bot, "epage", chat_id))
+    page = page_by_id(bot.menu, raw.decode()) if raw else None
+    return page or await runner.current_page(bot, chat_id) or page_by_id(bot.menu, bot.menu["start"])
+
+
+async def go_section(runner: "Runner", bot: "RunningBot", chat_id: int, page: dict, *, push: bool = True) -> None:
+    key = _k(bot, "estack", chat_id)
+    if push:
+        cur = await runner.redis.get(_k(bot, "epage", chat_id))
+        if cur and cur.decode() != page["id"]:
+            await runner.redis.rpush(key, cur)
+            await runner.redis.ltrim(key, -30, -1)
+            await runner.redis.expire(key, EDIT_TTL)
+    await runner.redis.set(_k(bot, "epage", chat_id), page["id"], ex=EDIT_TTL)
+    await set_selected(runner, bot, chat_id, None)
+    if page.get("keyboard") == "reply":
+        # foydalanuvchi ko'rinishi ham shu menyuda tursin
+        await runner.redis.set(f"ub:{bot.bot_id}:cur:{chat_id}", page["id"], ex=30 * 24 * 3600)
+
+
+async def section_back(runner: "Runner", bot: "RunningBot", chat_id: int, home: bool) -> dict:
+    key = _k(bot, "estack", chat_id)
+    if home:
+        await runner.redis.delete(key, f"ub:{bot.bot_id}:nav:{chat_id}")
+        target = bot.menu["start"]
+    else:
+        prev = await runner.redis.rpop(key)
+        target = prev.decode() if prev else bot.menu["start"]
+    page = page_by_id(bot.menu, target) or page_by_id(bot.menu, bot.menu["start"])
+    await go_section(runner, bot, chat_id, page, push=False)
+    return page
+
+
+def mirror(bot: "RunningBot", page: dict, sel: tuple | None, *, posts: bool = False) -> tuple[str, list]:
+    """Inline bo'lim tugmalari muharrirda: bosilsa tanlanadi (yoki postlar rejimida — ichiga kiriladi)."""
+    pid = page["id"]
+    rows = []
+    for r, row in enumerate(page.get("buttons") or []):
+        line = []
+        for c, b in enumerate(row):
+            t = b["text"]
+            if not posts and sel == (pid, r, c):
+                t = f"[ {t} ]"
+            line.append({"text": t[:64], "callback_data": f"e:{'po' if posts else 'sel'}:{pid}.{r}.{c}"})
+        rows.append(line)
+    if posts:
+        text = f"💬 <b>«{esc(page['title'])}»</b> inline tugmalari — bosing, uning postlari ochiladi."
+    else:
+        rows.append([{"text": ADD_BTN, "callback_data": f"e:addb:{pid}"}])
+        text = (
+            f"💬 <b>«{esc(page['title'])}» — inline bo'lim</b> (tugmalar post ostida)\n"
+            "Tugmani bosing — tanlanadi va sozlamalari chiqadi. Tanlanganini yana bosing — ichiga kirasiz."
+        )
+    return text, rows
+
+
+async def show_section(runner: "Runner", bot: "RunningBot", chat_id: int, page: dict, user: dict, text: str | None = None) -> None:
+    current = await mode(runner, bot, chat_id)
+    if current == "posts":
+        await show_posts(runner, bot, chat_id, page, user)
+        return
+    await show_menu(runner, bot, chat_id, page, text)
+    if current == "buttons" and page.get("keyboard") != "reply":
+        m = mirror(bot, page, await selected(runner, bot, chat_id))
+        await send(runner, bot, chat_id, m[0], m[1])
+
+
 async def show_menu(runner: "Runner", bot: "RunningBot", chat_id: int, page: dict, text: str | None = None) -> None:
-    """Joriy menyuni muharrir klaviaturasi bilan ko'rsatadi."""
+    """Bo'limni muharrir klaviaturasi bilan ko'rsatadi (inline bo'limda — faqat navigatsiya va muharrir tugmalari)."""
     vals = await runner.values(bot, {"id": chat_id, "first_name": "Admin"})
     markup = await runner.menu_markup(bot, chat_id, page, vals)
     current = await mode(runner, bot, chat_id)
     n = sum(len(r) for r in page.get("buttons") or [])
+    kind = "⌨️ klaviatura" if page.get("keyboard") == "reply" else "💬 inline"
     if text is None:
         if current == "buttons":
-            text = (
-                f"🎛 <b>«{esc(page['title'])}» menyusi</b> · {n} tugma\n"
-                "Tugmani bosing — tanlanadi. Tanlangan tugmani yana bosing — ichiga kirasiz."
-            )
+            text = f"🎛 <b>«{esc(page['title'])}»</b> · {kind} · {n} tugma"
+            if page.get("keyboard") == "reply":
+                text += "\nTugmani bosing — tanlanadi. Tanlangan tugmani yana bosing — ichiga kirasiz."
         elif current == "posts":
             text = f"📝 <b>«{esc(page['title'])}»</b>"
         else:
@@ -486,7 +557,7 @@ async def show_menu(runner: "Runner", bot: "RunningBot", chat_id: int, page: dic
 
 async def show_posts(runner: "Runner", bot: "RunningBot", chat_id: int, page: dict, user: dict) -> None:
     """Postlar muharriri: har bir post o'z boshqaruv tugmalari bilan."""
-    if not page.get("messages") or page.get("keyboard") != "reply":
+    if not page.get("messages"):
         await save(runner, bot, lambda m: normalize(m, page["id"]))
         page = page_by_id(bot.menu, page["id"]) or page
     await runner.redis.set(_k(bot, "epage", chat_id), page["id"], ex=EDIT_TTL)
@@ -523,38 +594,36 @@ async def show_posts(runner: "Runner", bot: "RunningBot", chat_id: int, page: di
             await runner.send_one(bot, chat_id, shown, markup)
         except Exception as exc:  # noqa: BLE001 — masalan noto'g'ri HTML
             await send(runner, bot, chat_id, f"⚠️ {i + 1}-postni ko'rsatib bo'lmadi: {esc(str(exc))[:200]}", rows)
-    cur = await runner.current_page(bot, chat_id)
+    if page.get("keyboard") != "reply" and page.get("buttons"):
+        m = mirror(bot, page, None, posts=True)
+        await send(runner, bot, chat_id, m[0], m[1])
     head = (
         f"📝 <b>«{esc(page['title'])}» postlari</b> · {len(msgs)} ta\n"
         f"Har bir post ostida: ⬆️⬇️ joyi, ✏️ almashtirish, 🗑 o'chirish, ➕ inline tugma.\n"
         "Boshqa tugmani bosing — uning postlari chiqadi."
     )
     vals2 = await runner.values(bot, {"id": chat_id, "first_name": "Admin"})
-    markup = await runner.menu_markup(bot, chat_id, cur or page, vals2)
+    markup = await runner.menu_markup(bot, chat_id, page, vals2)
     await send(runner, bot, chat_id, head, markup=markup)
 
 
 async def start_editing(runner: "Runner", bot: "RunningBot", chat_id: int, user: dict, which: str = "buttons") -> None:
     await set_mode(runner, bot, chat_id, which)
-    cur = await runner.current_page(bot, chat_id) or page_by_id(bot.menu, bot.menu["start"])
-    if cur.get("keyboard") != "reply":
-        await save(runner, bot, lambda m: normalize(m, cur["id"]))
-        cur = page_by_id(bot.menu, cur["id"])
+    cur = await section(runner, bot, chat_id)
+    await go_section(runner, bot, chat_id, cur, push=False)
     if which == "buttons":
-        hint = ""
-        inline_only = not cur.get("buttons") and any(m.get("buttons") for m in cur.get("messages") or [])
-        if inline_only:
-            hint = "\n\nℹ️ Bu bo'limdagi tugmalar post ostida (inline) — ularni 📝 Postlar muharririda tahrirlaysiz."
-        await show_menu(
+        style = {"reply": "⌨️ klaviatura", "inline": "💬 inline", "hybrid": "🔀 aralash"}[bot.menu.get("style", "reply")]
+        await show_section(
             runner,
             bot,
             chat_id,
             cur,
+            user,
             "🎛 <b>Tugmalar muharriri</b>\n\n"
             "• Tugmani bosing — <b>tanlanadi</b> va sozlamalari chiqadi\n"
             "• Tanlangan tugmani yana bosing — <b>ichiga kirasiz</b>\n"
-            f"• {ADD_BTN} — yangi tugmalar\n"
-            f"• {NAV_HINT}" + hint,
+            f"• {ADD_BTN} — yangi tugmalar · {TOGGLE_KB} — bo'lim uslubi\n"
+            f"• {NAV_HINT}\n\nBot uslubi (yangi bo'limlar uchun): {style} — /admin → ⚙️ Sozlamalar → 🎨 Uslub",
         )
     else:
         await show_posts(runner, bot, chat_id, cur, user)
@@ -562,11 +631,9 @@ async def start_editing(runner: "Runner", bot: "RunningBot", chat_id: int, user:
 
 async def reopen(runner: "Runner", bot: "RunningBot", chat_id: int, page_id: str, user: dict) -> None:
     page = page_by_id(bot.menu, page_id) or page_by_id(bot.menu, bot.menu.get("start"))
-    current = await mode(runner, bot, chat_id)
-    if current == "posts":
-        await show_posts(runner, bot, chat_id, page, user)
-    elif current == "buttons":
-        await show_menu(runner, bot, chat_id, page)
+    if await mode(runner, bot, chat_id) in ("posts", "buttons"):
+        await go_section(runner, bot, chat_id, page, push=False)
+        await show_section(runner, bot, chat_id, page, user)
     else:
         await runner.send_page(bot, chat_id, page, user)
 
@@ -620,50 +687,54 @@ async def on_message(runner: "Runner", bot: "RunningBot", message: dict) -> bool
 
     if not current:
         return False
+    if current == "ai":
+        import ai_chat
 
-    cur = await runner.current_page(bot, chat_id)
+        return await ai_chat.on_message(runner, bot, message)
+
     if text in (NAV_BACK, NAV_HOME):
-        if text == NAV_HOME:
-            await runner.redis.delete(f"ub:{bot.bot_id}:nav:{chat_id}")
-            target = bot.menu["start"]
-        else:
-            prev = await runner.redis.rpop(f"ub:{bot.bot_id}:nav:{chat_id}")
-            target = prev.decode() if prev else bot.menu["start"]
-        page = page_by_id(bot.menu, target) or page_by_id(bot.menu, bot.menu["start"])
-        await runner.enter(bot, chat_id, page, push=False)
-        await set_selected(runner, bot, chat_id, None)
-        await reopen(runner, bot, chat_id, page["id"], user)
+        page = await section_back(runner, bot, chat_id, home=text == NAV_HOME)
+        await show_section(runner, bot, chat_id, page, user)
         return True
 
+    cur = await section(runner, bot, chat_id)
     vals = await runner.values(bot, user)
-    pos = _match(runner, cur, text, vals) if text and cur else None
+    pos = _match(runner, cur, text, vals) if text and cur.get("keyboard") == "reply" else None
     if pos is None:
         if text:
             hint = "Tugmani bosing yoki " + (ADD_BTN if current == "buttons" else ADD_POST)
             await send(runner, bot, chat_id, f"ℹ️ {hint}. Muharrirdan chiqish: {STOP}")
-            return True
         return True
     r, c = pos
     b = cur["buttons"][r][c]
     if current == "buttons":
-        sel = await selected(runner, bot, chat_id)
-        if sel == (cur["id"], r, c):
-            await enter_button(runner, bot, chat_id, user, cur, b)
-            return True
-        await set_selected(runner, bot, chat_id, (cur["id"], r, c))
-        await show_menu(runner, bot, chat_id, cur, f"🔧 Tanlandi: <b>[ {esc(b['text'])} ]</b> — yana bossangiz ichiga kirasiz")
-        panel = button_panel(bot, f"{cur['id']}.{r}.{c}")
-        await send(runner, bot, chat_id, panel[0], panel[1])
+        await select_button(runner, bot, chat_id, user, cur, r, c)
         return True
     # posts
     target = page_by_id(bot.menu, b.get("target")) if b["action"] == "page" else None
     if target is None:
         await send(runner, bot, chat_id, f"ℹ️ «{esc(b['text'])}» tugmasida post yo'q — vazifasi: {ACTION_LABELS.get(b['action'], b['action'])}.")
         return True
-    if runner.is_menu(target):
-        await runner.enter(bot, chat_id, target)
+    await go_section(runner, bot, chat_id, target)
     await show_posts(runner, bot, chat_id, target, user)
     return True
+
+
+async def select_button(runner: "Runner", bot: "RunningBot", chat_id: int, user: dict, cur: dict, r: int, c: int, message: dict | None = None) -> None:
+    """Birinchi bosish — tanlash (panel), ikkinchisi — ichiga kirish. Klaviatura va inline bo'limlarda bir xil."""
+    b = cur["buttons"][r][c]
+    sel = await selected(runner, bot, chat_id)
+    if sel == (cur["id"], r, c):
+        await enter_button(runner, bot, chat_id, user, cur, b)
+        return
+    await set_selected(runner, bot, chat_id, (cur["id"], r, c))
+    if cur.get("keyboard") == "reply":
+        await show_menu(runner, bot, chat_id, cur, f"🔧 Tanlandi: <b>[ {esc(b['text'])} ]</b> — yana bossangiz ichiga kirasiz")
+    else:
+        m = mirror(bot, cur, (cur["id"], r, c))
+        await send(runner, bot, chat_id, m[0], m[1], message=message)
+    panel = button_panel(bot, f"{cur['id']}.{r}.{c}")
+    await send(runner, bot, chat_id, panel[0], panel[1])
 
 
 async def enter_button(runner: "Runner", bot: "RunningBot", chat_id: int, user: dict, cur: dict, b: dict) -> None:
@@ -677,27 +748,46 @@ async def enter_button(runner: "Runner", bot: "RunningBot", chat_id: int, user: 
             "Ichiga tugma qo'shish uchun avval 🎯 Vazifa → 📄 Bo'lim qiling.",
         )
         return
-    if target.get("keyboard") != "reply":
-        await save(runner, bot, lambda m: normalize(m, target["id"]))
-        target = page_by_id(bot.menu, target["id"])
-    await runner.enter(bot, chat_id, target)
-    await set_selected(runner, bot, chat_id, None)
-    await show_menu(
+    await go_section(runner, bot, chat_id, target)
+    n = sum(len(r) for r in target.get("buttons") or [])
+    kind = "⌨️ klaviatura" if target.get("keyboard") == "reply" else "💬 inline"
+    await show_section(
         runner,
         bot,
         chat_id,
         target,
-        f"📂 <b>«{esc(target['title'])}»</b> ichidasiz · {sum(len(r) for r in target.get('buttons') or [])} tugma\n"
-        f"{ADD_BTN} — bu bo'limga ichki tugmalar (menyu). Orqaga: ⬅️",
+        user,
+        f"📂 <b>«{esc(target['title'])}»</b> ichidasiz · {kind} · {n} tugma\n{ADD_BTN} — ichki tugmalar. {TOGGLE_KB} — uslubni almashtirish.",
     )
 
 
 async def control(runner: "Runner", bot: "RunningBot", chat_id: int, user: dict, text: str, current: str | None) -> None:
     if text == BTN_EDITOR:
         await start_editing(runner, bot, chat_id, user, "buttons")
+    elif text == AI_BTN:
+        import ai_chat
+
+        await ai_chat.start(runner, bot, chat_id, user)
+    elif text == TOGGLE_KB:
+        cur = await section(runner, bot, chat_id)
+
+        def toggle(m: dict):
+            p = page_by_id(m, cur["id"])
+            p["keyboard"] = "inline" if p.get("keyboard") == "reply" else "reply"
+            if p["keyboard"] == "reply":
+                p["nav"] = True
+
+        error = await save(runner, bot, toggle)
+        if error:
+            await send(runner, bot, chat_id, f"⚠️ {esc(error)}")
+            return
+        page = page_by_id(bot.menu, cur["id"])
+        await go_section(runner, bot, chat_id, page, push=False)
+        kind = "⌨️ klaviatura tugmalari" if page["keyboard"] == "reply" else "💬 inline (post ostidagi) tugmalar"
+        await show_section(runner, bot, chat_id, page, user, f"🔁 «{esc(page['title'])}» endi: {kind}")
     elif text == POST_EDITOR:
         await set_mode(runner, bot, chat_id, "posts")
-        cur = await runner.current_page(bot, chat_id)
+        cur = await section(runner, bot, chat_id)
         await send(
             runner,
             bot,
@@ -707,15 +797,15 @@ async def control(runner: "Runner", bot: "RunningBot", chat_id: int, user: dict,
         )
         await show_posts(runner, bot, chat_id, cur, user)
     elif text == STOP:
-        await set_mode(runner, bot, chat_id, None)
         cur = await runner.current_page(bot, chat_id)
+        await set_mode(runner, bot, chat_id, None)
         await show_menu(runner, bot, chat_id, cur, "✅ Muharrir o'chirildi — botingiz shu ko'rinishda ishlaydi.")
     elif text == ADMIN_PANEL:
         import admin
 
         await admin.panel(runner, bot, chat_id)
     elif text == ADD_BTN:
-        await set_state(runner, bot, chat_id, {"k": "addbtn"})
+        await set_state(runner, bot, chat_id, {"k": "addbtn", "p": (await section(runner, bot, chat_id))["id"]})
         await send(
             runner,
             bot,
@@ -726,8 +816,8 @@ async def control(runner: "Runner", bot: "RunningBot", chat_id: int, user: dict,
             "Har bir tugma o'z bo'limini oladi: postlarini 📝 Postlar muharririda yozasiz, ichiga tugma qo'shsangiz — menyu bo'ladi.",
         )
     elif text == ADD_POST:
-        page_id = (await runner.redis.get(_k(bot, "epage", chat_id)) or b"").decode() or (await runner.current_page(bot, chat_id))["id"]
-        page = page_by_id(bot.menu, page_id)
+        page = await section(runner, bot, chat_id)
+        page_id = page["id"]
         await set_state(runner, bot, chat_id, {"k": "post_add", "p": page_id})
         await send(
             runner,
@@ -739,12 +829,12 @@ async def control(runner: "Runner", bot: "RunningBot", chat_id: int, user: dict,
             "O'zgaruvchilar: <code>{name}</code> <code>{user_id}</code> <code>{ref_link}</code>...",
         )
     elif text == ADD_Q:
-        page_id = (await runner.redis.get(_k(bot, "epage", chat_id)) or b"").decode() or (await runner.current_page(bot, chat_id))["id"]
+        page_id = (await section(runner, bot, chat_id))["id"]
         await set_state(runner, bot, chat_id, {"k": "q_text", "p": page_id})
         await send(runner, bot, chat_id, "❓ <b>Savol matnini yuboring</b>\nMasalan: «Ismingiz nima?»\n\nJavob o'zgaruvchiga saqlanadi va keyingi postlarda <code>{ism}</code> ko'rinishida ishlatiladi.")
     elif text.startswith(PASTE):
         c = await clip(runner, bot, chat_id)
-        cur = await runner.current_page(bot, chat_id)
+        cur = await section(runner, bot, chat_id)
         if not c or cur is None:
             return
 
@@ -760,7 +850,7 @@ async def control(runner: "Runner", bot: "RunningBot", chat_id: int, user: dict,
             await send(runner, bot, chat_id, f"⚠️ {esc(error)}")
             return
         await runner.redis.delete(_k(bot, "eclip", chat_id))
-        await show_menu(runner, bot, chat_id, page_by_id(bot.menu, cur["id"]), f"📋 «{esc(c['button']['text'])}» shu yerga qo'yildi")
+        await show_section(runner, bot, chat_id, page_by_id(bot.menu, cur["id"]), user, f"📋 «{esc(c['button']['text'])}» shu yerga qo'yildi")
 
 
 async def on_input(runner: "Runner", bot: "RunningBot", chat_id: int, user: dict, message: dict, state: dict) -> bool:
@@ -829,7 +919,8 @@ async def on_input(runner: "Runner", bot: "RunningBot", chat_id: int, user: dict
         return True
 
     if kind == "addbtn":
-        cur = await runner.current_page(bot, chat_id)
+        cur = page_by_id(bot.menu, state.get("p") or "") or await section(runner, bot, chat_id)
+        style = bot.menu.get("style", "reply")
         rows = [[t.strip()[:64] for t in ln.split("|") if t.strip()] for ln in text.splitlines() if ln.strip()]
         rows = [r for r in rows if r]
         created: list = []
@@ -848,22 +939,28 @@ async def on_input(runner: "Runner", bot: "RunningBot", chat_id: int, user: dict
                     if name in existing:
                         return f"«{name}» nomli tugma bu bo'limda bor"
                     existing.add(name)
-                    leaf = new_leaf(name)
+                    leaf = new_leaf(name, style)
                     m["pages"].append(leaf)
                     created.append(name)
                     line.append({"text": name, "action": "page", "target": leaf["id"]})
                 p["buttons"].append(line)
-            p["nav"] = p.get("nav") or p["id"] != m["start"]
+            if p.get("keyboard") == "reply":
+                p["nav"] = p.get("nav") or p["id"] != m["start"]
+            else:
+                # inline bo'limda «⬅️ Orqaga» qatori oxirida tursin
+                back = [row for row in p["buttons"] if all(b.get("action") in ("back", "home") for b in row)]
+                p["buttons"] = [row for row in p["buttons"] if row not in back] + back
             return None
 
         if await fail(await save(runner, bot, add)):
             return True
         await set_state(runner, bot, chat_id, None)
-        await show_menu(
+        await show_section(
             runner,
             bot,
             chat_id,
             page_by_id(bot.menu, cur["id"]),
+            user,
             f"✅ {len(created)} ta tugma qo'shildi.\nTugmani bosing — sozlamalari; yana bosing — ichiga kirasiz. Postlarini 📝 Postlar muharririda yozasiz.",
         )
         return True
@@ -1040,9 +1137,9 @@ async def on_callback(runner: "Runner", bot: "RunningBot", chat_id: int, data: s
         await runner.api(bot, "sendMessage", {"chat_id": chat_id, "text": f"⚠️ {text}"})
 
     async def refresh_menu(pid: str, text: str) -> None:
-        cur = await runner.current_page(bot, chat_id)
+        cur = await section(runner, bot, chat_id)
         if cur and cur["id"] == pid and await mode(runner, bot, chat_id) == "buttons":
-            await show_menu(runner, bot, chat_id, cur, text)
+            await show_section(runner, bot, chat_id, cur, user, text)
 
     if cmd == "on":
         await start_editing(runner, bot, chat_id, user, "buttons")
@@ -1052,6 +1149,38 @@ async def on_callback(runner: "Runner", bot: "RunningBot", chat_id: int, data: s
         return
     if cmd == "p":
         await panel(parts[2])
+        return
+    if cmd in ("sel", "po"):
+        pid, _, r, c = parse_loc(parts[2])
+        page = page_by_id(bot.menu, pid)
+        try:
+            b = page["buttons"][r][c]
+        except (TypeError, IndexError, KeyError):
+            await err("Tugma topilmadi")
+            return
+        if cmd == "sel":
+            if await mode(runner, bot, chat_id) != "buttons":
+                await set_mode(runner, bot, chat_id, "buttons")
+            if (await section(runner, bot, chat_id))["id"] != pid:
+                await go_section(runner, bot, chat_id, page, push=False)
+            await select_button(runner, bot, chat_id, user, page, r, c, message)
+        else:
+            target = page_by_id(bot.menu, b.get("target")) if b["action"] == "page" else None
+            if target is None:
+                await err(f"«{b['text']}» tugmasida post yo'q — vazifasi: {ACTION_LABELS.get(b['action'], b['action'])}")
+                return
+            await go_section(runner, bot, chat_id, target)
+            await show_posts(runner, bot, chat_id, target, user)
+        return
+    if cmd == "addb":
+        await set_state(runner, bot, chat_id, {"k": "addbtn", "p": parts[2]})
+        await send(
+            runner,
+            bot,
+            chat_id,
+            "➕ <b>Yangi tugma(lar) nomini yuboring</b>\n\n• Har bir qator — alohida qator\n• Bir qatorda bir nechta — <code>|</code> bilan\n\n"
+            "Masalan:\n<code>📦 Katalog | 🛒 Savat\n📞 Aloqa</code>",
+        )
         return
     if cmd == "m":
         d, loc = parts[2], parts[3]
@@ -1157,6 +1286,7 @@ async def on_callback(runner: "Runner", bot: "RunningBot", chat_id: int, data: s
         else:
             target = page_by_id(bot.menu, b.get("target"))
             if target:
+                await go_section(runner, bot, chat_id, target)
                 await show_posts(runner, bot, chat_id, target, user)
         return
     if cmd == "a":

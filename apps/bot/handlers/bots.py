@@ -162,7 +162,8 @@ async def _connect(message: Message, state: FSMContext, token: str, template: st
             "Botingiz ishga tushdi va hozirning o'zida foydalanuvchilarga javob beradi.\n\n"
             "<b>Keyingi qadam — sozlash:</b>\n"
             "1. Pastdagi tugma orqali botingizga o'ting\n"
-            "2. Klaviaturangizda «🎛 Tugmalar muharriri» va «📝 Postlar muharriri» chiqadi — botni shu yerda tuzasiz\n"
+            "2. Klaviaturangizda «🎛 Tugmalar muharriri», «📝 Postlar muharriri» va «🤖 InetTime AI» chiqadi — "
+            "botni qo'lda yoki AI bilan suhbatlashib tuzasiz\n"
             "3. /admin — kalit so'zlar, formalar, referal, majburiy obuna, foydalanuvchilar, tarqatish\n\n"
             "Murojaat va buyurtmalar sizga o'sha botning o'zida keladi."
         )

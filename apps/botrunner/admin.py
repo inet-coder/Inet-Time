@@ -380,8 +380,11 @@ async def owner_started(runner: "Runner", bot: "RunningBot", chat_id: int) -> No
             "sendMessage",
             {
                 "chat_id": chat_id,
-                "text": "ℹ️ Siz ushbu botning egasisiz.\n\n✏️ Botni shu yerning o'zida tahrirlash: /edit\n⚙️ Boshqaruv paneli: /admin",
-                "reply_markup": {"inline_keyboard": [[{"text": "✏️ Tahrirlash", "callback_data": "e:on"}, {"text": "⚙️ Panel", "callback_data": "adm:st"}]]},
+                "text": "ℹ️ Siz ushbu botning egasisiz — klaviaturangizda qo'shimcha tugmalar bor:\n\n"
+                "🎛 Tugmalar muharriri — tugmalarni qo'shish, ko'chirish, vazifa berish\n"
+                "📝 Postlar muharriri — har bir tugmaning xabarlari (matn, rasm, video...)\n"
+                "⚙️ Admin panel — sozlamalar, foydalanuvchilar, xabar tarqatish\n\n"
+                "Foydalanuvchilar bu tugmalarni ko'rmaydi.",
             },
         )
 
@@ -422,7 +425,7 @@ async def on_callback(runner: "Runner", bot: "RunningBot", chat_id: int, data: s
     elif action == "help":
         await view((HELP, [[{"text": "⬅️ Panel", "callback_data": "adm:st"}]]))
     elif action == "view":
-        await runner.redis.delete(f"ub:{bot.bot_id}:edit:{chat_id}")
+        await editor.set_mode(runner, bot, chat_id, None)
         start = page_by_id(bot.menu, bot.menu.get("start"))
         if start is not None:
             await runner.redis.set(f"ub:{bot.bot_id}:cur:{chat_id}", start["id"])

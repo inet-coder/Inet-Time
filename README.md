@@ -10,11 +10,15 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
   rejimi (har bir xabar egasiga, «Reply» bilan javob), statistika. 15 ta tayyor shablon: qayta aloqa, do'kon,
   restoran, go'zallik saloni, klinika, avtoservis, ko'chmas mulk, turizm, o'quv markazi, tadbir, kanal,
   FAQ, anonim savollar, portfolio, bo'sh
-  - **Botning o'zida tuzish** (`/edit`, MenuBuilder uslubi): bot foydalanuvchi kabi aylaniladi, har sahifa
-    ostida tahrirlash kartasi — kontent (istalgan xabar: formatlangan matn, rasm, video, fayl, ovoz, stiker,
-    GIF; bir nechta xabar), tugmalar qo'shish (`📦 Katalog | 🛒 Savat` — qatorlar bilan, har biri o'z sahifasi
-    bilan), ko'chirish (⬅️➡️⬆️⬇️, alohida qator), nomlash, inline ⇄ klaviatura, ko'rinish sharti
-    (`ball >= 10`), faqat admin uchun tugma, sahifa sozlamalari (nusxa taqiqi, ochilganda xabar, chuqur havola)
+  - **Botning o'zida tuzish** (MenuBuilder uslubi, klaviatura orqali): egasining klaviaturasida faqat unga
+    ko'rinadigan «🎛 Tugmalar muharriri», «📝 Postlar muharriri», «⚙️ Admin panel».
+    Tugmalar muharriri: tugmani bosish — tanlanadi (`[ Katalog ]`) va xossalar paneli chiqadi (⬅️⬆️⬇️➡️✳️
+    ko'chirish, nomi, o'chirish, ✂️ kesish → 📋 qo'yish, vazifa, ko'rinish sharti, buyruq, faqat admin,
+    ko'rinmas, obuna talabi, tasodifiy post, navigatsiya); yana bosish — ichiga kirish; «➕ Tugma qo'shish» —
+    `📦 Katalog | 🛒 Savat` ko'rinishida qatorlar bilan. Postlar muharriri: har bir post o'z boshqaruvi bilan
+    (⬆️⬇️ ✏️ 🗑 ➕ inline tugma), «➕ Post qo'shish» (istalgan xabar, formatlash saqlanadi), «➕ Savol qo'shish»
+    (javob o'zgaruvchiga saqlanadi va keyingi postlarda ishlatiladi). Tugmasi yo'q bo'lim — faqat postlari
+    chiqadi, ichiga tugma qo'shilsa menyu bo'ladi («⬅️ Orqaga | 🏠 Bosh menyu» avtomatik)
   - **15 xil tugma vazifasi**: sahifa, havola, orqaga, bosh menyu, adminga yozish, Web App, ogohlantirish
     (alert), forma, o'zgaruvchi (`ball +1`), ulashish/referal, obunani tekshirish, telefon va joylashuv so'rash,
     adminga bildirish, tasodifiy sahifa

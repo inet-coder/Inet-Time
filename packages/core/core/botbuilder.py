@@ -138,6 +138,8 @@ class Button(_M):
     share_text: str = Field(default="", max_length=300)
     cond: Cond | None = None
     admin_only: bool = False
+    hidden: bool = False  # ko'rinmaydi, lekin nomini yozsa ishlaydi
+    need_sub: bool = False  # bosishdan oldin majburiy obunani tekshiradi
 
     @field_validator("text")
     @classmethod
@@ -179,16 +181,51 @@ class Button(_M):
         return self
 
 
+INPUT_TYPES = ("text", "number", "phone", "email", "photo", "choice", "location")
+
+
 class Msg(_M):
     type: str = "text"
     text: str = Field(default="", max_length=MAX_TEXT)
     file_id: str | None = Field(default=None, max_length=300)
     media_id: int | None = None
+    # Postning o'z inline tugmalari (xabar ostida)
+    buttons: list[list[Button]] = Field(default_factory=list, max_length=MAX_ROWS)
+    # type == "question": foydalanuvchidan javob so'raladi va o'zgaruvchiga saqlanadi
+    var: str | None = None
+    input: str = "text"
+    options: list[str] = Field(default_factory=list, max_length=12)
+
+    @field_validator("var")
+    @classmethod
+    def _var(cls, v: str | None) -> str | None:
+        return _var_key(v)
 
     @model_validator(mode="after")
     def _check(self):
-        if self.type not in MSG_TYPES:
+        if self.type not in MSG_TYPES + ("question",):
             raise ValueError(f"noma'lum xabar turi: {self.type}")
+        self.buttons = [row for row in self.buttons if row]
+        for row in self.buttons:
+            if len(row) > MAX_PER_ROW:
+                raise ValueError(f"bir qatorda ko'pi bilan {MAX_PER_ROW} tugma")
+            for b in row:
+                if b.action in ("contact", "location"):
+                    raise ValueError(f"«{b.text}»: telefon/joylashuv so'rash faqat klaviatura tugmasida")
+        if self.type == "question":
+            if not self.text.strip():
+                raise ValueError("savol matni bo'sh")
+            if not self.var:
+                raise ValueError("savol javobi saqlanadigan o'zgaruvchi ko'rsatilmagan")
+            if self.input not in INPUT_TYPES:
+                raise ValueError("noma'lum javob turi")
+            self.options = [o.strip()[:64] for o in self.options if o.strip()]
+            if self.input == "choice" and not self.options:
+                raise ValueError("tanlov savoli uchun variantlar kiritilmagan")
+            self.file_id = self.media_id = None
+            self.buttons = []
+            return self
+        self.var, self.options = None, []
         if self.type == "text":
             if not self.text.strip():
                 raise ValueError("bo'sh matnli xabar")
@@ -215,6 +252,8 @@ class Page(_M):
     protect: bool = False  # nusxa olish / uzatishni taqiqlash
     notify: bool = False  # foydalanuvchi ochganda egasiga xabar
     ops: list[VarOp] = Field(default_factory=list, max_length=5)  # ochilganda o'zgaruvchilar
+    nav: bool = False  # menyuda «⬅️ Orqaga | 🏠 Bosh menyu» qatori avtomatik
+    random_post: bool = False  # postlardan bittasi tasodifiy yuboriladi
 
     @model_validator(mode="after")
     def _check(self):
@@ -385,7 +424,8 @@ class Menu(_M):
         if len(forms) != len(self.forms):
             raise ValueError("formalar takrorlanmasin")
         for page in self.pages:
-            for row in page.buttons:
+            all_rows = list(page.buttons) + [row for m in page.messages for row in m.buttons]
+            for row in all_rows:
                 for button in row:
                     if button.target and button.target not in known:
                         raise ValueError(f"«{page.title}» → «{button.text}»: bog'langan sahifa o'chirilgan")
@@ -442,6 +482,15 @@ def validate_menu(raw: dict, pages_limit: int, owned_media: set[int] | None = No
     for key, default in DEFAULT_TEXTS.items():
         data[key] = (data.get(key) or "").strip() or default
     return data
+
+
+def iter_buttons(page: dict):
+    """Sahifadagi barcha tugmalar: menyu (klaviatura) va postlar ostidagi inline tugmalar."""
+    for row in page.get("buttons") or []:
+        yield from row
+    for m in page.get("messages") or []:
+        for row in m.get("buttons") or []:
+            yield from row
 
 
 def menu_media(raw: dict) -> set[int]:

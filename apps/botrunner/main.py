@@ -68,6 +68,8 @@ STATE_TTL = 30 * 24 * 3600
 SEEN_THROTTLE = 600
 NAV_DEPTH = 20
 CANCEL_TEXT = "❌ Bekor qilish"
+NAV_BACK = "⬅️ Orqaga"
+NAV_HOME = "🏠 Bosh menyu"
 
 
 def json_param(value: dict):
@@ -443,67 +445,108 @@ class Runner:
         return vals
 
     # --- Sahifani yuborish ---
+    #
+    # MenuBuilder modeli: «menyu» — klaviatura tugmalari bor sahifa (reply). Tugmasi yo'q sahifa — «barg»:
+    # bosilganda faqat postlari yuboriladi, klaviatura o'zgarmaydi. Har bir postning o'z inline tugmalari bo'lishi
+    # mumkin. «Savol» posti foydalanuvchidan javob kutadi va o'zgaruvchiga saqlaydi. Eski «inline» sahifalar
+    # (keyboard="inline") avvalgidek ishlaydi.
 
-    def _visible(self, bot: RunningBot, page: dict, vals: dict, admin: bool) -> list[list[tuple[int, int, dict]]]:
+    @staticmethod
+    def is_menu(page: dict) -> bool:
+        return page.get("keyboard") == "reply" and bool(page.get("buttons"))
+
+    def _visible(self, bot: RunningBot, page: dict, vals: dict, admin: bool, rows_src: list | None = None, *, editing: bool = False) -> list[list[tuple[int, int, dict]]]:
         rows = []
-        for r, row in enumerate(page.get("buttons") or []):
+        for r, row in enumerate(page.get("buttons") or [] if rows_src is None else rows_src):
             line = []
             for c, b in enumerate(row):
-                if b.get("action") == "webapp" and not bot.webapp_url:
-                    continue
-                if b.get("admin_only") and not admin:
-                    continue
-                if not check_cond(b.get("cond"), vals):
-                    continue
+                if not editing:
+                    if b.get("action") == "webapp" and not bot.webapp_url:
+                        continue
+                    if b.get("hidden"):
+                        continue
+                    if b.get("admin_only") and not admin:
+                        continue
+                    if not check_cond(b.get("cond"), vals):
+                        continue
                 line.append((r, c, b))
             if line:
                 rows.append(line)
         return rows
 
-    def keyboard(self, bot: RunningBot, page: dict, vals: dict, admin: bool = False) -> dict | None:
-        rows = self._visible(bot, page, vals, admin)
-        if not rows:
-            return None
-        label = lambda b: fill(b["text"], vals, escape=False)[:64]  # noqa: E731
-        if page.get("keyboard") == "reply":
-            out = []
-            for row in rows:
-                line = []
-                for _, _, b in row:
-                    item: dict = {"text": label(b)}
-                    if b["action"] == "webapp":
-                        item["web_app"] = {"url": bot.webapp_url}
-                    elif b["action"] == "contact":
-                        item["request_contact"] = True
-                    elif b["action"] == "location":
-                        item["request_location"] = True
-                    line.append(item)
-                out.append(line)
-            markup = {"keyboard": out, "resize_keyboard": True, "is_persistent": True}
-            if page.get("placeholder"):
-                markup["input_field_placeholder"] = fill(page["placeholder"], vals, escape=False)[:64]
-            return markup
-        inline = []
-        for row in rows:
+    @staticmethod
+    def label(b: dict, vals: dict) -> str:
+        return fill(b["text"], vals, escape=False)[:64]
+
+    def inline_rows(self, bot: RunningBot, page: dict, vals: dict, admin: bool, rows_src: list, prefix: str) -> list:
+        out = []
+        for row in self._visible(bot, page, vals, admin, rows_src):
             line = []
             for r, c, b in row:
-                a = b["action"]
+                a, t = b["action"], self.label(b, vals)
                 if a == "url":
-                    line.append({"text": label(b), "url": fill(b["url"], vals, escape=False)})
+                    line.append({"text": t, "url": fill(b["url"], vals, escape=False)})
                 elif a == "webapp":
-                    line.append({"text": label(b), "web_app": {"url": bot.webapp_url}})
+                    line.append({"text": t, "web_app": {"url": bot.webapp_url}})
                 elif a == "share":
                     text = fill(b.get("share_text") or "{ref_link}", vals, escape=False)
                     link = vals.get("ref_link", "")
-                    line.append({"text": label(b), "url": f"https://t.me/share/url?url={quote(link)}&text={quote(text.replace(link, '').strip())}"})
-                elif a == "page":
-                    line.append({"text": label(b), "callback_data": f"p:{b['target']}"})
-                elif a in ("back", "home", "feedback"):
-                    line.append({"text": label(b), "callback_data": {"back": "b", "home": "h", "feedback": "f"}[a]})
+                    line.append({"text": t, "url": f"https://t.me/share/url?url={quote(link)}&text={quote(text.replace(link, '').strip())}"})
+                elif a == "page" and not b.get("need_sub"):
+                    line.append({"text": t, "callback_data": f"p:{b['target']}"})
+                elif a in ("back", "home", "feedback") and not b.get("need_sub"):
+                    line.append({"text": t, "callback_data": {"back": "b", "home": "h", "feedback": "f"}[a]})
                 else:
-                    line.append({"text": label(b), "callback_data": f"x:{page['id']}:{r}:{c}"})
-            inline.append(line)
-        return {"inline_keyboard": inline}
+                    line.append({"text": t, "callback_data": f"{prefix}:{r}:{c}"})
+            out.append(line)
+        return out
+
+    def reply_rows(self, bot: RunningBot, page: dict, vals: dict, admin: bool, *, editing: bool = False, selected: tuple | None = None) -> list:
+        rows = []
+        if page.get("keyboard") != "reply":
+            return rows  # eski inline sahifa: tugmalari xabar ostida
+        for row in self._visible(bot, page, vals, admin, editing=editing):
+            line = []
+            for r, c, b in row:
+                t = self.label(b, vals)
+                if editing:
+                    line.append({"text": f"[ {t} ]"[:64] if selected == (page["id"], r, c) else t})
+                    continue
+                item: dict = {"text": t}
+                if b["action"] == "webapp":
+                    item["web_app"] = {"url": bot.webapp_url}
+                elif b["action"] == "contact":
+                    item["request_contact"] = True
+                elif b["action"] == "location":
+                    item["request_location"] = True
+                line.append(item)
+            rows.append(line)
+        if page["id"] != bot.menu.get("start") and (page.get("nav") or editing):
+            rows.append([{"text": NAV_BACK}, {"text": NAV_HOME}])
+        return rows
+
+    async def menu_markup(self, bot: RunningBot, chat_id: int, page: dict, vals: dict) -> dict | None:
+        """Menyu sahifasining klaviaturasi (adminlarga — muharrir tugmalari bilan)."""
+        admin = self.is_admin(bot, chat_id)
+        mode = await editor.mode(self, bot, chat_id) if admin else None
+        selected = await editor.selected(self, bot, chat_id) if mode == "buttons" else None
+        rows = self.reply_rows(bot, page, vals, admin, editing=mode is not None, selected=selected)
+        if admin:
+            rows += await editor.admin_rows(self, bot, chat_id, mode)
+        if not rows:
+            return {"remove_keyboard": True} if page["id"] == bot.menu.get("start") else None
+        markup = {"keyboard": rows, "resize_keyboard": True, "is_persistent": True}
+        if page.get("placeholder") and not mode:
+            markup["input_field_placeholder"] = fill(page["placeholder"], vals, escape=False)[:64]
+        return markup
+
+    def keyboard(self, bot: RunningBot, page: dict, vals: dict, admin: bool = False) -> dict | None:
+        """Oddiy (adminsiz) klaviatura — sinov va eski kod uchun."""
+        if page.get("keyboard") == "reply":
+            rows = self.reply_rows(bot, page, vals, admin)
+            return {"keyboard": rows, "resize_keyboard": True, "is_persistent": True} if rows else None
+        rows = self.inline_rows(bot, page, vals, admin, page.get("buttons") or [], f"x:{page['id']}")
+        return {"inline_keyboard": rows} if rows else None
 
     async def _photo_arg(self, bot: RunningBot, media_id: int) -> tuple[dict, dict | None]:
         cached = await self.redis.get(_k(bot.bot_id, "file", media_id))
@@ -515,62 +558,101 @@ class Runner:
             return {}, None
         return {}, {"photo": ("photo.jpg", media.data, media.mime)}
 
-    def _page_messages(self, bot: RunningBot, page: dict, vals: dict, user: dict, with_branding: bool) -> list[dict]:
-        """Sahifaning xabarlari: yangi (HTML, istalgan media) yoki eski (oddiy matn + rasm) formatda."""
+    def page_msgs(self, bot: RunningBot, page: dict, vals: dict, user: dict, *, with_branding: bool = False, start: int = 0) -> list[dict]:
+        """Sahifaning postlari (start — savoldan keyin davom ettirish uchun)."""
         if page.get("messages"):
-            msgs = [dict(m, text=fill(m.get("text") or "", vals, escape=True), html=True) for m in page["messages"]]
+            msgs = [dict(m, text=fill(m.get("text") or "", vals, escape=True), html=True, idx=i) for i, m in enumerate(page["messages"])][start:]
+            if page.get("random_post") and start == 0:
+                plain = [m for m in msgs if m["type"] != "question"]
+                if len(plain) > 1:
+                    msgs = [random.choice(plain)]
             brand = html.escape(bot.branding, quote=False) if with_branding and bot.branding else None
         else:
             text = render_text(page["text"], name=user.get("first_name"), username=user.get("username"), bot=bot.name)
             text = fill(text, vals, escape=False)
-            msgs = [{"type": "photo" if page.get("media_id") else "text", "text": text, "media_id": page.get("media_id"), "file_id": None, "html": False}]
+            msgs = [{"type": "photo" if page.get("media_id") else "text", "text": text, "media_id": page.get("media_id"), "file_id": None, "html": False, "idx": None}]
             brand = bot.branding if with_branding and bot.branding else None
-        if brand:
+        if brand and msgs and msgs[-1]["type"] != "question":
             last = msgs[-1]
             if last["type"] in CAPTIONLESS:
-                msgs.append({"type": "text", "text": brand, "html": last.get("html", False), "file_id": None, "media_id": None})
+                msgs.append({"type": "text", "text": brand, "html": last.get("html", False), "file_id": None, "media_id": None, "idx": None})
             else:
                 limit = 4096 if last["type"] == "text" else 1024
                 last["text"] = f"{last['text'][: limit - len(brand) - 2]}\n\n{brand}"
         return msgs
 
-    async def send_msgs(self, bot: RunningBot, chat_id: int, msgs: list[dict], markup: dict | None, *, protect: bool = False) -> dict | None:
-        result = None
-        for i, m in enumerate(msgs):
-            last = i == len(msgs) - 1
-            base: dict = {"chat_id": chat_id}
-            if last and markup:
-                base["reply_markup"] = markup
-            if protect:
-                base["protect_content"] = True
-            parse = {"parse_mode": "HTML"} if m.get("html") else {}
-            kind = m["type"]
-            if kind == "text":
-                limit = 4096
-                result = await self.api(bot, "sendMessage", {**base, "text": m["text"][:limit] or "…", "disable_web_page_preview": True, **parse})
-                continue
-            caption = {"caption": m["text"][:1024], **parse} if kind not in CAPTIONLESS and m.get("text") else {}
-            if kind == "photo" and not m.get("file_id"):
-                photo, files = await self._photo_arg(bot, m["media_id"]) if m.get("media_id") else ({}, None)
-                if not photo and not files:
-                    if m.get("text"):
-                        result = await self.api(bot, "sendMessage", {**base, "text": m["text"], **parse})
-                    continue
-                result = await self.api(bot, "sendPhoto", {**base, **caption, **photo}, files)
-                if files:
-                    await self.redis.set(_k(bot.bot_id, "file", m["media_id"]), result["photo"][-1]["file_id"], ex=STATE_TTL)
-                continue
-            method = "send" + {"video_note": "VideoNote"}.get(kind, kind.capitalize())
-            result = await self.api(bot, method, {**base, kind: m["file_id"], **caption})
-        return result
+    async def send_one(self, bot: RunningBot, chat_id: int, m: dict, markup: dict | None, *, protect: bool = False, edit: dict | None = None) -> dict | None:
+        base: dict = {"chat_id": chat_id}
+        if markup:
+            base["reply_markup"] = markup
+        if protect:
+            base["protect_content"] = True
+        parse = {"parse_mode": "HTML"} if m.get("html") else {}
+        kind = m["type"]
+        if kind == "text":
+            if edit is not None and (markup is None or "inline_keyboard" in markup):
+                try:
+                    return await self.api(
+                        bot,
+                        "editMessageText",
+                        {"chat_id": chat_id, "message_id": edit["message_id"], "text": m["text"][:4096] or "…", "disable_web_page_preview": True,
+                         "reply_markup": markup or {"inline_keyboard": []}, **parse},
+                    )
+                except BotApiError as exc:
+                    if "not modified" in exc.description:
+                        return None
+            return await self.api(bot, "sendMessage", {**base, "text": m["text"][:4096] or "…", "disable_web_page_preview": True, **parse})
+        caption = {"caption": m["text"][:1024], **parse} if kind not in CAPTIONLESS and m.get("text") else {}
+        if kind == "photo" and not m.get("file_id"):
+            photo, files = await self._photo_arg(bot, m["media_id"]) if m.get("media_id") else ({}, None)
+            if not photo and not files:
+                return await self.api(bot, "sendMessage", {**base, "text": m.get("text") or "…", **parse})
+            result = await self.api(bot, "sendPhoto", {**base, **caption, **photo}, files)
+            if files:
+                await self.redis.set(_k(bot.bot_id, "file", m["media_id"]), result["photo"][-1]["file_id"], ex=STATE_TTL)
+            return result
+        method = "send" + {"video_note": "VideoNote"}.get(kind, kind.capitalize())
+        return await self.api(bot, method, {**base, kind: m["file_id"], **caption})
+
+    async def deliver(
+        self, bot: RunningBot, chat_id: int, page: dict, user: dict, vals: dict, *,
+        message: dict | None = None, with_branding: bool = False, start: int = 0, restore: bool = False,
+    ) -> None:
+        """Sahifa postlarini ketma-ket yuboradi; menyu bo'lsa — klaviaturasi bilan."""
+        admin = self.is_admin(bot, chat_id)
+        if admin and start == 0 and await editor.mode(self, bot, chat_id) == "posts":
+            await editor.show_posts(self, bot, chat_id, page, user)
+            return
+        msgs = self.page_msgs(bot, page, vals, user, with_branding=with_branding, start=start)
+        legacy_inline = page.get("keyboard") != "reply"
+        reply = None
+        if not legacy_inline or (admin and page["id"] == bot.menu.get("start")):
+            if self.is_menu(page) or page["id"] == bot.menu.get("start"):
+                reply = await self.menu_markup(bot, chat_id, page, vals)
+            elif restore:
+                cur = await self.current_page(bot, chat_id)
+                reply = await self.menu_markup(bot, chat_id, cur, vals) if cur else None
+        reply_sent = False
+        protect = bool(page.get("protect"))
+        edit = message if message is not None and len(msgs) == 1 and "text" in message else None
+        for k, m in enumerate(msgs):
+            if m["type"] == "question":
+                await self.ask_question(bot, chat_id, page, m)
+                return
+            last = k == len(msgs) - 1
+            inline = self.inline_rows(bot, page, vals, admin, m.get("buttons") or [], f"y:{page['id']}:{m['idx']}") if m.get("buttons") else []
+            if last and legacy_inline:
+                inline = inline + self.inline_rows(bot, page, vals, admin, page.get("buttons") or [], f"x:{page['id']}")
+            markup = {"inline_keyboard": inline} if inline else None
+            if last and reply and not inline:
+                markup, reply_sent = reply, True
+            await self.send_one(bot, chat_id, m, markup, protect=protect, edit=edit if markup is None or "inline_keyboard" in markup else None)
+        if reply and not reply_sent:
+            await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": f"📂 {page['title']}" if msgs else "✅", "reply_markup": reply})
 
     async def send_page(self, bot: RunningBot, chat_id: int, page: dict, user: dict, *, with_branding: bool = False, vals: dict | None = None) -> None:
         vals = vals if vals is not None else await self.values(bot, user, need_subs=self._needs_subs(page))
-        admin = self.is_admin(bot, chat_id)
-        msgs = self._page_messages(bot, page, vals, user, with_branding)
-        await self.send_msgs(bot, chat_id, msgs, self.keyboard(bot, page, vals, admin), protect=bool(page.get("protect")))
-        if admin:
-            await editor.after_page(self, bot, chat_id, page)
+        await self.deliver(bot, chat_id, page, user, vals, with_branding=with_branding)
 
     @staticmethod
     def _needs_subs(page: dict) -> bool:
@@ -585,14 +667,12 @@ class Runner:
                 who += f" (@{user['username']})"
             for admin_chat in self.admin_chats(bot):
                 try:
-                    await self.api(bot, "sendMessage", {"chat_id": admin_chat, "text": f"👁 {who} [{user['id']}] «{page['title']}» sahifasini ochdi"})
+                    await self.api(bot, "sendMessage", {"chat_id": admin_chat, "text": f"👁 {who} [{user['id']}] «{page['title']}» bo'limini ochdi"})
                 except BotApiError:
                     pass
 
-    async def open_page(self, bot: RunningBot, chat_id: int, page_id: str, user: dict, *, message: dict | None = None, push: bool = True) -> None:
-        page = page_by_id(bot.menu, page_id) or page_by_id(bot.menu, bot.menu.get("start"))
-        if page is None:
-            return
+    async def enter(self, bot: RunningBot, chat_id: int, page: dict, *, push: bool = True) -> None:
+        """Joriy menyuni o'zgartiradi (Orqaga uchun tarix bilan)."""
         cur_key, nav_key = _k(bot.bot_id, "cur", chat_id), _k(bot.bot_id, "nav", chat_id)
         current = await self.redis.get(cur_key)
         current = current.decode() if current else None
@@ -601,40 +681,80 @@ class Runner:
             await self.redis.ltrim(nav_key, -NAV_DEPTH, -1)
             await self.redis.expire(nav_key, STATE_TTL)
         await self.redis.set(cur_key, page["id"], ex=STATE_TTL)
+
+    async def open_page(self, bot: RunningBot, chat_id: int, page_id: str, user: dict, *, message: dict | None = None, push: bool = True) -> None:
+        page = page_by_id(bot.menu, page_id) or page_by_id(bot.menu, bot.menu.get("start"))
+        if page is None:
+            return
+        # Menyu (yoki eski inline sahifa) — joriy joy o'zgaradi; «barg» — faqat postlari chiqadi
+        inav, leaf = _k(bot.bot_id, "inav", chat_id), _k(bot.bot_id, "leaf", chat_id)
+        if self.is_menu(page) or page["id"] == bot.menu.get("start"):
+            await self.enter(bot, chat_id, page, push=push)
+            await self.redis.delete(inav, leaf)
+        else:
+            # Post ostidagi tugmalar orqali yurish tarixi (inline «⬅️ Orqaga» uchun)
+            if message is not None and push:
+                prev = await self.redis.get(leaf)
+                if prev and prev.decode() != page["id"]:
+                    await self.redis.rpush(inav, prev)
+                    await self.redis.ltrim(inav, -NAV_DEPTH, -1)
+                    await self.redis.expire(inav, STATE_TTL)
+            await self.redis.set(leaf, page["id"], ex=STATE_TTL)
         vals = await self.values(bot, user, need_subs=self._needs_subs(page))
         await self._on_open(bot, chat_id, page, user, vals)
-        await self.show_page(bot, chat_id, page, user, vals, message=message)
+        await self.deliver(bot, chat_id, page, user, vals, message=message)
 
     async def show_page(self, bot: RunningBot, chat_id: int, page: dict, user: dict, vals: dict, *, message: dict | None = None) -> None:
-        """Inline menyuda bitta matnli xabardan iborat sahifa joyida tahrirlanadi (chat to'lib ketmaydi)."""
-        msgs = self._page_messages(bot, page, vals, user, False)
-        admin = self.is_admin(bot, chat_id)
-        if (
-            message is not None
-            and page.get("keyboard") != "reply"
-            and len(msgs) == 1
-            and msgs[0]["type"] == "text"
-            and "text" in message
-            and not (admin and await editor.editing(self, bot, chat_id))
-        ):
-            try:
-                data = {
-                    "chat_id": chat_id,
-                    "message_id": message["message_id"],
-                    "text": msgs[0]["text"][:4096],
-                    "reply_markup": self.keyboard(bot, page, vals, admin) or {"inline_keyboard": []},
-                    "disable_web_page_preview": True,
-                }
-                if msgs[0].get("html"):
-                    data["parse_mode"] = "HTML"
-                await self.api(bot, "editMessageText", data)
-                return
-            except BotApiError as exc:
-                if "not modified" in exc.description:
-                    return
-        await self.send_msgs(bot, chat_id, msgs, self.keyboard(bot, page, vals, admin), protect=bool(page.get("protect")))
-        if admin:
-            await editor.after_page(self, bot, chat_id, page)
+        await self.deliver(bot, chat_id, page, user, vals, message=message)
+
+    # --- Postdagi savol ---
+
+    async def ask_question(self, bot: RunningBot, chat_id: int, page: dict, m: dict) -> None:
+        await self.redis.set(_k(bot.bot_id, "q", chat_id), json.dumps({"p": page["id"], "i": m["idx"]}), ex=STATE_TTL)
+        rows: list[list[dict]] = []
+        kind = m.get("input", "text")
+        if kind == "choice":
+            opts = m.get("options") or []
+            rows = [[{"text": o} for o in opts[i : i + 2]] for i in range(0, len(opts), 2)]
+        elif kind == "phone":
+            rows = [[{"text": "📱 Raqamni yuborish", "request_contact": True}]]
+        elif kind == "location":
+            rows = [[{"text": "📍 Joylashuvni yuborish", "request_location": True}]]
+        rows.append([{"text": CANCEL_TEXT}])
+        await self.api(
+            bot,
+            "sendMessage",
+            {"chat_id": chat_id, "text": m["text"] or "❓", "parse_mode": "HTML", "reply_markup": {"keyboard": rows, "resize_keyboard": True}},
+        )
+
+    async def on_question(self, bot: RunningBot, chat_id: int, message: dict, user: dict, state: dict) -> None:
+        page = page_by_id(bot.menu, state.get("p"))
+        msgs = (page or {}).get("messages") or []
+        i = state.get("i")
+        if page is None or i is None or i >= len(msgs) or msgs[i].get("type") != "question":
+            await self.redis.delete(_k(bot.bot_id, "q", chat_id))
+            return
+        q = msgs[i]
+        vals = await self.values(bot, user)
+        if (message.get("text") or "").strip() in (CANCEL_TEXT, "/cancel"):
+            await self.redis.delete(_k(bot.bot_id, "q", chat_id))
+            cur = await self.current_page(bot, chat_id)
+            markup = await self.menu_markup(bot, chat_id, cur, vals) if cur else None
+            await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": "❌ Bekor qilindi.", "reply_markup": markup or {"remove_keyboard": True}})
+            return
+        value, error = self._form_answer({"type": q.get("input", "text"), "options": q.get("options") or []}, message)
+        if value is None:
+            await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": error})
+            return
+        await self.redis.delete(_k(bot.bot_id, "q", chat_id))
+        await self.set_vars(bot, user["id"], {q["var"]: value})
+        vals[q["var"]] = value
+        if i + 1 >= len(msgs):
+            cur = page if self.is_menu(page) else await self.current_page(bot, chat_id)
+            markup = await self.menu_markup(bot, chat_id, cur, vals) if cur else None
+            await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": "✅ Qabul qilindi", "reply_markup": markup or {"remove_keyboard": True}})
+            return
+        await self.deliver(bot, chat_id, page, user, vals, start=i + 1, restore=True)
 
     async def current_page(self, bot: RunningBot, chat_id: int) -> dict | None:
         current = await self.redis.get(_k(bot.bot_id, "cur", chat_id))
@@ -668,6 +788,12 @@ class Runner:
     ) -> None:
         action = button["action"]
         target = button.get("target")
+        if button.get("need_sub") and not self.is_admin(bot, chat_id):
+            missing = await self.missing_channels(bot, user["id"], fresh=True)
+            if missing:
+                await self.answer(bot, query_id, "❗ Avval kanallarga obuna bo'ling", alert=True)
+                await self.ask_subscribe(bot, chat_id, missing)
+                return
         if action == "page":
             await self.answer(bot, query_id)
             await self.open_page(bot, chat_id, target, user, message=message)
@@ -993,13 +1119,28 @@ class Runner:
             await self.open_page(bot, chat_id, data[2:], user, message=message)
         elif data == "b":
             await self.answer(bot, query["id"])
-            await self.go_back(bot, chat_id, user, message)
+            prev = await self.redis.rpop(_k(bot.bot_id, "inav", chat_id))
+            if prev:
+                await self.open_page(bot, chat_id, prev.decode(), user, message=message, push=False)
+            else:
+                await self.go_back(bot, chat_id, user, message)
         elif data == "h":
             await self.answer(bot, query["id"])
             await self.go_home(bot, chat_id, user, message)
         elif data == "f":
             await self.answer(bot, query["id"])
             await self.ask_feedback(bot, chat_id)
+        elif data.startswith("y:"):
+            try:
+                _, page_id, i, r, c = data.split(":")
+                page = page_by_id(bot.menu, page_id)
+                button = page["messages"][int(i)]["buttons"][int(r)][int(c)] if page else None
+            except (ValueError, IndexError, KeyError):
+                button = None
+            if button is None:
+                await self.answer(bot, query["id"], "Bu tugma eskirgan — /start")
+                return
+            await self.run_action(bot, chat_id, button, user, message, query_id=query["id"])
         elif data.startswith("x:"):
             try:
                 _, page_id, r, c = data.split(":")
@@ -1061,6 +1202,12 @@ class Runner:
         if sub["banned"]:
             return
 
+        # Postdagi savolga javob kutilmoqda
+        q_state = await self.redis.get(_k(bot.bot_id, "q", chat_id))
+        if q_state:
+            await self.on_question(bot, chat_id, message, user, json.loads(q_state))
+            return
+
         # Forma to'ldirilmoqda
         form_state = await self.redis.get(_k(bot.bot_id, "form", chat_id))
         if form_state:
@@ -1114,6 +1261,12 @@ class Runner:
                 await self.redis.set(_k(bot.bot_id, "cur", chat_id), page_id, ex=STATE_TTL)
                 await self.run_action(bot, chat_id, button, user, None)
                 return
+            if text == NAV_BACK:
+                await self.go_back(bot, chat_id, user, None)
+                return
+            if text == NAV_HOME:
+                await self.go_home(bot, chat_id, user, None)
+                return
             if await self.on_keyword(bot, chat_id, text, user, vals):
                 return
         # Qayta aloqa rejimi: menyuda yo'q har qanday xabar (matn, rasm, ovoz...) egasiga boradi.
@@ -1128,7 +1281,7 @@ class Runner:
         sub = await self.subscriber(bot, user["id"])
         if sub["banned"]:
             return
-        await self.redis.delete(*(_k(bot.bot_id, kind, chat_id) for kind in ("st", "nav", "cur", "form", "ask")))
+        await self.redis.delete(*(_k(bot.bot_id, kind, chat_id) for kind in ("st", "nav", "cur", "form", "ask", "q")))
         if is_new and payload.startswith("r") and payload[1:].isdigit():
             await self.on_referral(bot, user, int(payload[1:]))
         if chat_id == bot.owner_chat_id:

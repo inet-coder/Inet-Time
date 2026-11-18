@@ -1,7 +1,7 @@
 """Bot konstruktori uchun tayyor shablonlar.
 
 Har bir shablon — to'liq ishlaydigan menyu (core/botbuilder.py formatida). Foydalanuvchi shablonni tanlab
-bot yaratadi, keyin matn va tugmalarni o'z botining /admin panelidan o'zgartiradi.
+bot yaratadi, keyin botning o'zida (🎛 Tugmalar / 📝 Postlar muharriri) o'zgartiradi.
 Matnlardagi «...» — egasi to'ldirishi kerak bo'lgan joylar."""
 
 
@@ -32,6 +32,7 @@ TEMPLATES: dict[str, dict] = {
                     "Bosh menyu",
                     "Assalomu alaykum, {name}! 👋\n\n{bot} ga xush kelibsiz.",
                     [[_b("✍️ Biz bilan bog'lanish", "feedback")]],
+                    keyboard="reply",
                 )
             ],
         },

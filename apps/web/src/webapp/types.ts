@@ -4,7 +4,8 @@ export type ActionType = "none" | "page" | "url" | "bot" | "phone" | "share" | "
 export type WAAction = { type: ActionType; page?: string | null; url?: string | null; phone?: string | null };
 export type WABtn = { text: string; action: WAAction };
 
-export type Anim = "none" | "fade" | "up" | "zoom" | "left" | "right";
+export type Anim = "none" | "fade" | "up" | "down" | "zoom" | "zoomout" | "left" | "right" | "flip" | "blur" | "rotate";
+export type Loop = "none" | "float" | "pulse" | "spin" | "shake" | "bounce" | "glow" | "wiggle" | "breathe";
 
 /** Uslub — har qanday blok yoki element uchun. Hammasi ixtiyoriy. */
 export type WAStyle = {
@@ -24,7 +25,7 @@ export type WAStyle = {
   border?: number | null;
   border_color?: string | null;
   radius?: number | null;
-  shadow?: "none" | "s" | "m" | "l" | "glow" | null;
+  shadow?: "none" | "s" | "m" | "l" | "xl" | "glow" | "inner" | "hard" | null;
   opacity?: number | null;
   font?: string | null;
   size?: number | null;
@@ -33,6 +34,42 @@ export type WAStyle = {
   line?: number | null;
   letter?: number | null;
   uppercase?: boolean;
+  italic?: boolean;
+  decoration?: "underline" | "line-through" | null;
+  clamp?: number | null;
+  nowrap?: boolean;
+  text_grad?: string | null;
+  text_grad2?: string | null;
+  w?: number | null;
+  w_pct?: number | null;
+  h?: number | null;
+  aspect?: "1:1" | "4:3" | "3:2" | "16:9" | "21:9" | "3:4" | "2:3" | "9:16" | null;
+  grow?: boolean;
+  self_align?: "start" | "center" | "end" | "stretch" | null;
+  overflow?: "hidden" | "visible" | "scroll" | null;
+  pos?: "relative" | "absolute" | "sticky" | "fixed" | null;
+  top?: number | null;
+  right?: number | null;
+  bottom?: number | null;
+  left?: number | null;
+  z?: number | null;
+  rotate?: number | null;
+  scale?: number | null;
+  tx?: number | null;
+  ty?: number | null;
+  skew?: number | null;
+  bg_type?: "linear" | "radial" | "conic" | null;
+  bg_alpha?: number | null;
+  bg_size?: "cover" | "contain" | "tile" | null;
+  blur?: number | null;
+  backdrop?: number | null;
+  bright?: number | null;
+  gray?: number | null;
+  border_style?: "solid" | "dashed" | "dotted" | "double" | null;
+  shadow_color?: string | null;
+  gap?: number | null;
+  span?: number | null;
+  row_span?: number | null;
 };
 
 export type WAQuery = {
@@ -46,11 +83,28 @@ export type WAQuery = {
   empty_text: string;
 };
 
-type NodeBase = { id: string; hidden?: boolean; style?: WAStyle | null; wide?: WAStyle | null; anim?: Anim };
+type NodeBase = {
+  id: string;
+  name?: string;
+  hidden?: boolean;
+  style?: WAStyle | null;
+  wide?: WAStyle | null;
+  hover?: WAStyle | null;
+  anim?: Anim;
+  delay?: number;
+  loop?: Loop;
+};
+export type BoxLayout = "column" | "row" | "grid" | "scroll" | "stack" | "tabs" | "accordion" | "marquee";
 export type BoxNode = NodeBase & {
   kind: "box";
-  layout: "column" | "row" | "grid";
+  layout: BoxLayout;
   gap: number;
+  item_w?: number | null;
+  autoplay?: number;
+  dots?: boolean;
+  tabs_style?: "pills" | "underline" | "segmented";
+  open_first?: boolean;
+  speed?: number;
   align: "start" | "center" | "end" | "stretch";
   justify: "start" | "center" | "end" | "between" | "around";
   wrap: boolean;
@@ -79,7 +133,32 @@ export type ButtonNode = NodeBase & {
 export type IconNode = NodeBase & { kind: "icon"; icon: string; size: number; emoji: string; action?: WAAction | null };
 export type SpacerNode = NodeBase & { kind: "spacer"; size: number };
 export type DividerNode = NodeBase & { kind: "divider" };
-export type WANode = BoxNode | TextNode | ImageNode | ButtonNode | IconNode | SpacerNode | DividerNode;
+export type VideoNode = NodeBase & { kind: "video"; url: string };
+export type ProgressNode = NodeBase & {
+  kind: "progress";
+  value: number;
+  label: string;
+  show_value: boolean;
+  bar?: string | null;
+  thickness: number;
+  shape: "bar" | "ring";
+};
+export type RatingNode = NodeBase & { kind: "rating"; value: number; size: number; star?: string | null; show_value: boolean };
+export type TimerNode = NodeBase & { kind: "timer"; until: string; done_text: string; labels: boolean };
+export type MapNode = NodeBase & { kind: "map"; query: string; zoom: number; height: number };
+export type WANode =
+  | BoxNode
+  | TextNode
+  | ImageNode
+  | ButtonNode
+  | IconNode
+  | SpacerNode
+  | DividerNode
+  | VideoNode
+  | ProgressNode
+  | RatingNode
+  | TimerNode
+  | MapNode;
 export type NodeKind = WANode["kind"];
 
 type Base = { id: string; hidden?: boolean; style?: WAStyle | null; anim?: Anim };

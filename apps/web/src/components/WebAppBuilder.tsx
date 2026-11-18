@@ -6,6 +6,8 @@ import {
   ArrowRight,
   ArrowUp,
   Copy,
+  ChevronRight,
+  Library,
   Database,
   ExternalLink,
   Eye,
@@ -33,9 +35,10 @@ import { confirmDialog, haptic, tg } from "../tg";
 import { WebAppRuntime, type RuntimeProps } from "../webapp/Runtime";
 import { clearDataCache, type DataLoader } from "../webapp/data";
 import { BLOCK_SPECS, CATEGORIES, FORM_FIELD_SPEC, cloneBlock, newBlock, newField } from "../webapp/specs";
-import { formatMoney, uid, type AppDoc, type BlockType, type WABlock, type WANode, type WAPage, type WAStyle } from "../webapp/types";
+import { formatMoney, uid, type AppDoc, type BlockType, type BoxNode, type WABlock, type WANode, type WAPage, type WAStyle } from "../webapp/types";
 import { fontStack, useGoogleFonts } from "../webapp/nodes";
-import { cloneNode, SECTIONS, type SectionPreset } from "../webapp/sections";
+import { cloneNode, LIBRARY } from "../webapp/library";
+import { ComponentGallery } from "./ComponentGallery";
 import { AnimField, CustomEditor, locate, StyleEditor } from "./DesignEditor";
 import {
   CollectionBlockEditor,
@@ -184,6 +187,7 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
   const [pageId, setPageId] = useState(doc.start);
   const [editing, setEditing] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
+  const [gallery, setGallery] = useState(false);
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
   const previewLoader = useMemo<DataLoader>(
@@ -373,14 +377,15 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
     setEditing(block.id);
   };
 
-  const addCustom = (preset: SectionPreset) => {
+  const addCustom = (root: BoxNode, title: string) => {
     if (page.blocks.length >= state.limits.blocks) {
       toast(`Bitta sahifada ko'pi bilan ${state.limits.blocks} ta blok`, "err");
       return;
     }
-    const block = { ...newBlock("custom"), name: preset.title, root: preset.make() } as WABlock;
+    const block = { ...newBlock("custom"), name: title.slice(0, 60), root } as WABlock;
     updatePage((p) => p.blocks.push(block));
     setPalette(false);
+    setGallery(false);
     setEditing(block.id);
     setSelectedNode(null);
   };
@@ -419,7 +424,7 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
           update={update}
           updatePage={updatePage}
           onEdit={setEditing}
-          onAdd={() => setPalette(true)}
+          onAdd={() => (setEditing(null), setPalette(true))}
           maxPages={state.limits.pages}
           botUsername={state.bot_username}
           livePreview={!desktop}
@@ -658,7 +663,7 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
                     <X size={18} />
                   </button>
                 </div>
-                <Palette onAdd={addBlock} onAddCustom={addCustom} compact />
+                <Palette onAdd={addBlock} onAddCustom={addCustom} onGallery={() => setGallery(true)} compact />
               </div>
             ) : (
               <div className="wb-right__empty">
@@ -691,11 +696,21 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
 
       {!desktop && palette && (
         <Sheet title="Blok qo'shish" icon={<Plus size={20} />} onClose={() => setPalette(false)}>
-          <Palette onAdd={addBlock} onAddCustom={addCustom} />
+          <Palette onAdd={addBlock} onAddCustom={addCustom} onGallery={() => setGallery(true)} />
         </Sheet>
       )}
 
       {!desktop && blockEditor}
+
+      {gallery && (
+        <ComponentGallery
+          theme={doc.theme}
+          mediaSrc={mediaUrl}
+          target={`«${page.title}» sahifasiga yangi bo'lim sifatida qo'shiladi`}
+          onClose={() => setGallery(false)}
+          onPick={addCustom}
+        />
+      )}
 
       {preview && !desktop && (
         <div className="wb-preview">
@@ -725,15 +740,37 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
   );
 }
 
-function Palette({ onAdd, onAddCustom, compact = false }: { onAdd: (t: BlockType) => void; onAddCustom: (p: SectionPreset) => void; compact?: boolean }) {
+function Palette({
+  onAdd,
+  onAddCustom,
+  onGallery,
+  compact = false,
+}: {
+  onAdd: (t: BlockType) => void;
+  onAddCustom: (root: BoxNode, title: string) => void;
+  onGallery: () => void;
+  compact?: boolean;
+}) {
+  const quick = ["empty", "hero-gradient", "card-product", "promo-slider", "faq", "pricing3"]
+    .map((k) => LIBRARY.find((i) => i.key === k))
+    .filter((i): i is (typeof LIBRARY)[number] => !!i);
   return (
     <div className="stack">
+      <button className="wb-libcta" onClick={onGallery}>
+        <span className="wb-libcta__icon">
+          <Library size={22} />
+        </span>
+        <span>
+          <b>Komponentlar kutubxonasi</b>
+          <span className="hint">{LIBRARY.length}+ tayyor komponent — jonli ko'rinishda tanlang, keyin har bir qismini o'zgartiring</span>
+        </span>
+        <ChevronRight size={18} />
+      </button>
       <div className="stack wb-palette">
-        <span className="label">Erkin dizayn — istalgan ko'rinish</span>
+        <span className="label">Erkin dizayn — tez boshlash</span>
         <div className={`wb-palette__grid ${compact ? "wb-palette__grid--compact" : ""}`}>
-          {SECTIONS.map((p) => (
-            <button key={p.key} className="wb-palette__item wb-palette__item--free" onClick={() => onAddCustom(p)}>
-              <span className="wb-palette__icon">{p.icon}</span>
+          {quick.map((p) => (
+            <button key={p.key} className="wb-palette__item wb-palette__item--free" onClick={() => onAddCustom(p.make(), p.title)}>
               <b>{p.title}</b>
               <span className="hint">{p.desc}</span>
             </button>
@@ -1035,6 +1072,8 @@ function BlockSheet({
             ctx={ctx}
             clipboard={clipboard}
             setClipboard={setClipboard}
+            theme={doc.theme}
+            mediaSrc={mediaUrl}
           />
         ) : (
           <>

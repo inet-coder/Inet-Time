@@ -2,7 +2,19 @@ import { X } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { backButtonSupported, tg } from "../tg";
 
-export function Sheet({ title, icon, onClose, children }: { title: string; icon?: ReactNode; onClose: () => void; children: ReactNode }) {
+export function Sheet({
+  title,
+  icon,
+  onClose,
+  children,
+  wide = false,
+}: {
+  title: string;
+  icon?: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+  wide?: boolean;
+}) {
   useEffect(() => {
     // Telegram'ning o'z "orqaga" tugmasi ham oynani yopsin.
     if (!backButtonSupported()) return;
@@ -16,7 +28,7 @@ export function Sheet({ title, icon, onClose, children }: { title: string; icon?
 
   return (
     <div className="sheet" onClick={onClose}>
-      <div className="sheet__panel" onClick={(e) => e.stopPropagation()}>
+      <div className={`sheet__panel ${wide ? "sheet__panel--wide" : ""}`} onClick={(e) => e.stopPropagation()}>
         <div className="sheet__handle" />
         <div className="sheet__header">
           {icon}

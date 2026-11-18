@@ -30,6 +30,12 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
     ro'yxat / to'r, saralash, filtr, qidiruv), erkin konteynerni to'plamdan takrorlash, `{{maydon}}`
     o'zgaruvchilari, rasmni maydonga bog'lash, batafsil sahifalar (bir bosishda yaratiladi), formalar
     to'plamga yozadi
+  - **Komponentlar kutubxonasi**: 75 ta tayyor komponent (15 toifa) — jonli ko'rinishda tanlanadi, istalgan
+    joyga qo'yiladi va har bir qismi o'zgaradi; «Mening komponentlarim» — o'z dizayningizni saqlab, istalgan
+    ilovada qayta ishlatish. Karusel, qatlamlar, yorliqlar, akkordeon, yuguruvchi lenta; video, progress,
+    reyting, taymer, xarita. Mavzu ranglari, erkin joylashuv, transformatsiya, filtrlar, «shisha» effekti,
+    matn gradienti, hover holati, 11 paydo bo'lish va 8 doimiy animatsiya; qatlamlarni sudrab ko'chirish.
+    Reja: [docs/webapp-roadmap.md](docs/webapp-roadmap.md)
 
 **👤 Profil xizmatlari** (asosiy menyuda alohida bo'lim):
 

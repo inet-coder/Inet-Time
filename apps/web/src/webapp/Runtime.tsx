@@ -29,8 +29,9 @@ import {
   type WABlock,
   type WAPage,
   type WATheme,
+  type BoxNode,
 } from "./types";
-import { CustomView, collectFonts, cssRule, fontStack, useAppear, useGoogleFonts, type NodeCtx } from "./nodes";
+import { CustomView, collectFonts, cssRule, fontStack, useAppear, useGoogleFonts, useNow, type NodeCtx } from "./nodes";
 import { fillTemplate, RecordContext, SearchBox, useDebounced, useFill, useRecord, useRecords, type DataLoader, type Rec } from "./data";
 import "./runtime.css";
 
@@ -770,15 +771,6 @@ function FaqItem({ q, a }: { q: string; a: string }) {
   );
 }
 
-function useNow(ms: number): number {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(t);
-  }, [ms]);
-  return now;
-}
-
 function CountdownView({ title, date, done }: { title: string; date: string; done: string }) {
   const now = useNow(1000);
   const target = new Date(date).getTime();
@@ -1123,5 +1115,25 @@ function CollectionView({ block, ctx }: { block: Extract<WABlock, { type: "colle
         </div>
       )}
     </section>
+  );
+}
+
+/** Kutubxona uchun kichik ko'rinish: bitta erkin bo'lim, ilova mavzusida. */
+export function NodePreview({ root, theme, mediaSrc }: { root: BoxNode; theme: WATheme; mediaSrc: (id: number) => string }) {
+  useGoogleFonts(collectFonts(root));
+  const ctx: NodeCtx = {
+    blockId: `pv-${root.id}`,
+    mediaSrc,
+    recordMedia: mediaSrc,
+    runAction: () => undefined,
+    placeholders: true,
+    Rich,
+  };
+  return (
+    <div className="wa wa--preview wa-mini" style={themeStyle(theme, false)}>
+      <div className="wa-mini__inner">
+        <CustomView blockId={`pv-${root.id}`} root={root} ctx={ctx} />
+      </div>
+    </div>
   );
 }

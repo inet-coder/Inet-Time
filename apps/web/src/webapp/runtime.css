@@ -1086,6 +1086,26 @@ img.wa-n {
 .wa-anim--zoom {
   transform: scale(0.94);
 }
+.wa-anim--down {
+  transform: translateY(-26px);
+}
+.wa-anim--zoomout {
+  transform: scale(1.08);
+}
+.wa-anim--flip {
+  transform: perspective(800px) rotateX(24deg);
+  transform-origin: 50% 0;
+}
+.wa-anim--rotate {
+  transform: rotate(-6deg) scale(0.96);
+}
+.wa-anim--blur {
+  filter: blur(10px);
+  transition: opacity 0.7s ease, transform 0.7s ease, filter 0.7s ease;
+}
+.wa-anim--blur.is-in {
+  filter: none;
+}
 .wa-anim.is-in {
   opacity: 1;
   transform: none;
@@ -1221,4 +1241,386 @@ img.wa-n {
 }
 .wa-item__ph {
   opacity: 0.35;
+}
+
+/* --- 1.2: kreativ dizayn --- */
+.wa-n--box {
+  position: relative;
+}
+.wa-n.has-hover {
+  transition: background 0.22s ease, color 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, scale 0.22s ease,
+    translate 0.22s ease, rotate 0.22s ease, opacity 0.6s ease, filter 0.22s ease, transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.wa-n.has-hover.is-in {
+  transition: background 0.22s ease, color 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, scale 0.22s ease,
+    translate 0.22s ease, rotate 0.22s ease, opacity 0.22s ease, filter 0.22s ease, transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.wa--preview {
+  /* fixed elementlar konstruktorda telefon ramkasidan chiqib ketmasin */
+  transform: translateZ(0);
+}
+
+/* Doimiy animatsiyalar */
+.wa-loop--float {
+  animation: wa-float 3.2s ease-in-out infinite;
+}
+.wa-loop--pulse {
+  animation: wa-pulse 1.8s ease-in-out infinite;
+}
+.wa-loop--spin {
+  animation: wa-rot 8s linear infinite;
+}
+.wa-loop--shake {
+  animation: wa-shake 3s ease-in-out infinite;
+}
+.wa-loop--bounce {
+  animation: wa-bounce 1.6s cubic-bezier(0.3, 0, 0.3, 1) infinite;
+}
+.wa-loop--glow {
+  animation: wa-glow 2.2s ease-out infinite;
+}
+.wa-loop--wiggle {
+  animation: wa-wiggle 2.4s ease-in-out infinite;
+}
+.wa-loop--breathe {
+  animation: wa-breathe 3.6s ease-in-out infinite;
+}
+@keyframes wa-float {
+  50% {
+    transform: translateY(-10px);
+  }
+}
+@keyframes wa-pulse {
+  50% {
+    transform: scale(1.06);
+  }
+}
+@keyframes wa-rot {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes wa-shake {
+  0%, 84%, 100% {
+    transform: none;
+  }
+  87%, 93% {
+    transform: translateX(-4px);
+  }
+  90%, 96% {
+    transform: translateX(4px);
+  }
+}
+@keyframes wa-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(-14px);
+  }
+  65% {
+    transform: translateY(0);
+  }
+  80% {
+    transform: translateY(-5px);
+  }
+}
+@keyframes wa-glow {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--wa-primary) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 16px transparent;
+  }
+}
+@keyframes wa-wiggle {
+  0%, 100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-4deg);
+  }
+  75% {
+    transform: rotate(4deg);
+  }
+}
+@keyframes wa-breathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+@keyframes wa-mq {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wa-loop,
+  .wa-mq {
+    animation: none !important;
+  }
+}
+
+/* Yorliqlar */
+.wa-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.wa-tabs::-webkit-scrollbar {
+  display: none;
+}
+.wa-tabs button {
+  flex: 0 0 auto;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wa-text) 7%, transparent);
+  color: var(--wa-text);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+}
+.wa-tabs--pills button.is-on {
+  background: var(--wa-primary);
+  color: var(--wa-on-primary, #fff);
+}
+.wa-tabs--underline {
+  gap: 18px;
+  border-bottom: 1px solid var(--wa-line);
+}
+.wa-tabs--underline button {
+  background: none;
+  border-radius: 0;
+  padding: 10px 2px;
+  color: var(--wa-hint);
+  box-shadow: inset 0 -2px 0 transparent;
+}
+.wa-tabs--underline button.is-on {
+  color: var(--wa-text);
+  box-shadow: inset 0 -2px 0 var(--wa-primary);
+}
+.wa-tabs--segmented {
+  padding: 4px;
+  gap: 4px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--wa-text) 7%, transparent);
+}
+.wa-tabs--segmented button {
+  flex: 1 0 auto;
+  border-radius: 10px;
+  background: none;
+}
+.wa-tabs--segmented button.is-on {
+  background: var(--wa-surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+/* Akkordeon */
+.wa-acc {
+  border-radius: 14px;
+  background: var(--wa-surface);
+  border: 1px solid var(--wa-line);
+  overflow: hidden;
+}
+.wa .wa-acc__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  background: none;
+  color: var(--wa-text);
+  font: inherit;
+  font-weight: 650;
+  font-size: 15px;
+  padding: 14px 16px;
+  text-align: left;
+  cursor: pointer;
+}
+.wa-acc__head svg {
+  flex-shrink: 0;
+  color: var(--wa-hint);
+  transition: rotate 0.2s;
+}
+.wa-acc.is-open .wa-acc__head svg {
+  rotate: 180deg;
+}
+.wa-acc__body {
+  padding: 0 16px 16px;
+  animation: wa-acc-in 0.22s ease;
+}
+@keyframes wa-acc-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* Karusel nuqtalari */
+.wa-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.wa-dots button {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--wa-text) 22%, transparent);
+  cursor: pointer;
+  transition: width 0.2s, background 0.2s;
+}
+.wa-dots button.is-on {
+  width: 20px;
+  background: var(--wa-primary);
+}
+
+/* Video, xarita */
+.wa-n-video {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;
+}
+.wa-n-video iframe,
+.wa-n-map iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.wa-n-map {
+  border-radius: 16px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--wa-text) 6%, transparent);
+}
+.wa-n-video.is-locked iframe,
+.wa-n-map.is-locked iframe {
+  pointer-events: none;
+}
+
+/* Progress */
+.wa-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wa-progress__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 14px;
+}
+.wa-progress__track {
+  display: block;
+  width: 100%;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--wa-text) 10%, transparent);
+  overflow: hidden;
+}
+.wa-progress__track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.wa-progress--ring {
+  align-items: center;
+  text-align: center;
+}
+.wa-ring {
+  width: 100%;
+  max-width: 120px;
+}
+.wa-ring__val {
+  font-size: 20px;
+  font-weight: 750;
+  fill: currentColor;
+}
+.wa-progress__label {
+  font-size: 14px;
+  color: var(--wa-hint);
+}
+
+/* Reyting */
+.wa-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.wa-stars {
+  display: inline-flex;
+  gap: 2px;
+}
+.wa-star {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+.wa-star > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+}
+.wa-stars__val {
+  font-size: 14px;
+}
+
+/* Taymer */
+.wa-timer {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  text-align: center;
+}
+.wa-timer__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 4px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--wa-text) 6%, transparent);
+}
+.wa-timer__cell b {
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.wa-timer__cell small {
+  font-size: 12px;
+  color: var(--wa-hint);
+}
+.wa-timer__done {
+  grid-column: 1 / -1;
+  font-weight: 650;
+}
+
+/* Qator ichida tugmalar o'z kengligida (cho'zilib ketmasin) */
+.wa-box--row > .wa-btn,
+.wa-box--row > .wa-rep--single > .wa-btn,
+.wa-box--scroll > .wa-btn {
+  width: auto;
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+.wa-box--row > .wa-t {
+  min-width: 0;
+}
+/* Ikonka o'z o'lchamida — cho'zilmaydi */
+.wa-n--icon {
+  width: fit-content;
+}
+.wa-n-video .wa-n-placeholder {
+  height: 100%;
+  border-color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.75);
 }

@@ -4272,3 +4272,335 @@ input[type="range"] {
     max-width: 1100px;
   }
 }
+
+/* --- Komponentlar kutubxonasi --- */
+.cg {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cg-top {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cg-search {
+  position: relative;
+  display: block;
+}
+.cg-search svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  translate: 0 -50%;
+  color: var(--hint);
+}
+.cg-search .input {
+  padding-left: 36px;
+}
+.cg-target {
+  font-size: 12.5px;
+}
+.cg-cats {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -2px;
+  padding: 2px;
+}
+.cg-cats::-webkit-scrollbar {
+  display: none;
+}
+.cg-cats button {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cg-cats button.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.cg-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cg-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.cg-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, translate 0.15s;
+}
+.cg-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 10px 28px -16px color-mix(in srgb, var(--accent) 70%, transparent);
+  translate: 0 -2px;
+}
+.cg-card__hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.cg-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 11px 11px;
+  border-top: 1px solid var(--border);
+}
+.cg-card--mine .cg-card__meta {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.cg-card__meta b {
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cg-card__meta .hint {
+  font-size: 12px;
+  line-height: 1.35;
+}
+.cg-card__del {
+  position: relative;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+}
+.cg-preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+  background: repeating-conic-gradient(color-mix(in srgb, var(--text) 3%, transparent) 0 25%, transparent 0 50%) 0 0 / 16px 16px;
+}
+.cg-preview.is-tall {
+  align-items: flex-start;
+}
+.cg-preview__inner {
+  flex-shrink: 0;
+  transform-origin: top center;
+}
+.cg-preview:not(.is-tall) .cg-preview__inner {
+  transform-origin: center center;
+}
+.wa-mini {
+  min-height: 0 !important;
+  background: transparent !important;
+}
+.wa-mini__inner {
+  padding: 14px;
+  min-height: 150px;
+}
+.cg-empty {
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+}
+@media (min-width: 640px) {
+  .cg-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1000px) {
+  .sheet__panel--wide {
+    max-width: 1040px;
+    width: 100%;
+  }
+  .cg-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* --- Dizayn muharriri 1.2: sudrash, yo'l, mavzu ranglari, kutubxona --- */
+.de-row__grip {
+  flex-shrink: 0;
+  margin-left: -6px;
+  opacity: 0.35;
+  cursor: grab;
+}
+.de-row[draggable="true"]:active {
+  cursor: grabbing;
+}
+.de-row.is-dragging {
+  opacity: 0.45;
+}
+.de-row.is-drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.de-row.is-drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.de-row.is-drop-inside {
+  background: var(--soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.de-tree__hint {
+  margin-top: -6px;
+  font-size: 12px;
+}
+@media (hover: none) {
+  .de-tree__hint,
+  .de-row__grip {
+    display: none;
+  }
+}
+.de-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--hint);
+}
+.de-crumbs span {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.de-crumbs button {
+  padding: 3px 6px;
+  border-radius: 6px;
+  color: var(--hint);
+  font-weight: 600;
+}
+.de-crumbs button:hover {
+  background: var(--soft);
+  color: var(--text);
+}
+.de-crumbs button.is-on {
+  color: var(--accent);
+}
+.de-add__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.de-save {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+.de-save__row {
+  display: flex;
+  gap: 8px;
+}
+.de-save__row .input {
+  flex: 1;
+  min-width: 0;
+}
+.de-color-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.de-color__swatch.is-token {
+  background: conic-gradient(#4f46e5, #06b6d4, #22c55e, #f59e0b, #ef4444, #4f46e5);
+  color: #fff;
+}
+.de-color__tok.is-on {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.de-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.de-tokens button,
+.de-quick button {
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.de-tokens button.is-on,
+.de-quick button.is-on {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.de-tokens .hint {
+  width: 100%;
+  font-size: 11.5px;
+}
+.de-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: -4px;
+}
+.de-motion {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wb-libcta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  border-radius: 18px;
+  text-align: left;
+  color: #fff;
+  background: linear-gradient(120deg, #4f46e5, #7c3aed 55%, #db2777);
+  box-shadow: 0 14px 30px -18px #7c3aed;
+}
+.wb-libcta > span:nth-child(2) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wb-libcta .hint {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12.5px;
+}
+.wb-libcta__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.18);
+  flex-shrink: 0;
+}

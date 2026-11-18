@@ -49,8 +49,8 @@ GOOGLE_FONTS: dict[str, str] = {
 }
 FONT_KEYS = FONTS + tuple(GOOGLE_FONTS)
 ICONS = frozenset(['Activity', 'AlertCircle', 'ArrowLeft', 'ArrowRight', 'ArrowUpRight', 'Award', 'Baby', 'Bath', 'BedDouble', 'Bell', 'Bike', 'Book', 'BookOpen', 'Box', 'Briefcase', 'Brush', 'Building', 'Building2', 'Cake', 'Calendar', 'CalendarCheck', 'Camera', 'Car', 'ChartBar', 'Check', 'ChevronRight', 'CircleCheck', 'CircleHelp', 'Clock', 'Cloud', 'Code', 'Coffee', 'Compass', 'Copy', 'Cpu', 'CreditCard', 'Crown', 'Database', 'Diamond', 'Dog', 'Download', 'Dumbbell', 'Eye', 'Filter', 'Flame', 'Flower2', 'Gem', 'Gift', 'Globe', 'GraduationCap', 'Hammer', 'Headphones', 'Heart', 'Hotel', 'House', 'Image', 'Info', 'Key', 'Laptop', 'Leaf', 'Link', 'Lock', 'Mail', 'Map', 'MapPin', 'MessageCircle', 'MessageSquare', 'Mic', 'Minus', 'Monitor', 'Moon', 'Music', 'Navigation', 'Package', 'Palette', 'PawPrint', 'Pen', 'PenLine', 'Percent', 'Phone', 'PieChart', 'Pill', 'Pizza', 'Plane', 'Play', 'Plus', 'Rocket', 'Scissors', 'Search', 'Send', 'Settings', 'Share2', 'Shield', 'ShieldCheck', 'Shirt', 'ShoppingBag', 'ShoppingCart', 'Smartphone', 'Smile', 'Sofa', 'Sparkles', 'Star', 'Stethoscope', 'Store', 'Sun', 'Tag', 'Target', 'ThumbsUp', 'Ticket', 'TrendingUp', 'Trophy', 'Truck', 'Umbrella', 'Upload', 'User', 'Users', 'Utensils', 'Video', 'Wallet', 'Wifi', 'Wrench', 'X', 'Zap'])
-MAX_NODES = 300
-MAX_DEPTH = 8
+MAX_NODES = 400
+MAX_DEPTH = 10
 THEME_PRESETS: dict[str, dict] = {
     "telegram": {"title": "Telegram mavzusi", "adaptive": True, "primary": "#2f80ed", "background": "#f1f2f6", "surface": "#ffffff", "text": "#111418"},
     "light": {"title": "Oq", "adaptive": False, "primary": "#2f80ed", "background": "#f4f6fb", "surface": "#ffffff", "text": "#111418"},
@@ -120,6 +120,16 @@ def _hex_or_none(v: str | None) -> str | None:
     return v
 
 
+# Mavzu ranglari: ilova mavzusi o'zgarsa (yoki tun rejimi) — element ham moslashadi
+COLOR_TOKENS = ("$primary", "$on_primary", "$bg", "$surface", "$text", "$hint", "$line")
+
+
+def _color_or_none(v: str | None) -> str | None:
+    if v in COLOR_TOKENS:
+        return v
+    return _hex_or_none(v)
+
+
 class Style(_M):
     """Har qanday blok yoki element uchun uslub. Hammasi ixtiyoriy — berilmagani mavzudan olinadi."""
 
@@ -138,8 +148,8 @@ class Style(_M):
     color: str | None = None
     border: int | None = Field(default=None, ge=0, le=12)
     border_color: str | None = None
-    radius: int | None = Field(default=None, ge=0, le=80)
-    shadow: Literal["none", "s", "m", "l", "glow"] | None = None
+    radius: int | None = Field(default=None, ge=0, le=999)
+    shadow: Literal["none", "s", "m", "l", "xl", "glow", "inner", "hard"] | None = None
     opacity: int | None = Field(default=None, ge=5, le=100)
     font: str | None = None
     size: int | None = Field(default=None, ge=8, le=120)
@@ -148,17 +158,55 @@ class Style(_M):
     line: float | None = Field(default=None, ge=0.8, le=3)
     letter: int | None = Field(default=None, ge=-10, le=40)
     uppercase: bool = False
+    # --- 1.2: kreativ dizayn ---
+    italic: bool = False
+    decoration: Literal["underline", "line-through"] | None = None
+    clamp: int | None = Field(default=None, ge=1, le=12)  # matn n qatordan keyin «…»
+    nowrap: bool = False
+    text_grad: str | None = None  # matn gradienti (2 rang)
+    text_grad2: str | None = None
+    w: int | None = Field(default=None, ge=0, le=1600)  # aniq kenglik (px)
+    w_pct: int | None = Field(default=None, ge=1, le=100)  # kenglik (%)
+    h: int | None = Field(default=None, ge=0, le=1600)  # aniq balandlik (px)
+    aspect: Literal["1:1", "4:3", "3:2", "16:9", "21:9", "3:4", "2:3", "9:16"] | None = None
+    grow: bool = False  # qatorda bo'sh joyni egallasin
+    self_align: Literal["start", "center", "end", "stretch"] | None = None
+    overflow: Literal["hidden", "visible", "scroll"] | None = None
+    pos: Literal["relative", "absolute", "sticky", "fixed"] | None = None
+    top: int | None = Field(default=None, ge=-800, le=2000)
+    right: int | None = Field(default=None, ge=-800, le=2000)
+    bottom: int | None = Field(default=None, ge=-800, le=2000)
+    left: int | None = Field(default=None, ge=-800, le=2000)
+    z: int | None = Field(default=None, ge=-10, le=100)
+    rotate: int | None = Field(default=None, ge=-360, le=360)
+    scale: int | None = Field(default=None, ge=10, le=400)  # %
+    tx: int | None = Field(default=None, ge=-800, le=800)
+    ty: int | None = Field(default=None, ge=-800, le=800)
+    skew: int | None = Field(default=None, ge=-45, le=45)
+    bg_type: Literal["linear", "radial", "conic"] | None = None
+    bg_alpha: int | None = Field(default=None, ge=0, le=100)  # fon rangining shaffofligi
+    bg_size: Literal["cover", "contain", "tile"] | None = None
+    blur: int | None = Field(default=None, ge=0, le=60)
+    backdrop: int | None = Field(default=None, ge=0, le=60)  # «shisha» effekti
+    bright: int | None = Field(default=None, ge=0, le=200)
+    gray: int | None = Field(default=None, ge=0, le=100)
+    border_style: Literal["solid", "dashed", "dotted", "double"] | None = None
+    shadow_color: str | None = None
+    gap: int | None = Field(default=None, ge=0, le=120)
+    span: int | None = Field(default=None, ge=1, le=8)  # to'rda nechta ustun egallaydi
+    row_span: int | None = Field(default=None, ge=1, le=8)
 
     @model_validator(mode="after")
     def _check(self):
-        for name in ("bg", "bg2", "color", "border_color"):
-            setattr(self, name, _hex_or_none(getattr(self, name)))
+        for name in ("bg", "bg2", "color", "border_color", "text_grad", "text_grad2", "shadow_color"):
+            setattr(self, name, _color_or_none(getattr(self, name)))
         if self.font is not None and self.font not in FONT_KEYS:
             raise ValueError("noma'lum shrift")
         return self
 
 
-Anim = Literal["none", "fade", "up", "zoom", "left", "right"]
+Anim = Literal["none", "fade", "up", "down", "zoom", "zoomout", "left", "right", "flip", "blur", "rotate"]
+Loop = Literal["none", "float", "pulse", "spin", "shake", "bounce", "glow", "wiggle", "breathe"]
 
 _DKEY = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 
@@ -193,10 +241,14 @@ class Query(_M):
 
 class _Node(_M):
     id: str
+    name: str = Field(default="", max_length=40)  # qatlam nomi; yorliq/akkordeonda sarlavha
     hidden: bool = False
     style: Style | None = None
     wide: Style | None = None  # keng oyna (≥560px) uchun ustiga yoziladigan qiymatlar
+    hover: Style | None = None  # sichqoncha ustida / bosilganda
     anim: Anim = "none"
+    delay: int = Field(default=0, ge=0, le=5000)  # animatsiya kechikishi (ms)
+    loop: Loop = "none"  # doimiy animatsiya
 
     @field_validator("id")
     @classmethod
@@ -208,8 +260,16 @@ class _Node(_M):
 
 class BoxNode(_Node):
     kind: Literal["box"]
-    layout: Literal["column", "row", "grid"] = "column"
+    # scroll — gorizontal karusel; stack — qatlamlar ustma-ust; tabs/accordion — bolalar panel bo'ladi
+    # (sarlavha — bolaning nomi); marquee — cheksiz yuguruvchi lenta
+    layout: Literal["column", "row", "grid", "scroll", "stack", "tabs", "accordion", "marquee"] = "column"
     gap: int = Field(default=12, ge=0, le=96)
+    item_w: int | None = Field(default=None, ge=40, le=1200)  # karusel elementi kengligi (px)
+    autoplay: int = Field(default=0, ge=0, le=30)  # karusel: har n soniyada
+    dots: bool = False
+    tabs_style: Literal["pills", "underline", "segmented"] = "pills"
+    open_first: bool = True
+    speed: int = Field(default=20, ge=3, le=120)  # marquee: bir aylanish (soniya)
     align: Literal["start", "center", "end", "stretch"] = "stretch"
     justify: Literal["start", "center", "end", "between", "around"] = "start"
     wrap: bool = True
@@ -280,11 +340,66 @@ class DividerNode(_Node):
     kind: Literal["divider"]
 
 
+class VideoNode(_Node):
+    kind: Literal["video"]
+    url: str = ""  # YouTube havolasi
+
+    @field_validator("url")
+    @classmethod
+    def _yt(cls, v: str) -> str:
+        v = (v or "").strip()
+        if v and not _YT.search(v):
+            raise ValueError("faqat YouTube havolasi")
+        return v
+
+
+class ProgressNode(_Node):
+    kind: Literal["progress"]
+    value: int = Field(default=60, ge=0, le=100)
+    label: str = Field(default="", max_length=80)
+    show_value: bool = True
+    bar: str | None = None
+    thickness: int = Field(default=8, ge=2, le=40)
+    shape: Literal["bar", "ring"] = "bar"
+
+    @field_validator("bar")
+    @classmethod
+    def _bar(cls, v: str | None) -> str | None:
+        return _color_or_none(v)
+
+
+class RatingNode(_Node):
+    kind: Literal["rating"]
+    value: float = Field(default=4.5, ge=0, le=5)
+    size: int = Field(default=18, ge=10, le=60)
+    star: str | None = None
+    show_value: bool = False
+
+    @field_validator("star")
+    @classmethod
+    def _star(cls, v: str | None) -> str | None:
+        return _color_or_none(v)
+
+
+class TimerNode(_Node):
+    kind: Literal["timer"]
+    until: datetime.datetime
+    done_text: str = Field(default="Boshlandi!", max_length=80)
+    labels: bool = True
+
+
+class MapNode(_Node):
+    kind: Literal["map"]
+    query: str = Field(min_length=2, max_length=200)  # manzil yoki «41.31,69.24»
+    zoom: int = Field(default=15, ge=3, le=20)
+    height: int = Field(default=240, ge=120, le=800)
+
+
 Node = Annotated[
-    Union[BoxNode, TextNode, ImageNode, ButtonNode, IconNode, SpacerNode, DividerNode],
+    Union[BoxNode, TextNode, ImageNode, ButtonNode, IconNode, SpacerNode, DividerNode, VideoNode, ProgressNode, RatingNode, TimerNode, MapNode],
     Field(discriminator="kind"),
 ]
-NODE_KINDS = ["box", "text", "image", "button", "icon", "spacer", "divider"]
+NODE_KINDS = ["box", "text", "image", "button", "icon", "spacer", "divider", "video", "progress", "rating", "timer", "map"]
 
 
 class _Block(_M):
@@ -803,7 +918,7 @@ def referenced_media(doc: dict) -> set[int]:
                     node = stack.pop()
                     if node.get("media_id"):
                         ids.add(int(node["media_id"]))
-                    for st in (node.get("style") or {}, node.get("wide") or {}):
+                    for st in (node.get("style") or {}, node.get("wide") or {}, node.get("hover") or {}):
                         if st.get("bg_image"):
                             ids.add(int(st["bg_image"]))
                     stack.extend(node.get("children") or [])
@@ -886,3 +1001,21 @@ def youtube_id(url: str | None) -> str | None:
 
 def money(amount: int, currency: str) -> str:
     return f"{amount:,}".replace(",", " ") + (f" {currency}" if currency else "")
+
+
+MAX_COMPONENTS = 100
+
+
+def validate_component(node: dict, owned_media: set[int] | None = None) -> dict:
+    """Saqlanadigan komponent: ildizi konteyner bo'lgan elementlar daraxti."""
+    raw = {"id": "component", "type": "custom", "root": node}
+    try:
+        block = Custom.model_validate(raw)
+    except ValidationError as exc:
+        raise WebAppError(_error_message(exc, {})) from exc
+    data = block.model_dump(mode="json")["root"]
+    if owned_media is not None:
+        doc = {"pages": [{"blocks": [{"type": "custom", "root": data}]}]}
+        if referenced_media(doc) - owned_media:
+            raise WebAppError("Ba'zi rasmlar topilmadi — ularni qayta yuklang")
+    return data

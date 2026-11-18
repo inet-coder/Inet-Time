@@ -1,5 +1,5 @@
 // Har bir blok turi konstruktorda qanday tahrirlanishi — bitta umumiy forma (SpecForm) shu tavsiflardan quriladi.
-import { SECTIONS } from "./sections";
+import { LIBRARY } from "./library";
 import { uid, type BlockType, type BoxNode, type FormField, type WAAction, type WABlock, type WANode } from "./types";
 
 export type Opt = [string | number, string];
@@ -102,7 +102,7 @@ export const BLOCK_SPECS: Record<BlockType, BlockSpec> = {
     icon: "🧩",
     desc: "Istalgan dizayn: konteyner, matn, rasm, tugma, ikonka",
     category: "Erkin",
-    make: () => ({ type: "custom", name: "Erkin bo'lim", root: SECTIONS[0].make() as BoxNode }),
+    make: () => ({ type: "custom", name: "Erkin bo'lim", root: LIBRARY.find((i) => i.key === "empty")!.make() }),
     fields: [],
     summary: (b) => `${b.name} · ${countNodes(b.root)} element`,
   },

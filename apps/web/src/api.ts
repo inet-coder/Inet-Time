@@ -209,6 +209,8 @@ export type WASubmission = {
 export type DataFieldType = "text" | "longtext" | "number" | "money" | "image" | "date" | "bool" | "select" | "phone" | "url" | "email";
 export type DataField = { key: string; label: string; type: DataFieldType; required: boolean; private: boolean; options: string[] };
 export type DataCollection = { id: number; key: string; name: string; read: "public" | "own" | "none"; create: boolean; fields: DataField[]; count: number };
+export type SavedComponent = { id: number; name: string; node: import("./webapp/types").BoxNode; created_at: string | null };
+
 export type DataRecord = { id: number; _by?: number | null; _at?: string | null; [key: string]: unknown };
 
 function qs(params: Record<string, unknown>): string {
@@ -356,6 +358,10 @@ export const api = {
   importCsv: (botId: number, id: number, csv: string) =>
     request<{ imported: number }>("POST", `/webapp/bots/${botId}/app/collections/${id}/import`, { csv }),
   exportCsvUrl: (botId: number, id: number) => `/api/webapp/bots/${botId}/app/collections/${id}/export.csv?t=${token}`,
+  components: () => request<{ items: SavedComponent[]; limit: number }>("GET", "/webapp/components"),
+  saveComponent: (name: string, node: unknown) => request<SavedComponent>("POST", "/webapp/components", { name, node }),
+  renameComponent: (id: number, name: string) => request<SavedComponent>("PUT", `/webapp/components/${id}`, { name }),
+  deleteComponent: (id: number) => request<{ ok: boolean }>("DELETE", `/webapp/components/${id}`),
   previewData: (botId: number, key: string, params: Record<string, unknown>) =>
     request<{ items: { id: number; [k: string]: unknown }[] }>("GET", `/webapp/bots/${botId}/app/data/${key}${qs(params)}`),
   publicData: (appId: number, key: string, params: Record<string, unknown>, initData: string | undefined) =>

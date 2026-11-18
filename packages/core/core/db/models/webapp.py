@@ -53,3 +53,15 @@ class WebAppVersion(CreatedAtMixin, Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     app_id: Mapped[int] = mapped_column(ForeignKey("web_apps.id", ondelete="CASCADE"), index=True)
     doc: Mapped[dict] = mapped_column(JSON)
+
+
+class WebComponent(CreatedAtMixin, Base):
+    """Foydalanuvchining o'z komponenti: saqlangan erkin bo'lak (elementlar daraxti).
+    Istalgan ilovasida, istalgan sahifada qayta ishlatiladi."""
+
+    __tablename__ = "web_components"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    node: Mapped[dict] = mapped_column(JSON)

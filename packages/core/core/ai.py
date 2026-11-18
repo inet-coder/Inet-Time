@@ -23,6 +23,8 @@ from core.settings import settings
 logger = logging.getLogger(__name__)
 
 AI_SETTING_KEY = "ai"
+# Bot va Web App quruvchi uchun alohida (kuchliroq) model — sifat birinchi o'rinda
+DEFAULT_BUILDER_MODEL = "gpt-4.1-mini"
 MAX_STYLE_LEN = 300
 MAX_CONTEXT_MESSAGES = 6
 MAX_CONTEXT_CHARS = 300
@@ -34,8 +36,10 @@ MODELS: dict[str, tuple[float, float] | None] = {
     "gpt-4o-mini": (0.15, 0.60),
     "gpt-4.1-nano": (0.10, 0.40),
     "gpt-4.1-mini": (0.40, 1.60),
+    "gpt-4.1": (2.00, 8.00),
     "gpt-5-nano": (0.05, 0.40),
     "gpt-5-mini": (0.25, 2.00),
+    "gpt-5": (1.25, 10.00),
     "gpt-5.4-nano": None,
     "gpt-5.4-mini": None,
 }
@@ -144,8 +148,10 @@ async def get_config(db: AsyncSession) -> dict:
     stored = _stored_key(value)
     key = stored or settings.openai_api_key
     _active_key = key
+    builder = value.get("builder_model") or DEFAULT_BUILDER_MODEL
     return {
         "model": model,
+        "builder_model": builder if builder in MODELS else DEFAULT_BUILDER_MODEL,
         "enabled": bool(value.get("enabled", True)),
         "configured": bool(key),
         "key_source": "admin" if stored else ("env" if settings.openai_api_key else None),

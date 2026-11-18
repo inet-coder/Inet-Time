@@ -13,6 +13,7 @@ Holat redis'da (bot qayta ishga tushsa ham saqlanadi):
 """
 
 import asyncio
+import dataclasses
 import datetime
 import html
 import json
@@ -94,6 +95,9 @@ class RunningBot:
     # Bot darajasidagi (global) o'zgaruvchilar
     globals: dict = field(default_factory=dict)
     commands_applied: tuple | None = None
+    # 🧪 Sinov rejimi: egasi AI taklifini sinayotganda ishlatiladigan nusxa (saqlash taqiqlangan)
+    sandbox: bool = False
+    origin: object = None
     task: asyncio.Task | None = None
     conflict_reported: bool = False
     pending: set = field(default_factory=set)
@@ -1068,7 +1072,27 @@ class Runner:
 
     # --- Updatelar ---
 
+    def sandbox_copy(self, bot: RunningBot, menu: dict) -> RunningBot:
+        return dataclasses.replace(bot, menu=menu, sandbox=True, origin=bot)
+
+    async def _sandboxed(self, bot: RunningBot, upd: dict) -> RunningBot:
+        """Admin sinov rejimida bo'lsa — uning updatelari taklif qilingan (hali qo'llanmagan) bot bilan ishlanadi."""
+        if "callback_query" in upd:
+            chat = ((upd["callback_query"].get("message") or {}).get("chat") or {}).get("id")
+        else:
+            chat = ((upd.get("message") or {}).get("chat") or {}).get("id")
+        if not chat or not self.is_admin(bot, chat):
+            return bot
+        if await editor.mode(self, bot, chat) != "sandbox":
+            return bot
+        raw = await self.redis.get(_k(bot.bot_id, "aiprop", chat))
+        if not raw:
+            await editor.set_mode(self, bot, chat, "ai")
+            return bot
+        return self.sandbox_copy(bot, json.loads(raw))
+
     async def handle(self, bot: RunningBot, upd: dict) -> None:
+        bot = await self._sandboxed(bot, upd)
         if "callback_query" in upd:
             await self.on_callback(bot, upd["callback_query"])
         elif "message" in upd:

@@ -961,6 +961,24 @@ function AIAdmin({ toast }: { toast: Toast }) {
           ))}
         </div>
         <p className="hint field__hint">Avto-javob uchun gpt-4o-mini yoki gpt-4.1-nano yetarli va eng arzon.</p>
+        <label className="label">InetTime AI quruvchi modeli (bot va Web App yaratish)</label>
+        <div className="model-list">
+          {data.models.map((m) => (
+            <button
+              key={m.id}
+              className={`model ${data.builder_model === m.id ? "is-selected" : ""}`}
+              onClick={async () => {
+                if (await run(toast, () => adminApi.saveAi(data.model, data.enabled, m.id), "Quruvchi modeli saqlandi")) refresh();
+              }}
+            >
+              <b>{m.id}</b>
+              <span className="hint">{m.price_in !== null ? `$${m.price_in} / $${m.price_out} · 1M token` : "narx: OpenAI saytida"}</span>
+            </button>
+          ))}
+        </div>
+        <p className="hint field__hint">
+          Bot tuzish murakkab vazifa — sifat uchun gpt-4.1-mini yoki kuchliroq (gpt-4.1, gpt-5-mini) tavsiya etiladi. Bitta bot taxminan 15–40 ming token.
+        </p>
         <div className="card-inset" style={{ marginTop: 12 }}>
           <Toggle on={data.enabled} onChange={(v) => save(data.model, v)}>
             AI xizmatlari yoqilgan

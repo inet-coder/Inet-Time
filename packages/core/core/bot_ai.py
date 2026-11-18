@@ -76,7 +76,8 @@ HOW IT BEHAVES
 - Forms ask several questions in a row; answers are saved to variables and sent to the owner.
 
 QUALITY RULES
-- Build COMPLETE, working, rich bots with real structure and realistic content (emojis, prices as "... so'm" placeholders),
+- Build COMPLETE, working, rich bots with real structure and concrete content (emojis, real-looking prices like
+  "25 000 so'm", phone numbers, hours). NEVER write placeholders such as "...", "…", "[narx]", "XXX" or "lorem".
   typically 8-30 pages for a full business bot: main menu, catalog/services with sub-sections, prices, about, FAQ,
   contacts with location, order/booking form, profile page with the user's variables, referral page if useful.
 - Make it creative and specific to the owner's business; no lorem ipsum.
@@ -88,6 +89,7 @@ QUALITY RULES
 
 class BuilderAIError(ai.AIError):
     pass
+
 
 
 # --- Kunlik limit ---
@@ -276,8 +278,8 @@ def _parse(text: str) -> dict:
     return data
 
 
-async def build_bot(model: str, current: dict, history: list[dict], request: str, max_pages: int) -> tuple[str, dict | None, list]:
-    """(javob matni, yangi hujjat yoki None, [AIResult...])."""
+async def build_bot(model: str, current: dict, history: list[dict], request: str, max_pages: int) -> tuple[str, dict | None, list, dict]:
+    """Mavjud botni o'zgartirish: (javob matni, yangi hujjat yoki None, [AIResult...], linter hisoboti)."""
     system = BOT_SYSTEM.replace("{max_pages}", str(max_pages))
     messages = [
         {"role": "system", "content": system},
@@ -293,17 +295,18 @@ async def build_bot(model: str, current: dict, history: list[dict], request: str
         reply = str(data.get("reply") or "").strip()[:3000] or "Tayyor."
         raw = data.get("menu")
         if not raw:
-            return reply, None, results
+            return reply, None, results, {}
         try:
             doc = prepare(raw, current)
+            doc, ok, warn = lint(doc)
             menu = validate_menu(doc, max_pages)
-            return reply, menu, results
+            return reply, menu, results, {"ok": ok, "warn": warn, "verify": []}
         except MenuError as exc:
             if attempt == 1:
                 raise BuilderAIError(f"AI tuzgan bot tekshiruvdan o'tmadi: {exc}. Talabni aniqroq yozib qayta urinib ko'ring.") from exc
             messages.append({"role": "assistant", "content": result.text[:20000]})
             messages.append({"role": "user", "content": f"Validation error: {exc}. Fix it and return the corrected FULL JSON again (same format)."})
-    return "", None, results
+    return "", None, results, {}
 
 
 def tree(menu: dict, limit: int = 45) -> str:
@@ -512,3 +515,481 @@ async def build_webapp(model: str, current: dict, history: list[dict], request: 
             messages.append({"role": "assistant", "content": result.text[:20000]})
             messages.append({"role": "user", "content": f"Validation error: {exc}. Fix it and return the corrected FULL JSON again (same format)."})
     return "", None, results
+
+
+
+# ============================================================
+# Quruvchi v2: dasturchi kabi bosqichma-bosqich
+#   1) reja (brif + arxitektura, kerak bo'lsa aniqlashtiruvchi savollar)
+#   2) mazmun (har bir bo'lim uchun postlar — parallel)
+#   3) yig'ish (kod: navigatsiya, uslub, tugmalar — UX qoidalari kafolatlangan)
+#   4) linter (tekshiruv va avtomatik tuzatish) → validate
+# ============================================================
+
+import asyncio  # noqa: E402
+
+KINDS = ("menu", "info", "item", "form", "faq", "contacts", "profile", "referral", "feedback", "link")
+
+PLAN_SYSTEM = """You are the lead architect of InetTime AI, a no-code Telegram bot builder. You work like a senior bot developer:
+first understand the business, then design a clean, logical bot architecture. Another step will write the texts.
+
+Answer ONLY with JSON:
+{
+ "mode": "new" | "edit" | "ask" | "answer",
+ "reply": "<short message to the owner in their language (default Uzbek, Latin script)>",
+ "questions": ["..."],          // only for mode "ask": 2-5 short, specific questions with example answers
+ "brief": {"name": "", "business": "", "audience": "", "tone": "", "facts": {"phone": "", "address": "", "hours": "", "city": "", "other": ""}},
+ "plan": {...}                   // only for mode "new"
+}
+Modes:
+- "new": the owner wants a new bot (or the current bot is empty/basic and they describe a bot) → design the full plan.
+- "edit": the owner wants to change the CURRENT bot (add/remove/rename sections, change texts, style, buttons...).
+- "ask": ONLY if questions are allowed (see the request) AND essential information is missing to build a good bot
+  (e.g. what exactly they sell/offer). Do not ask about things you can reasonably invent (prices, texts).
+- "answer": the owner asks a question about the builder or bot-making; answer in "reply".
+
+PLAN FORMAT
+{"style": "reply" | "inline" | "hybrid",
+ "sections": [{"id": "start", "parent": null, "title": "🏠 Bosh menyu", "kind": "menu", "purpose": "<what this section does and what to say>"},
+              {"id": "<snake_case>", "parent": "<parent id>", "title": "<emoji + 1-3 words, max 24 chars>", "kind": KIND, "purpose": "...",
+               "fields": [...] (kind form only), "url": "https://..." (kind link only)}],
+ "variables": [{"key": "ball", "label": "Ball", "default": "0"}],
+ "keywords": [{"words": ["narx", "menyu"], "section": "<id>"}],
+ "commands": [{"command": "menu", "description": "Menyu", "section": "<id>"}],
+ "referral": {"enabled": false, "reward": 1, "var": "ball"}}
+KIND:
+ menu — a group with children sections (catalog, categories, services list). info — a content page (about, delivery terms, promotions).
+ item — one product/service card (name, description, price). form — a questionnaire/application/order form with
+ "fields": [{"key": "ism", "label": "Ismingiz?", "type": "text|number|phone|email|photo|choice|location", "options": []}].
+ faq — frequently asked questions. contacts — phone, address, hours, map. profile — the user's personal cabinet (their variables,
+ points, referral stats). referral — invite friends page (needs referral.enabled). feedback — "write to admin" (live chat with the owner).
+ link — opens an external URL (site, channel, Instagram) — needs "url".
+ARCHITECTURE RULES
+- Exactly one section with id "start" and parent null; every other section has an existing parent; max depth 3.
+- The start menu has 4-8 children. A menu has 2-12 children. Put related things together (e.g. catalog → categories → items).
+- Real businesses need: what you offer (catalog/services with real items), how to order/book (form), promotions, about,
+  contacts, FAQ, feedback. Add profile + referral when points/bonuses/contests make sense.
+- For a shop/restaurant/menu create real categories and 3-6 real items per category (item sections).
+- Titles: emoji + 1-3 words, max 24 characters, unique within a parent.
+- Style: follow the owner's request exactly. If not specified: "hybrid" (main menus as keyboard, details inline).
+- Typical size: 10-30 sections. Max {max_pages} sections.
+- Use the owner's own language for titles (default Uzbek, Latin script)."""
+
+CONTENT_SYSTEM = """You are the senior copywriter of InetTime AI. You write the posts (messages) of a Telegram bot whose
+architecture is already designed. Write like a professional SMM specialist for this exact business: concrete, warm,
+scannable, persuasive. Language: the owner's language (default Uzbek, Latin script, correct spelling: o', g', sh, ch).
+
+Answer ONLY with JSON:
+{"sections": {"<section id>": {"posts": [{"text": "<Telegram HTML>", "buttons": [[{"text": "🗺 Xaritada ochish", "url": "https://..."}]]}],
+                               "done_text": "<only for form sections: thank-you message, may use {field keys}>"}},
+ "fallback": "<reply when the user writes something unknown>",
+ "verify": ["<facts you invented that the owner must check: prices, phone, address...>"]}
+Write entries ONLY for the section ids listed in the request.
+FORMAT RULES
+- Telegram HTML only: <b>, <i>, <u>, <s>, <code>, <a href="...">, <blockquote>. Use \\n for new lines. No markdown.
+- 1 post per section (2 only if really needed). 2-12 lines. Start with a bold title line with emoji.
+- Use variables where natural: {name} (user's first name), {ref_link}, {ref_count}, and plan variables like {ball}.
+- menu: 1-3 lines inviting to choose (the buttons are added automatically — do NOT list the buttons in text).
+- item: name, 2-3 lines of appetizing/convincing description, key details (size, weight, duration...), "💰 Narxi: 45 000 so'm".
+- info / promotions / about: concrete facts, benefits as short emoji lines.
+- faq: 5-8 questions: "<b>❓ Savol?</b>\\nJavob." separated by blank lines.
+- contacts: phone, address, working hours, and a map button (url https://maps.google.com/?q=<address>).
+- form: 2-4 lines explaining what happens after submitting (the start button is added automatically).
+- profile: template with {name} and the plan variables, e.g. "💎 Ballaringiz: <b>{ball}</b>".
+- referral: how it works + "🔗 Sizning havolangiz:\\n{ref_link}" + "👥 Taklif qilganlaringiz: <b>{ref_count}</b>".
+- start: a warm welcome with {name}, the bot's value in 2-3 lines, and a hint to use the menu.
+- url buttons only with real https links. Never placeholders like "...", "[narx]", "XXX". If a fact is unknown,
+  write a realistic value and add it to "verify"."""
+
+
+def _sid(raw, used: set) -> str:
+    return _clean_id(raw, used)
+
+
+def summary_tree_plan(plan: dict) -> str:
+    sections = plan.get("sections") or []
+    children: dict = {}
+    for sct in sections:
+        children.setdefault(sct.get("parent"), []).append(sct)
+    lines: list[str] = []
+
+    def walk(pid, depth):
+        for sct in children.get(pid, []):
+            if len(lines) >= 45:
+                return
+            lines.append(f"{'   ' * depth}{sct.get('title')}")
+            walk(sct.get("id"), depth + 1)
+
+    walk(None, 0)
+    return "\n".join(lines)
+
+
+def _plan_fix(plan: dict, max_pages: int) -> dict:
+    """Rejani tozalaydi: id'lar, ota-bola bog'lanishlar, chuqurlik, takrorlar."""
+    sections = [sct for sct in plan.get("sections") or [] if isinstance(sct, dict) and sct.get("title")]
+    used: set = set()
+    mapping: dict = {}
+    for sct in sections:
+        old = sct.get("id")
+        sct["id"] = "start" if old == "start" and "start" not in used else _sid(old or sct["title"], used)
+        used.add(sct["id"])
+        mapping[old] = sct["id"]
+    if not any(sct["id"] == "start" for sct in sections):
+        sections.insert(0, {"id": "start", "parent": None, "title": "🏠 Bosh menyu", "kind": "menu", "purpose": "welcome"})
+    ids = {sct["id"] for sct in sections}
+    for sct in sections:
+        if sct["id"] == "start":
+            sct["parent"] = None
+            sct["kind"] = "menu"
+            continue
+        parent = mapping.get(sct.get("parent"), sct.get("parent"))
+        sct["parent"] = parent if parent in ids and parent != sct["id"] else "start"
+        if sct.get("kind") not in KINDS:
+            sct["kind"] = "info"
+        sct["title"] = str(sct["title"]).strip()[:24]
+    # chuqurlik ≤ 4 va aylanmalar yo'q
+    by_id = {sct["id"]: sct for sct in sections}
+    for sct in sections:
+        seen, cur, depth = set(), sct, 0
+        while cur.get("parent") and depth < 6:
+            if cur["parent"] in seen:
+                sct["parent"] = "start"
+                break
+            seen.add(cur["parent"])
+            cur = by_id.get(cur["parent"], {})
+            depth += 1
+        if depth > 4:
+            sct["parent"] = "start"
+    # bolasi bor bo'limlar — menyu
+    parents = {sct["parent"] for sct in sections if sct.get("parent")}
+    for sct in sections:
+        if sct["id"] in parents and sct["kind"] not in ("menu",):
+            sct["kind"] = "menu"
+    # Tarif limiti: avval yuqori darajalar (bosh menyu bo'limlari saqlanadi), eng chuqurlari qisqaradi.
+    # «Adminga yozish» sahifa yaratmaydi — hisobga kirmaydi.
+    def level(sct) -> int:
+        d, cur = 0, sct
+        while cur.get("parent") and d < 6:
+            cur = by_id.get(cur["parent"], {})
+            d += 1
+        return d
+
+    ordered = sorted(sections, key=level)
+    keep: set = set()
+    pages_used = 0
+    for sct in ordered:
+        if sct["id"] != "start" and sct["parent"] not in keep:
+            continue
+        cost = 0 if sct["kind"] == "feedback" else 1
+        if pages_used + cost > max_pages:
+            continue
+        keep.add(sct["id"])
+        pages_used += cost
+    plan["_dropped"] = len(sections) - len(keep)
+    # Bolalari qisqargan menyu bo'sh qolmasin: matnli sahifaga aylanadi va qisqargan narsalarni matnda sanab beradi
+    for sct in sections:
+        if sct["id"] in keep and sct["kind"] == "menu" and sct["id"] != "start":
+            kids = [k for k in sections if k.get("parent") == sct["id"]]
+            if kids and not any(k["id"] in keep for k in kids):
+                sct["kind"] = "info"
+                sct["purpose"] = f"{sct.get('purpose', '')}. List these items with short descriptions and prices in the text: " + ", ".join(k["title"] for k in kids)
+    plan["sections"] = [sct for sct in sections if sct["id"] in keep]
+    plan["style"] = plan.get("style") if plan.get("style") in ("reply", "inline", "hybrid") else "hybrid"
+    return plan
+
+
+async def plan_request(model: str, current: dict, history: list[dict], request: str, *, allow_questions: bool, max_pages: int) -> tuple[dict, list]:
+    system = PLAN_SYSTEM.replace("{max_pages}", str(max_pages))
+    pages = len(current.get("pages") or [])
+    context = (
+        f"CURRENT BOT: {pages} sections. Structure:\n{tree(current, 40)}\n\n"
+        f"Questions allowed: {'yes' if allow_questions else 'no — decide everything yourself'}."
+    )
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": context}]
+    messages += [h for h in history[-HISTORY:] if h.get("role") in ("user", "assistant")]
+    messages.append({"role": "user", "content": request[:4000]})
+    result = await ai._complete(model, messages, 6000, json_mode=True)
+    data = _parse(result.text)
+    mode = data.get("mode") if data.get("mode") in ("new", "edit", "ask", "answer") else "new"
+    if mode == "ask" and not allow_questions:
+        mode = "new"
+    data["mode"] = mode
+    if mode == "new":
+        if not isinstance(data.get("plan"), dict) or not data["plan"].get("sections"):
+            raise BuilderAIError("AI bot rejasini tuza olmadi — talabni batafsilroq yozib ko'ring")
+        data["plan"] = _plan_fix(data["plan"], max_pages)
+    return data, [result]
+
+
+async def write_content(model: str, brief: dict, plan: dict) -> tuple[dict, list]:
+    """Bo'limlar matnlari: katta botlarda bo'laklarga bo'linib parallel yoziladi."""
+    sections = plan["sections"]
+    outline = "\n".join(
+        f"- {sct['id']} | parent: {sct.get('parent')} | {sct['kind']} | {sct['title']} | {sct.get('purpose', '')}"
+        + (f" | fields: {', '.join(f.get('label', '') for f in sct.get('fields') or [] if isinstance(f, dict))}" if sct["kind"] == "form" else "")
+        for sct in sections
+    )
+    variables = ", ".join(f"{{{v.get('key')}}}" for v in plan.get("variables") or [] if isinstance(v, dict))
+    head = (
+        f"BUSINESS BRIEF: {json.dumps(brief, ensure_ascii=False)}\nSTYLE: {plan['style']}\nVARIABLES: {variables or '—'}\n"
+        f"FULL ARCHITECTURE (id | parent | kind | title | purpose):\n{outline}\n\n"
+    )
+    writable = [sct for sct in sections if sct["kind"] != "feedback"]
+    chunks = [writable[i : i + 10] for i in range(0, len(writable), 10)] or [[]]
+
+    async def one(chunk: list) -> tuple[dict, ai.AIResult]:
+        ids = ", ".join(sct["id"] for sct in chunk)
+        res = await ai._complete(
+            model,
+            [{"role": "system", "content": CONTENT_SYSTEM}, {"role": "user", "content": head + f"WRITE POSTS FOR SECTIONS: {ids}"}],
+            9000,
+            json_mode=True,
+        )
+        return _parse(res.text), res
+
+    results = await asyncio.gather(*(one(ch) for ch in chunks))
+    content: dict = {"sections": {}, "fallback": "", "verify": []}
+    for data, _ in results:
+        if isinstance(data.get("sections"), dict):
+            content["sections"].update(data["sections"])
+        content["fallback"] = content["fallback"] or str(data.get("fallback") or "")
+        content["verify"] += [str(v) for v in data.get("verify") or [] if v][:10]
+    return content, [r for _, r in results]
+
+
+def _rows(buttons: list[dict], per_row_short: int = 2) -> list[list[dict]]:
+    rows, line = [], []
+    for b in buttons:
+        short = len(b["text"]) <= 16
+        if not short:
+            if line:
+                rows.append(line)
+                line = []
+            rows.append([b])
+            continue
+        line.append(b)
+        if len(line) == per_row_short:
+            rows.append(line)
+            line = []
+    if line:
+        rows.append(line)
+    return rows
+
+
+def compile_plan(plan: dict, content: dict) -> dict:
+    """Reja + mazmun → bot hujjati. Navigatsiya va uslub kod bilan kafolatlanadi."""
+    style = plan["style"]
+    sections = plan["sections"]
+    by_id = {sct["id"]: sct for sct in sections}
+    children: dict = {}
+    for sct in sections:
+        if sct.get("parent"):
+            children.setdefault(sct["parent"], []).append(sct)
+
+    def depth(sct) -> int:
+        d, cur = 0, sct
+        while cur.get("parent"):
+            d += 1
+            cur = by_id[cur["parent"]]
+        return d
+
+    def keyboard(sct) -> str:
+        if style == "inline":
+            return "inline"
+        if style == "reply":
+            return "reply"
+        # hybrid: bosh va 1-daraja menyular klaviatura, chuqurroqlari inline
+        if sct["kind"] == "menu":
+            return "reply" if depth(sct) <= 1 else "inline"
+        parent = by_id.get(sct.get("parent"))
+        return keyboard(parent) if parent and parent["kind"] == "menu" and depth(parent) > 1 else "reply"
+
+    forms, pages = [], []
+    for sct in sections:
+        if sct["kind"] == "feedback":
+            continue
+        data = (content.get("sections") or {}).get(sct["id"]) or {}
+        posts = []
+        for post in data.get("posts") or []:
+            if isinstance(post, str):
+                post = {"text": post}
+            if not isinstance(post, dict) or not str(post.get("text", "")).strip():
+                continue
+            btns = []
+            for row in post.get("buttons") or []:
+                row = row if isinstance(row, list) else [row]
+                line = [
+                    {"text": str(b.get("text"))[:64], "action": "url", "url": str(b.get("url"))}
+                    for b in row
+                    if isinstance(b, dict) and b.get("text") and str(b.get("url", "")).startswith(("https://", "http://", "tg://"))
+                ]
+                if line:
+                    btns.append(line)
+            posts.append({"type": "text", "text": str(post["text"])[:4000], "buttons": btns})
+        if not posts:
+            posts = [{"type": "text", "text": f"<b>{sct['title']}</b>\n\n{sct.get('purpose') or ''}".strip(), "buttons": []}]
+        kb = keyboard(sct)
+        page = {"id": sct["id"], "title": sct["title"], "keyboard": kb, "messages": posts[:3], "buttons": [], "nav": False}
+        extra: list[list[dict]] = []
+        if sct["kind"] == "form":
+            fid = "f_" + sct["id"][:20]
+            steps, keys = [], set()
+            for i, f in enumerate(sct.get("fields") or []):
+                if not isinstance(f, dict) or not f.get("label"):
+                    continue
+                key = _ID.sub("", str(f.get("key") or f"javob{i + 1}").lower())[:32] or f"javob{i + 1}"
+                if not key[0].isalpha():
+                    key = "j" + key
+                if key in keys:
+                    key = f"{key}{i + 1}"
+                keys.add(key)
+                ftype = f.get("type") if f.get("type") in ("text", "number", "phone", "email", "photo", "choice", "location") else "text"
+                opts = [str(o)[:64] for o in f.get("options") or [] if str(o).strip()][:12]
+                if ftype == "choice" and not opts:
+                    ftype = "text"
+                steps.append({"key": key, "question": str(f["label"])[:500], "type": ftype, "options": opts})
+            if not steps:
+                steps = [{"key": "ism", "question": "Ismingiz?", "type": "text", "options": []}, {"key": "telefon", "question": "Telefon raqamingiz?", "type": "phone", "options": []}]
+            forms.append({"id": fid, "title": sct["title"], "steps": steps[:20], "done_text": str(data.get("done_text") or "✅ Rahmat! Arizangiz qabul qilindi, tez orada bog'lanamiz."), "target": None, "notify": True})
+            extra.append([{"text": "📝 To'ldirishni boshlash", "action": "form", "form": fid}])
+        elif sct["kind"] == "referral":
+            extra.append([{"text": "📤 Do'stlarga ulashish", "action": "share", "share_text": f"{sct['title']} — qo'shiling! {{ref_link}}"}])
+        elif sct["kind"] == "link" and str(sct.get("url", "")).startswith("https://"):
+            extra.append([{"text": "🔗 Ochish", "action": "url", "url": sct["url"]}])
+        kids = children.get(sct["id"], [])
+        kid_buttons = []
+        for k in kids:
+            if k["kind"] == "feedback":
+                kid_buttons.append({"text": k["title"], "action": "feedback"})
+            else:
+                kid_buttons.append({"text": k["title"], "action": "page", "target": k["id"]})
+        if kb == "reply":
+            page["buttons"] = _rows(kid_buttons)
+            page["nav"] = sct["id"] != "start" and bool(kid_buttons)
+            if extra:
+                posts[-1]["buttons"] = posts[-1]["buttons"] + extra
+        else:
+            rows = _rows(kid_buttons) + extra
+            if sct["id"] != "start":
+                rows.append([{"text": "⬅️ Orqaga", "action": "back"}])
+            page["buttons"] = rows
+        pages.append(page)
+
+    variables = [
+        {"key": str(v.get("key")).lower(), "label": str(v.get("label") or v.get("key"))[:64], "default": str(v.get("default") or ""), "scope": "user"}
+        for v in plan.get("variables") or []
+        if isinstance(v, dict) and v.get("key") and _VARKEY.match(str(v.get("key")).lower())
+    ]
+    ref = plan.get("referral") or {}
+    if any(sct["kind"] == "referral" for sct in sections):
+        ref = {**ref, "enabled": True}
+    if ref.get("enabled"):
+        var = str(ref.get("var") or "ball").lower()
+        if not _VARKEY.match(var):
+            var = "ball"
+        ref = {"enabled": True, "reward": int(ref.get("reward") or 1), "var": var, "notify": True}
+        if not any(v["key"] == var for v in variables):
+            variables.append({"key": var, "label": var.capitalize(), "default": "0", "scope": "user"})
+    known = {p["id"] for p in pages}
+    keywords = [
+        {"words": [str(w).lower()[:50] for w in k.get("words") or [] if str(w).strip()][:20], "match": "contains", "target": k.get("section"), "reply": ""}
+        for k in plan.get("keywords") or []
+        if isinstance(k, dict) and k.get("section") in known and k.get("words")
+    ]
+    commands = []
+    for c in plan.get("commands") or []:
+        if isinstance(c, dict) and c.get("section") in known:
+            name = _ID.sub("", str(c.get("command") or "").lower().lstrip("/")).replace("-", "_")[:32]
+            if name and name not in ("start", "admin", "cancel", "edit") and not any(x["command"] == name for x in commands):
+                commands.append({"command": name, "description": str(c.get("description") or name)[:256], "target": c["section"]})
+    return {
+        "start": "start",
+        "style": style,
+        "pages": pages,
+        "variables": variables,
+        "forms": forms,
+        "keywords": keywords,
+        "commands": commands,
+        "referral": ref if ref.get("enabled") else {"enabled": False},
+        "fallback": content.get("fallback") or "Menyudan kerakli bo'limni tanlang 👇",
+    }
+
+
+_VARKEY = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+_PLACEHOLDER = re.compile(r"(\.\.\.|…|\[[^\]]{1,30}\]|XXX|lorem ipsum|TODO)", re.I)
+
+
+def lint(menu: dict) -> tuple[dict, list[str], list[str]]:
+    """Sifat tekshiruvi. (tuzatilgan hujjat, ✅ o'tganlar, ⚠️ ogohlantirishlar)."""
+    doc = copy.deepcopy(menu)
+    ok, warn = [], []
+    pages = {p["id"]: p for p in doc.get("pages", [])}
+    start = doc.get("start")
+    fixed_back = 0
+    for p in doc.get("pages", []):
+        if p["id"] == start:
+            continue
+        if p.get("keyboard") == "inline":
+            has_back = any(b.get("action") in ("back", "home") for row in p.get("buttons") or [] for b in row)
+            if not has_back:
+                p.setdefault("buttons", []).append([{"text": "⬅️ Orqaga", "action": "back"}])
+                fixed_back += 1
+        elif p.get("buttons") and not p.get("nav"):
+            has_back = any(b.get("action") in ("back", "home") for row in p["buttons"] for b in row)
+            if not has_back:
+                p["nav"] = True
+                fixed_back += 1
+    if fixed_back:
+        ok.append(f"{fixed_back} ta bo'limga «Orqaga» yo'li qo'shildi")
+    # yetib borish
+    reach, stack = set(), [start]
+    while stack:
+        pid = stack.pop()
+        if pid in reach or pid not in pages:
+            continue
+        reach.add(pid)
+        p = pages[pid]
+        for row in (p.get("buttons") or []) + [r for m in p.get("messages") or [] for r in m.get("buttons") or []]:
+            for b in row:
+                for t in [b.get("target")] + list(b.get("targets") or []):
+                    if t:
+                        stack.append(t)
+    reach |= {k.get("target") for k in doc.get("keywords") or []} | {c.get("target") for c in doc.get("commands") or []}
+    lost = [p["title"] for p in doc.get("pages", []) if p["id"] not in reach]
+    if lost:
+        warn.append("Hech qayerdan ochilmaydigan bo'limlar: " + ", ".join(lost[:6]))
+    else:
+        ok.append("Barcha bo'limlarga yetib borish mumkin")
+    # joy tutuvchilar
+    holes = [p["title"] for p in doc.get("pages", []) for m in p.get("messages") or [] if _PLACEHOLDER.search(html_to_plain(m.get("text", "")))]
+    if holes:
+        warn.append("Matnda to'ldirilmagan joylar bor: " + ", ".join(sorted(set(holes))[:6]))
+    else:
+        ok.append("Matnlar to'liq (joy tutuvchilarsiz)")
+    long = [b["text"] for p in doc.get("pages", []) for row in p.get("buttons") or [] for b in row if len(b["text"]) > 28]
+    if long:
+        warn.append("Uzun tugma nomlari: " + ", ".join(long[:4]))
+    else:
+        ok.append("Tugmalar qisqa va tushunarli")
+    empty = [p["title"] for p in doc.get("pages", []) if not p.get("messages") and len(p.get("text", "")) < 5]
+    if empty:
+        warn.append("Mazmuni yo'q bo'limlar: " + ", ".join(empty[:6]))
+    return doc, ok, warn
+
+
+async def build_new(model: str, current: dict, brief: dict, plan: dict, max_pages: int, progress=None) -> tuple[dict, dict, list]:
+    """Rejadan to'liq bot: mazmun → yig'ish → linter → tekshiruv."""
+    if progress:
+        await progress("write")
+    content, results = await write_content(model, brief, plan)
+    doc = compile_plan(plan, content)
+    doc = prepare(doc, current)
+    doc, ok, warn = lint(doc)
+    try:
+        menu = validate_menu(doc, max_pages)
+    except MenuError as exc:
+        raise BuilderAIError(f"Yig'ilgan bot tekshiruvdan o'tmadi: {exc}") from exc
+    if plan.get("_dropped"):
+        warn.append(f"Tarifingiz limiti {max_pages} bo'lim — {plan['_dropped']} ta ichki bo'lim qisqartirildi (tarifni oshirsangiz to'liq quriladi)")
+    report = {"ok": ok, "warn": warn, "verify": content.get("verify") or []}
+    return menu, report, results

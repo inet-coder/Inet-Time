@@ -66,7 +66,10 @@ TOGGLE_KB = "🔁 Klaviatura ⇄ Inline"
 AI_BTN = "🤖 InetTime AI"
 AI_RESET = "🧹 Yangi suhbat"
 AI_EXIT = "🚪 AI'dan chiqish"
+SBX_APPLY = "✅ Qo'llash"
+SBX_EXIT = "🚪 Sinovdan chiqish"
 CONTROLS = (BTN_EDITOR, POST_EDITOR, ADMIN_PANEL, STOP, ADD_BTN, ADD_POST, ADD_Q, TOGGLE_KB, AI_BTN)
+SANDBOX_CONTROLS = (SBX_APPLY, SBX_EXIT)
 
 INPUT_LABELS = {"text": "📝 Matn", "number": "🔢 Son", "phone": "📱 Telefon", "email": "📧 Email", "photo": "🖼 Rasm", "choice": "🔘 Tanlov", "location": "📍 Joylashuv"}
 
@@ -90,6 +93,8 @@ def onoff(v) -> str:
 
 async def save(runner: "Runner", bot: "RunningBot", mutate: Callable[[dict], object]) -> str | None:
     """Hujjat nusxasini o'zgartiradi, tekshiradi va saqlaydi. Xato bo'lsa — o'zbekcha matn qaytaradi."""
+    if getattr(bot, "sandbox", False):
+        return "🧪 Sinov rejimida o'zgartirib bo'lmaydi — avval «✅ Qo'llash» yoki «🚪 Sinovdan chiqish»"
     draft = copy.deepcopy(bot.menu)
     try:
         result = mutate(draft)
@@ -167,6 +172,8 @@ async def admin_rows(runner: "Runner", bot: "RunningBot", chat_id: int, current:
         rows = [[ADD_POST, ADD_Q], [STOP, BTN_EDITOR]]
     elif current == "ai":
         rows = [[AI_RESET, AI_EXIT]]
+    elif current == "sandbox":
+        rows = [[SBX_APPLY, SBX_EXIT]]
     else:
         rows = [[BTN_EDITOR, POST_EDITOR], [AI_BTN, ADMIN_PANEL]]
     return [[{"text": t} for t in row] for row in rows]
@@ -660,6 +667,17 @@ async def on_message(runner: "Runner", bot: "RunningBot", message: dict) -> bool
     current = await mode(runner, bot, chat_id)
 
     import admin  # aylanma import bo'lmasligi uchun shu yerda
+
+    if current == "sandbox":
+        import ai_chat
+
+        if text == SBX_APPLY:
+            await ai_chat.apply(runner, bot, chat_id, user)
+            return True
+        if text == SBX_EXIT:
+            await ai_chat.exit_sandbox(runner, bot, chat_id, user)
+            return True
+        return False  # sinovda bot oddiy foydalanuvchi kabi ishlaydi
 
     is_control = text in CONTROLS or (current == "buttons" and text.startswith(PASTE))
     if text in ("/edit", "/tahrir") or is_control:

@@ -483,6 +483,7 @@ type Usage = { calls: number; input_tokens: number; output_tokens: number; cost_
 
 export type AdminAI = {
   model: string;
+  builder_model: string;
   enabled: boolean;
   configured: boolean;
   key_source: "admin" | "env" | null;
@@ -567,7 +568,7 @@ export const adminApi = {
   grant: (id: number, plan_code: string, days: number) => request<{ user: AdminUserRow }>("POST", `${A}/users/${id}/grant`, { plan_code, days }),
   ban: (id: number, banned: boolean) => request<{ user: AdminUserRow }>("POST", `${A}/users/${id}/ban`, { banned }),
   ai: () => request<AdminAI>("GET", `${A}/ai`),
-  saveAi: (model: string, enabled: boolean) => request<AdminAI>("PUT", `${A}/ai`, { model, enabled }),
+  saveAi: (model: string, enabled: boolean, builder_model?: string) => request<AdminAI>("PUT", `${A}/ai`, { model, enabled, builder_model }),
   saveAiKey: (api_key: string) => request<AdminAI>("PUT", `${A}/ai/key`, { api_key }),
   deleteAiKey: () => request<AdminAI>("DELETE", `${A}/ai/key`),
   testAi: () => request<{ ok: boolean; reply?: string; model?: string; ms?: number; error?: string }>("POST", `${A}/ai/test`),

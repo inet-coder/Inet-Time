@@ -24,7 +24,10 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
   - **🤖 InetTime AI**: egasi botning o'zida AI bilan suhbatlashadi («restoran uchun bot: menyu, buyurtma formasi,
     referal…») — AI to'liq botni loyihalaydi (bo'limlar, postlar, tugmalar, formalar, o'zgaruvchilar, kalit so'zlar,
     buyruqlar, referal), tuzilma daraxti ko'rsatiladi, «✅ Qo'llash» → darhol ishlaydi, «↩️ Oldingi holat» bilan
-    qaytariladi; suhbatni davom ettirib o'zgartiriladi. Javob avtomatik tekshiriladi, xato bo'lsa AI o'zi tuzatadi.
+    qaytariladi; suhbatni davom ettirib o'zgartiriladi. Quruvchi v2 dasturchi kabi ishlaydi: kerak bo'lsa aniqlashtiruvchi savollar → arxitektura → har bo'lim
+    uchun matnlar (parallel) → navigatsiya va uslub kod bilan yig'iladi → sifat tekshiruvi (linter) → 🧪 sinov rejimi
+    (egasi yangi botni foydalanuvchilarga ko'rsatmasdan sinaydi) → ✅ qo'llash. Alohida «quruvchi modeli» (admin → AI).
+    To'liq reja: [docs/bot-builder-roadmap.md](docs/bot-builder-roadmap.md)
     Web App konstruktorida ham «✨ AI» — ilovani tasvirlab yaratish. Kunlik limit tarif bo'yicha (`builder_ai_daily`).
     OpenAI kaliti admin panelda kiritiladi (Admin → AI): saqlashdan oldin tekshiriladi, bazada shifrlangan holda turadi
   - **15 xil tugma vazifasi**: sahifa, havola, orqaga, bosh menyu, adminga yozish, Web App, ogohlantirish

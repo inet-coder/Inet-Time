@@ -581,17 +581,20 @@ async def get_ai_settings(admin: User = Depends(current_admin), db: AsyncSession
 class AISettingsAdminIn(BaseModel):
     model: str
     enabled: bool
+    builder_model: str | None = None
 
 
 @router.put("/ai")
 async def set_ai_settings(payload: AISettingsAdminIn, admin: User = Depends(current_admin), db: AsyncSession = Depends(get_db)) -> dict:
-    if payload.model not in ai.MODELS:
+    if payload.model not in ai.MODELS or (payload.builder_model and payload.builder_model not in ai.MODELS):
         raise HTTPException(400, "Noma'lum model")
     row = await db.scalar(select(SystemSetting).where(SystemSetting.key == ai.AI_SETTING_KEY))
     if row is None:
         row = SystemSetting(key=ai.AI_SETTING_KEY, value={})
         db.add(row)
     row.value = {**(row.value or {}), "model": payload.model, "enabled": payload.enabled}
+    if payload.builder_model:
+        row.value = {**row.value, "builder_model": payload.builder_model}
     await record_audit(
         db, actor_type=ActorType.ADMIN, actor_id=None, action="ai_settings_updated", entity_type="system_setting",
         entity_id=None, meta={"by_telegram_id": admin.telegram_user_id, **row.value},

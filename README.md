@@ -25,7 +25,8 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
     referal…») — AI to'liq botni loyihalaydi (bo'limlar, postlar, tugmalar, formalar, o'zgaruvchilar, kalit so'zlar,
     buyruqlar, referal), tuzilma daraxti ko'rsatiladi, «✅ Qo'llash» → darhol ishlaydi, «↩️ Oldingi holat» bilan
     qaytariladi; suhbatni davom ettirib o'zgartiriladi. Javob avtomatik tekshiriladi, xato bo'lsa AI o'zi tuzatadi.
-    Web App konstruktorida ham «✨ AI» — ilovani tasvirlab yaratish. Kunlik limit tarif bo'yicha (`builder_ai_daily`)
+    Web App konstruktorida ham «✨ AI» — ilovani tasvirlab yaratish. Kunlik limit tarif bo'yicha (`builder_ai_daily`).
+    OpenAI kaliti admin panelda kiritiladi (Admin → AI): saqlashdan oldin tekshiriladi, bazada shifrlangan holda turadi
   - **15 xil tugma vazifasi**: sahifa, havola, orqaga, bosh menyu, adminga yozish, Web App, ogohlantirish
     (alert), forma, o'zgaruvchi (`ball +1`), ulashish/referal, obunani tekshirish, telefon va joylashuv so'rash,
     adminga bildirish, tasodifiy sahifa

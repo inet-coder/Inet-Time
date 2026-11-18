@@ -3,6 +3,7 @@
 Xarajat nazorati: tarif bo'yicha kunlik limit (Redis hisoblagich), har chaqiruv ai_usage'ga yoziladi,
 javob uzunligi max_completion_tokens bilan cheklangan."""
 
+import base64
 import datetime
 import json
 import logging
@@ -15,6 +16,7 @@ from openai import AsyncOpenAI, OpenAIError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core import crypto
 from core.db.models import AIUsage, SystemSetting
 from core.settings import settings
 
@@ -110,21 +112,51 @@ class AIResult:
 # --- Sozlamalar ---
 
 
+# Kalit admin paneldan kiritiladi (bazada shifrlangan holda) — .env'dagi OPENAI_API_KEY faqat zaxira.
+# get_config har bir AI chaqiruvidan oldin ishlaydi va shu jarayon uchun faol kalitni yangilaydi.
+_active_key: str = ""
+
+
+def _stored_key(value: dict) -> str:
+    blob = value.get("api_key")
+    if not blob:
+        return ""
+    try:
+        return crypto.decrypt_packed(base64.b64decode(blob))
+    except Exception:  # noqa: BLE001 — shifrlash kaliti almashgan bo'lishi mumkin
+        logger.warning("saqlangan OpenAI kalitini ochib bo'lmadi")
+        return ""
+
+
+def encrypt_key(key: str) -> str:
+    return base64.b64encode(crypto.encrypt_packed(key)).decode()
+
+
+def mask_key(key: str) -> str:
+    return f"{key[:3]}…{key[-4:]}" if len(key) > 10 else "…"
+
+
 async def get_config(db: AsyncSession) -> dict:
+    global _active_key
     row = await db.scalar(select(SystemSetting).where(SystemSetting.key == AI_SETTING_KEY))
     value = row.value if row is not None else {}
     model = value.get("model") or settings.openai_model
+    stored = _stored_key(value)
+    key = stored or settings.openai_api_key
+    _active_key = key
     return {
         "model": model,
         "enabled": bool(value.get("enabled", True)),
-        "configured": bool(settings.openai_api_key),
+        "configured": bool(key),
+        "key_source": "admin" if stored else ("env" if settings.openai_api_key else None),
+        "key_hint": mask_key(key) if key else None,
     }
 
 
 async def ensure_available(db: AsyncSession) -> dict:
     config = await get_config(db)
     if not config["configured"]:
-        raise AIError("AI hali sozlanmagan (admin OpenAI kalitini qo'shishi kerak)")
+        raise AIError("AI hali sozlanmagan (admin panelda OpenAI kalitini kiritish kerak)")
     if not config["enabled"]:
         raise AIError("AI vaqtincha o'chirilgan")
     return config
@@ -169,17 +201,22 @@ async def refund_quota(redis, user_id: int) -> None:
 
 # --- OpenAI chaqiruvi ---
 
-_client: AsyncOpenAI | None = None
+_clients: dict[str, AsyncOpenAI] = {}
 
 
-def _openai() -> AsyncOpenAI:
-    global _client
-    if _client is None:
-        _client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=30, max_retries=1)
-    return _client
+def _openai(key: str | None = None) -> AsyncOpenAI:
+    key = key or _active_key or settings.openai_api_key
+    if not key:
+        raise AIError("AI hali sozlanmagan (admin panelda OpenAI kalitini kiriting)")
+    client = _clients.get(key)
+    if client is None:
+        # Bot konstruktori uchun katta javoblar ham sig'sin
+        _clients.clear()
+        client = _clients[key] = AsyncOpenAI(api_key=key, timeout=120, max_retries=1)
+    return client
 
 
-async def _complete(model: str, messages: list[dict], max_tokens: int, json_mode: bool = False) -> AIResult:
+async def _complete(model: str, messages: list[dict], max_tokens: int, json_mode: bool = False, key: str | None = None) -> AIResult:
     params: dict = {"model": model, "messages": messages, "max_completion_tokens": max_tokens}
     if model.startswith("gpt-5"):
         # Reasoning modellar: fikrlashni minimal qilamiz — tez va arzon, oddiy chat uchun yetarli.
@@ -190,7 +227,7 @@ async def _complete(model: str, messages: list[dict], max_tokens: int, json_mode
     if json_mode:
         params["response_format"] = {"type": "json_object"}
     try:
-        resp = await _openai().chat.completions.create(**params)
+        resp = await _openai(key).chat.completions.create(**params)
     except OpenAIError as exc:
         logger.warning("OpenAI xatosi: %s", exc)
         raise AIError("AI javob bermadi, keyinroq urinib ko'ring") from exc
@@ -265,5 +302,5 @@ async def suggest(model: str, field: str, topic: str) -> tuple[list, AIResult]:
     return items, result
 
 
-async def test(model: str) -> AIResult:
-    return await _complete(model, [{"role": "user", "content": "Bir so'z bilan javob ber: salom"}], 20)
+async def test(model: str, key: str | None = None) -> AIResult:
+    return await _complete(model, [{"role": "user", "content": "Bir so'z bilan javob ber: salom"}], 20, key=key)

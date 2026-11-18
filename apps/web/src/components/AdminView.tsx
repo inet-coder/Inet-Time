@@ -31,6 +31,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import {
   adminApi,
+  type AdminAI,
   type AdminPayment,
   type AdminPlan,
   type AdminUserRow,
@@ -940,14 +941,7 @@ function AIAdmin({ toast }: { toast: Toast }) {
 
   return (
     <div className="stack">
-      {!data.configured && (
-        <div className="notice notice--warn">
-          <Bot size={18} />
-          <span>
-            OpenAI kaliti yo'q. Serverdagi <b>.env</b> fayliga <b>OPENAI_API_KEY=sk-…</b> qo'shing va qayta ishga tushiring.
-          </span>
-        </div>
-      )}
+      <AIKeyCard data={data} toast={toast} onChanged={refresh} />
       <div className="stat-grid">
         {usage("bugun", data.usage.today)}
         {usage("30 kun", data.usage.month)}
@@ -978,6 +972,61 @@ function AIAdmin({ toast }: { toast: Toast }) {
         {testResult && <p className="hint field__hint">{testResult}</p>}
       </section>
     </div>
+  );
+}
+
+function AIKeyCard({ data, toast, onChanged }: { data: AdminAI; toast: Toast; onChanged: () => void }) {
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    if (await run(toast, () => adminApi.saveAiKey(key.trim()), "Kalit tekshirildi va saqlandi")) {
+      setKey("");
+      onChanged();
+    }
+    setBusy(false);
+  };
+  const remove = async () => {
+    if (!(await confirmDialog("OpenAI kaliti o'chirilsinmi? AI xizmatlari to'xtaydi."))) return;
+    if (await run(toast, () => adminApi.deleteAiKey(), "Kalit o'chirildi")) onChanged();
+  };
+  return (
+    <section className={`card ${data.configured ? "" : "card--warn"}`}>
+      <label className="label" style={{ marginTop: 0 }}>
+        🔑 OpenAI API kaliti
+      </label>
+      {data.configured ? (
+        <p className="hint">
+          ✅ Ulangan: <b>{data.key_hint}</b> · {data.key_source === "admin" ? "admin paneldan kiritilgan" : "server .env faylidan"}
+        </p>
+      ) : (
+        <p className="hint">
+          ❌ Kalit kiritilmagan — AI avto-javob, AI bilan yozish va <b>InetTime AI</b> (bot va Web App yaratish) ishlamaydi.
+        </p>
+      )}
+      <input
+        className="input"
+        type="password"
+        autoComplete="off"
+        placeholder={data.configured ? "Yangi kalit bilan almashtirish: sk-…" : "sk-…"}
+        value={key}
+        onChange={(e) => setKey(e.target.value)}
+      />
+      <p className="hint field__hint">
+        Kalitni platform.openai.com → API keys bo'limida oling. Saqlashdan oldin kichik so'rov bilan tekshiriladi va bazada shifrlangan holda saqlanadi —
+        to'liq ko'rinishda hech qayerda ko'rsatilmaydi.
+      </p>
+      <div className="row">
+        <button className="btn btn--primary" disabled={busy || key.trim().length < 20} onClick={save}>
+          {busy ? "Tekshirilmoqda…" : "Saqlash"}
+        </button>
+        {data.key_source === "admin" && (
+          <button className="btn btn--ghost" onClick={remove}>
+            O'chirish
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
 

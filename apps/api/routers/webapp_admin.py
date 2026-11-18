@@ -600,12 +600,58 @@ async def set_ai_settings(payload: AISettingsAdminIn, admin: User = Depends(curr
     return await get_ai_settings(admin, db)
 
 
+class AIKeyIn(BaseModel):
+    api_key: str = Field(min_length=20, max_length=300)
+
+
+async def _ai_row(db: AsyncSession) -> SystemSetting:
+    row = await db.scalar(select(SystemSetting).where(SystemSetting.key == ai.AI_SETTING_KEY))
+    if row is None:
+        row = SystemSetting(key=ai.AI_SETTING_KEY, value={})
+        db.add(row)
+    return row
+
+
+@router.put("/ai/key")
+async def set_ai_key(payload: AIKeyIn, admin: User = Depends(current_admin), db: AsyncSession = Depends(get_db)) -> dict:
+    """OpenAI kalitini saqlaydi (shifrlangan). Saqlashdan oldin kichik so'rov bilan tekshiriladi."""
+    key = payload.api_key.strip()
+    if any(ch.isspace() for ch in key):
+        raise HTTPException(400, "Kalitda bo'sh joy bo'lmasin — to'liq nusxalab qo'ying")
+    config = await ai.get_config(db)
+    try:
+        await ai.test(config["model"], key=key)
+    except ai.AIError as exc:
+        reason = str(exc.__cause__ or exc)[:200]
+        raise HTTPException(400, f"Kalit ishlamadi: {reason}") from exc
+    row = await _ai_row(db)
+    row.value = {**(row.value or {}), "api_key": ai.encrypt_key(key)}
+    await record_audit(
+        db, actor_type=ActorType.ADMIN, actor_id=None, action="ai_key_updated", entity_type="system_setting",
+        entity_id=None, meta={"by_telegram_id": admin.telegram_user_id, "key_hint": ai.mask_key(key)},
+    )
+    await db.commit()
+    return await get_ai_settings(admin, db)
+
+
+@router.delete("/ai/key")
+async def delete_ai_key(admin: User = Depends(current_admin), db: AsyncSession = Depends(get_db)) -> dict:
+    row = await _ai_row(db)
+    row.value = {k: v for k, v in (row.value or {}).items() if k != "api_key"}
+    await record_audit(
+        db, actor_type=ActorType.ADMIN, actor_id=None, action="ai_key_removed", entity_type="system_setting",
+        entity_id=None, meta={"by_telegram_id": admin.telegram_user_id},
+    )
+    await db.commit()
+    return await get_ai_settings(admin, db)
+
+
 @router.post("/ai/test")
 async def test_ai(admin: User = Depends(current_admin), db: AsyncSession = Depends(get_db)) -> dict:
     """Kalit va model ishlayotganini tekshirish (juda kichik so'rov)."""
     config = await ai.get_config(db)
     if not config["configured"]:
-        return {"ok": False, "error": "OPENAI_API_KEY .env faylida yo'q"}
+        return {"ok": False, "error": "OpenAI kaliti kiritilmagan"}
     started = datetime.datetime.now()
     try:
         result = await ai.test(config["model"])

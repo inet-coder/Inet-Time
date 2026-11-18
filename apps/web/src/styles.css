@@ -4660,3 +4660,6 @@ input[type="range"] {
   align-items: center;
   gap: 12px;
 }
+.card--warn {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 70%, transparent);
+}

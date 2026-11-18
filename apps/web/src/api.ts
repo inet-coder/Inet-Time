@@ -485,6 +485,8 @@ export type AdminAI = {
   model: string;
   enabled: boolean;
   configured: boolean;
+  key_source: "admin" | "env" | null;
+  key_hint: string | null;
   models: { id: string; price_in: number | null; price_out: number | null }[];
   enabled_accounts: number;
   usage: { today: Usage; month: Usage };
@@ -566,6 +568,8 @@ export const adminApi = {
   ban: (id: number, banned: boolean) => request<{ user: AdminUserRow }>("POST", `${A}/users/${id}/ban`, { banned }),
   ai: () => request<AdminAI>("GET", `${A}/ai`),
   saveAi: (model: string, enabled: boolean) => request<AdminAI>("PUT", `${A}/ai`, { model, enabled }),
+  saveAiKey: (api_key: string) => request<AdminAI>("PUT", `${A}/ai/key`, { api_key }),
+  deleteAiKey: () => request<AdminAI>("DELETE", `${A}/ai/key`),
   testAi: () => request<{ ok: boolean; reply?: string; model?: string; ms?: number; error?: string }>("POST", `${A}/ai/test`),
   referrals: () => request<ReferralAdmin>("GET", `${A}/referrals`),
   saveReferralSettings: (body: ReferralSettings) => request<ReferralAdmin>("PUT", `${A}/referrals/settings`, body),

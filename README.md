@@ -36,6 +36,10 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
     (nom, telefon, manzil, ish vaqti) — javoblar hamma matnlarga o'zi joylashadi. Admin panel botdagi modullarga
     qarab chiziladi (Do'kon, Arizalar, Referal...), 📊 statistika (start, eng ko'p ochilgan bo'limlar, savdo
     voronkasi, tushum), 🧩 modullar ro'yxati va «🚀 Birinchi 5 daqiqa» yo'riqnomasi
+  - **🧪 Sifat to'plami**: 40 ta turli brif (gul do'koni, salon, klinika, kurs, viktorina, yordam xizmati...) bo'yicha
+    AI quruvchini avtomatik baholash — tekshiruv, yetib borish, joy tutuvchilar, kutilgan modullar, mazmun va tugma
+    sifati, o'zgaruvchilar, xavfsizlik (0–100 ball). Promptni o'zgartirgach regressiyani ushlaydi:
+    `OPENAI_API_KEY=... python tools/run_bot_eval.py --model gpt-4.1-mini --out eval.md`
   - **🔌 Integratsiyalar**: hodisalar (yangi foydalanuvchi, buyurtma, to'lov, holat, yozilish, ariza, murojaat)
     tashqi tizimga avtomatik ketadi — 🟢 **Google Sheets** (Apps Script orqali, kod tayyor beriladi: har hodisa
     jadvalga yangi qator) va 🔗 **webhook** (CRM, Zapier/Make; HMAC-SHA256 imzo, 3 urinish, yuborishlar tarixi, 🧪 sinov).

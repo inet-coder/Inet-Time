@@ -148,8 +148,8 @@ Egasi yozadi → AI niyatni aniqlaydi (qaysi tizim(lar)?) → kerakli modullar t
 | **F** ✅ | **Tiketlar + operatorlar + rollar** | Yordam xizmati botlari |
 | **G** ✅ | **To'lovlar** (Telegram Payments) + promokod + ombor | Savdo va pullik obuna |
 | **H** ✅ | **Webhook + Google Sheets + kanalga avto-post** | Integratsiya |
-| **I** | **Ko'p til** + eksport/import | Kengayish |
-| **J** | **40 brifli sifat to'plami** | Har bosqichdan keyin regressiya |
+| ~~I~~ | ~~Ko'p til + eksport/import~~ | Kerak emas (egasi qarori) |
+| **J** ✅ | **40 brifli sifat to'plami** (`tools/run_bot_eval.py`) | Har bosqichdan keyin regressiya |
 
 ✅ **A + B bajarildi**: modul reyestri (`core/botmodules.py`), modullarga qarab chiziladigan panel, statistika (`apps/botrunner/stats.py`), «Boshlash» ro'yxati, 9 ta tayyor tizim (`core/systems.py`) va bot ichidagi sozlash ustasi.
 

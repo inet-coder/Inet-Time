@@ -56,7 +56,10 @@ SHOP (built-in store with cart, checkout and order statuses — use it for ANY s
  Keep existing items (same id, file_id) unless the owner asks to change them; never invent file_id.
  Variables {cart_count} {cart_total} show the user's cart.
 QUIZZES: "quizzes": [{"id": "<id>", "title": "...", "questions": [{"q": "...", "options": ["A", "B", "C"], "answer": 0, "explain": "", "points": 1}], "var": "ball", "repeat": false}],
- "bonus": {"enabled": true, "points": 5, "streak_bonus": 1}. Pages with "module": {"type": "quiz", "ref": "<quiz id>"} | {"type": "top"} (leaderboard by {ball}) |
+ "bonus": {"enabled": true, "points": 5, "streak_bonus": 1}.
+TICKETS: "tickets": {"enabled": true, "rating": true} turns every feedback message (feedback button / forward_all) into a numbered ticket (#1, #2...)
+ with owner/operator assignment, close + rating; "canned": [{"id": "c1", "title": "Salomlashish", "text": "<reply template, may use {name}>"}]. Use for support/help-desk bots.
+ Never change "operators" (staff IDs belong to the owner). Pages with "module": {"type": "quiz", "ref": "<quiz id>"} | {"type": "top"} (leaderboard by {ball}) |
  {"type": "bonus"} (daily bonus) run them. Points accumulate in the user's variable {ball}. Keep the owner's quizzes/contests/captcha unless asked.
 AUTO (messages the bot sends by itself — use for retention and marketing):
  {"id": "<[a-z0-9_-]>", "trigger": "start_delay" | "inactive" | "cart" | "schedule", "hours": 24 (delay for start_delay/inactive/cart),
@@ -278,9 +281,12 @@ def prepare(new: dict, current: dict) -> dict:
             f["target"] = remap(f.get("target"))
     _prepare_shop(doc, current, remap)
     _prepare_booking(doc, current)
-    for key, empty in (("quizzes", []), ("contests", []), ("bonus", None), ("captcha", False)):
+    doc["operators"] = current.get("operators") or []  # xodimlar ro'yxatini faqat egasi o'zgartiradi
+    for key, empty in (("quizzes", []), ("contests", []), ("bonus", None), ("captcha", False), ("canned", []), ("tickets", None)):
         if key not in doc:
             doc[key] = copy.deepcopy(current[key]) if key in current else (empty if empty is not None else {"enabled": False})
+        if key == "tickets" and not isinstance(doc[key], dict):
+            doc[key] = {"enabled": False}
     quiz_ids = {q.get("id") for q in doc["quizzes"] if isinstance(q, dict)}
     for page in doc["pages"]:
         mod = page.get("module")
@@ -906,6 +912,7 @@ PLAN FORMAT
  "keywords": [{"words": ["narx", "menyu"], "section": "<id>"}],
  "commands": [{"command": "menu", "description": "Menyu", "section": "<id>"}],
  "referral": {"enabled": false, "reward": 1, "var": "ball"},
+ "tickets": true | false  (support / help-desk bots: numbered tickets with operators; also write "canned": [{"title": "...", "text": "..."}] 2-4 reply templates),
  "auto": [{"trigger": "cart" | "start_delay" | "inactive" | "schedule", "hours": 3, "at": "10:00", "days": [0,1,2,3,4,5,6], "text": "<short persuasive HTML text>", "section": "<section id for a button>"}]  (0-4 rules; optional),
  "booking": null | {"services": [{"title": "Soch olish", "minutes": 45, "price": 80000}], "staff": ["Aziza", "Dilnoza"],
                     "hours": "Du-Sha 09:00-18:00\\nYa yopiq", "confirm": "manual", "days_ahead": 14},
@@ -1356,6 +1363,8 @@ def compile_plan(plan: dict, content: dict) -> dict:
         "shop": shop,
         "booking": booking,
         "auto": auto,
+        "tickets": {"enabled": bool(plan.get("tickets")), "rating": True},
+        "canned": _canned(plan),
         "quizzes": quizzes,
         "bonus": {"enabled": has_bonus, "points": _int(bonus_cfg.get("points"), 5, 1, 1000), "streak_bonus": _int(bonus_cfg.get("streak_bonus"), 1, 0, 100)},
         "pages": pages,
@@ -1369,6 +1378,14 @@ def compile_plan(plan: dict, content: dict) -> dict:
 
 
 _VARKEY = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+
+
+def _canned(plan: dict) -> list[dict]:
+    out = []
+    for i, c in enumerate((plan.get("canned") or [])[:10], 1):
+        if isinstance(c, dict) and str(c.get("title") or "").strip() and str(c.get("text") or "").strip():
+            out.append({"id": f"c{i}", "title": str(c["title"]).strip()[:40], "text": str(c["text"]).strip()[:1500]})
+    return out if plan.get("tickets") else []
 
 
 def _int(value, default: int, lo: int, hi: int) -> int:

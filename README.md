@@ -36,6 +36,11 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
     (nom, telefon, manzil, ish vaqti) — javoblar hamma matnlarga o'zi joylashadi. Admin panel botdagi modullarga
     qarab chiziladi (Do'kon, Arizalar, Referal...), 📊 statistika (start, eng ko'p ochilgan bo'limlar, savdo
     voronkasi, tushum), 🧩 modullar ro'yxati va «🚀 Birinchi 5 daqiqa» yo'riqnomasi
+  - **🎫 Murojaatlar (tiketlar)**: qayta aloqa xabarlari raqamli murojaatga (#1, #2...) aylanadi — ochiq murojaatga
+    yangi xabar qo'shiladi, mas'ul («🙋 Meniki» yoki birinchi javob bergan) belgilanadi va keyingi xabarlar faqat unga
+    boradi; «Reply» bilan javob, 📝 shablon javoblar, ✅ yopish + mijozdan ⭐ baho. **Operatorlar** (faqat murojaatlar,
+    panelsiz; `/tickets`). Statistika: ochiq/mas'ulsiz, birinchi javob vaqti, o'rtacha baho. /admin → 🎫 Murojaatlar;
+    «Yordam xizmati» tizimi tiket bilan keladi
   - **🎮 O'yin va jalb qilish**: 🧠 viktorina (savollar chatda `+` to'g'ri / `-` noto'g'ri formatida yoziladi, ball
     foydalanuvchi `{ball}` o'zgaruvchisiga, qayta topshirishda ball takror berilmaydi), 🏆 reyting (TOP-10 va o'z
     o'rni), 🎁 kunlik bonus (ketma-ket kunlar uchun qo'shimcha), 🎉 konkurs (qatnashish tugmasi, bir bosishda tasodifiy

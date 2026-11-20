@@ -848,6 +848,10 @@ async def on_message(runner: "Runner", bot: "RunningBot", message: dict) -> bool
         import shop
 
         return await shop.admin_input(runner, bot, chat_id, message, state)
+    if str(kind).startswith("tk_"):
+        import tickets
+
+        return await tickets.admin_input(runner, bot, chat_id, message, state)
     if str(kind).startswith("gm_"):
         import games
 

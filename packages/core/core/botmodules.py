@@ -21,6 +21,7 @@ MODULES: list[dict] = [
     {"id": "forms", "icon": "📝", "title": "Arizalar", "desc": "Ko'p bosqichli formalar", "cb": "adm:form", "present": lambda m: bool(m.get("forms"))},
     {"id": "referral", "icon": "👥", "title": "Referal", "desc": "Taklif, ball, mukofot", "cb": "adm:ref", "present": lambda m: bool((m.get("referral") or {}).get("enabled"))},
     {"id": "channels", "icon": "📢", "title": "Majburiy obuna", "desc": "Kanalga obuna sharti", "cb": "adm:ch", "present": lambda m: bool(m.get("channels"))},
+    {"id": "tickets", "icon": "🎫", "title": "Murojaatlar", "desc": "Tiketlar, operatorlar, shablon javoblar", "cb": "tk:home", "present": lambda m: bool((m.get("tickets") or {}).get("enabled"))},
     {"id": "feedback", "icon": "💬", "title": "Murojaatlar", "desc": "Har bir xabar egasiga", "cb": "adm:fbk", "present": lambda m: bool(m.get("forward_all"))},
 ]
 

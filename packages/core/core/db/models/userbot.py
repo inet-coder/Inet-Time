@@ -146,3 +146,22 @@ class BotContestEntry(Base):
     contest_id: Mapped[str] = mapped_column(String(32))
     tg_user_id: Mapped[int] = mapped_column(BigInteger)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BotTicket(TimestampMixin, Base):
+    """Murojaat (tiket): foydalanuvchining ochiq suhbati. Xabarlarning o'zi Telegramda; bu yerda holat va mas'ul."""
+
+    __tablename__ = "bot_tickets"
+    __table_args__ = (Index("ix_bot_tickets_status", "bot_id", "status"), Index("ix_bot_tickets_user", "bot_id", "tg_user_id"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("user_bots.id", ondelete="CASCADE"))
+    number: Mapped[int] = mapped_column(Integer)
+    tg_user_id: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(8), default="open")  # open | closed
+    assignee: Mapped[int | None] = mapped_column(BigInteger)  # mas'ul xodim (Telegram ID)
+    preview: Mapped[str] = mapped_column(String(200), default="")
+    messages: Mapped[int] = mapped_column(Integer, default=1)
+    rating: Mapped[int | None] = mapped_column(Integer)
+    first_reply_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))

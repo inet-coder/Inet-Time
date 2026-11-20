@@ -160,6 +160,11 @@ SYSTEMS: dict[str, dict] = {
             "contacts": _post(CONTACTS, MAP),
         },
         "forward_all": True,
+        "tickets": True,
+        "canned": [
+            {"title": "Salomlashish", "text": "Assalomu alaykum, {name}! Murojaatingiz qabul qilindi, hozir ko'rib chiqamiz."},
+            {"title": "Ish vaqti", "text": "Ish vaqtimiz: {biz_vaqt}. Aloqa: {biz_tel}."},
+        ],
     },
     "sys_apply": {
         "icon": "📝",
@@ -311,6 +316,8 @@ def build_system(code: str) -> dict | None:
         "booking": system.get("booking"),
         "auto": system.get("auto"),
         "bonus": system.get("bonus"),
+        "tickets": system.get("tickets"),
+        "canned": system.get("canned"),
     }
     content = {"sections": {}, "fallback": system.get("fallback", "Menyudan tanlang 👇")}
     for sid, data in system["content"].items():
@@ -320,6 +327,9 @@ def build_system(code: str) -> dict | None:
     doc = bot_ai.compile_plan(bot_ai._plan_fix(plan, 100), content)
     if system.get("forward_all"):
         doc["forward_all"] = True
+    if system.get("tickets"):
+        doc["tickets"] = {"enabled": True, "rating": True}
+        doc["canned"] = [{"id": f"c{i + 1}", **c} for i, c in enumerate(system.get("canned") or [])]
     doc["system"] = code
     doc["setup"] = (COMMON_STEPS if use_common else []) + system.get("steps", [])
     # Global o'zgaruvchilar ustada so'raladiganlardan keyin ham sozlanadi — takrorlanuvchilar olib tashlanadi

@@ -609,6 +609,26 @@ class Bonus(_M):
         return _var_key(v) or "ball"
 
 
+class Canned(_M):
+    """Shablon javob (operator bir bosishda yuboradi)."""
+
+    id: str
+    title: str = Field(min_length=1, max_length=40)
+    text: str = Field(min_length=1, max_length=1500)
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v: str) -> str:
+        if not _PAGE_ID.match(v):
+            raise ValueError("shablon identifikatori noto'g'ri")
+        return v
+
+
+class Tickets(_M):
+    enabled: bool = False  # true — qayta aloqa xabarlari raqamli murojaatga (tiket) aylanadi
+    rating: bool = True  # yopilganda mijozdan baho so'raladi
+
+
 AUTO_TRIGGERS = ("start_delay", "inactive", "cart", "schedule")
 AUTO_SEGMENTS = ("all", "new7", "active7", "inactive30", "ordered", "booked", "referrers")
 
@@ -673,6 +693,9 @@ class Menu(_M):
     quizzes: list[Quiz] = Field(default_factory=list, max_length=10)
     contests: list[Contest] = Field(default_factory=list, max_length=10)
     bonus: Bonus = Bonus()
+    tickets: Tickets = Tickets()
+    operators: list[int] = Field(default_factory=list, max_length=20)  # faqat murojaatlarga javob beradigan xodimlar
+    canned: list[Canned] = Field(default_factory=list, max_length=20)
     captcha: bool = False  # yangi foydalanuvchi «men robot emasman» savoliga javob beradi
     tz: int = Field(default=5, ge=-12, le=14)
     # Tayyor tizim kodi (sys_shop...) va hali bajarilmagan sozlash ustasi qadamlari (bo'sh — usta tugagan)
@@ -728,6 +751,10 @@ class Menu(_M):
             if form.target and form.target not in known:
                 form.target = None
         self.admins = list(dict.fromkeys(a for a in self.admins if a > 0))
+        self.operators = [o for o in dict.fromkeys(self.operators) if o > 0 and o not in self.admins]
+        cids = [c.id for c in self.canned]
+        if len(set(cids)) != len(cids):
+            raise ValueError("shablon javoblar takrorlanmasin")
         catalogs = {p.id for p in self.pages if p.module and p.module.type == "catalog"}
         missing = [i.title for i in self.shop.items if i.category not in catalogs]
         if missing:

@@ -61,6 +61,7 @@ import games
 import home
 import shop
 import stats
+import tickets
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)  # URL ichida token bor
@@ -1168,6 +1169,14 @@ class Runner:
             await self.answer(bot, query["id"])
             return
         chat_id = message["chat"]["id"]
+        if data.startswith("tk:"):
+            await self.answer(bot, query["id"])
+            if tickets.is_staff(self, bot, chat_id):
+                await tickets.callback(self, bot, chat_id, data, message, user)
+            return
+        if data.startswith("tr:"):
+            await tickets.rate(self, bot, chat_id, data, message, query["id"])
+            return
         if data.startswith(("adm:", "e:", "ai:", "sh:", "bm:", "au:", "gm:")):
             await self.answer(bot, query["id"])
             if self.is_admin(bot, chat_id):
@@ -1267,8 +1276,12 @@ class Runner:
         text = (message.get("text") or "").strip()
         is_admin = self.is_admin(bot, chat_id)
 
-        # Admin kelgan xabarga «reply» qildi — javob o'sha odamga qaytadi.
-        if is_admin and message.get("reply_to_message"):
+        staff = is_admin or chat_id in (bot.menu.get("operators") or [])
+        if staff and text == "/tickets":
+            await tickets.staff_command(self, bot, chat_id, user)
+            return
+        # Xodim (admin yoki operator) kelgan xabarga «reply» qildi — javob o'sha odamga qaytadi.
+        if staff and message.get("reply_to_message"):
             reply_id = message["reply_to_message"]["message_id"]
             target = await self.redis.get(_k(bot.bot_id, "fb", f"{chat_id}:{reply_id}")) or (
                 await self.redis.get(_k(bot.bot_id, "fb", reply_id)) if chat_id == bot.owner_chat_id else None
@@ -1277,6 +1290,7 @@ class Runner:
                 try:
                     await self.api(bot, "copyMessage", {"chat_id": int(target), "from_chat_id": chat_id, "message_id": message["message_id"]})
                     await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": "✅ Javob yuborildi", "reply_to_message_id": message["message_id"]})
+                    await tickets.on_staff_reply(self, bot, chat_id, reply_id, user)
                 except BotApiError as exc:
                     reason = "foydalanuvchi botni bloklagan" if exc.user_blocked else exc.description
                     await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": f"⚠️ Yuborilmadi: {reason}"})
@@ -1373,7 +1387,7 @@ class Runner:
             if await self.on_keyword(bot, chat_id, text, user, vals):
                 return
         # Qayta aloqa rejimi: menyuda yo'q har qanday xabar (matn, rasm, ovoz...) egasiga boradi.
-        if bot.menu.get("forward_all") and not is_admin and not text.startswith("/"):
+        if bot.menu.get("forward_all") and not staff and not text.startswith("/"):
             await self.forward_feedback(bot, message, user)
             return
         await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": bot.menu.get("fallback") or "Menyudan tanlang 👇"})
@@ -1388,6 +1402,8 @@ class Runner:
         if is_new and payload.startswith("r") and payload[1:].isdigit():
             await self.on_referral(bot, user, int(payload[1:]))
         await stats.track(self, bot, "start")
+        if chat_id in (bot.menu.get("operators") or []):
+            await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": "🎫 Siz operatorsiz — murojaatlar shu yerga keladi. Ro'yxat: /tickets"})
         if chat_id == bot.owner_chat_id:
             await admin.owner_started(self, bot, chat_id)
         if not self.is_admin(bot, chat_id):
@@ -1468,6 +1484,9 @@ class Runner:
         return None, None
 
     async def forward_feedback(self, bot: RunningBot, message: dict, user: dict) -> None:
+        if tickets.enabled(bot):
+            await tickets.intake(self, bot, message, user)
+            return
         chat_id = message["chat"]["id"]
         admins = self.admin_chats(bot)
         if not admins:

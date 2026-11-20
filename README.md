@@ -36,6 +36,11 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
     (nom, telefon, manzil, ish vaqti) — javoblar hamma matnlarga o'zi joylashadi. Admin panel botdagi modullarga
     qarab chiziladi (Do'kon, Arizalar, Referal...), 📊 statistika (start, eng ko'p ochilgan bo'limlar, savdo
     voronkasi, tushum), 🧩 modullar ro'yxati va «🚀 Birinchi 5 daqiqa» yo'riqnomasi
+  - **⚡ Avtomatik xabarlar**: bot o'zi yozadi — start'dan N soat keyin, N kun kirmaganlarga, savatni tashlab
+    ketganga, jadval bo'yicha (har kuni 10:00 «kun taklifi»). Har bir foydalanuvchiga qoida bir davrda bir marta
+    (takror yuborilmaydi), auditoriya segmenti, xabar ostida bo'limni ochadigan tugma, «🧪 menga yuborish».
+    /admin → ⚡ Avto xabarlar. **Segmentli tarqatish**: yangilar, faollar, 30 kun jim, buyurtma berganlar,
+    yozilganlar, referal qilganlar. Tayyor tizimlar (do'kon, kafe, kanal) tayyor qoidalar bilan keladi; AI ham yozadi
   - **📅 Yozilish moduli**: xizmatlar (davomiylik, narx) × ixtiyoriy xodimlar × haftalik jadval → mijoz kun va bo'sh
     vaqtni tanlaydi; ikki kishi bir vaqtga yozilolmaydi (tranzaksiya qulfi); egasi chatda ✅ tasdiqlaydi yoki
     avtomatik tasdiq; mijozga holat xabari va eslatmalar (24 va 2 soat oldin), «📋 Yozilishlarim» (bekor qilish);

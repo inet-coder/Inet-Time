@@ -36,6 +36,7 @@ import editor
 if TYPE_CHECKING:
     from main import RunningBot, Runner
 
+SEGMENT_KEYS = ("all", "new7", "active7", "inactive30", "ordered", "booked", "referrers")
 STATE_KEY = "ub:{bot}:ast:{chat}"  # egasining panel holati (JSON yoki eski "bc")
 OWNER_HINT_KEY = "ub:{bot}:ownerhint"
 
@@ -733,8 +734,10 @@ async def on_callback(runner: "Runner", bot: "RunningBot", chat_id: int, data: s
             "📨 Tarqatiladigan xabarni yuboring.\n\nMatn, rasm, video, fayl yoki ovozli xabar bo'lishi mumkin — "
             "u barcha obunachilarga aynan shu ko'rinishda boradi.",
         )
+    elif action == "bcs" and i is not None:
+        await _bc_confirm(runner, bot, chat_id, i, parts[3] if len(parts) > 3 else "all", message)
     elif action == "bcok" and i is not None:
-        await _start_broadcast(runner, bot, chat_id, i, message)
+        await _start_broadcast(runner, bot, chat_id, i, message, parts[3] if len(parts) > 3 else "all")
     elif action == "bcno":
         await runner.api(bot, "editMessageText", {"chat_id": chat_id, "message_id": message["message_id"], "text": "❌ Bekor qilindi."})
 
@@ -845,6 +848,10 @@ async def on_message(runner: "Runner", bot: "RunningBot", message: dict) -> bool
         import shop
 
         return await shop.admin_input(runner, bot, chat_id, message, state)
+    if str(kind).startswith("au_"):
+        import auto
+
+        return await auto.admin_input(runner, bot, chat_id, message, state)
     if str(kind).startswith("bk_"):
         import booking
 
@@ -859,21 +866,7 @@ async def on_message(runner: "Runner", bot: "RunningBot", message: dict) -> bool
     # --- Istalgan turdagi xabarni qabul qiladiganlar ---
     if kind == "bc":
         await set_state(runner, bot, chat_id, None)
-        stats = await _stats(bot.bot_id)
-        await runner.api(
-            bot,
-            "sendMessage",
-            {
-                "chat_id": chat_id,
-                "text": f"☝️ Shu xabar {stats['total']} ta obunachiga yuborilsinmi?",
-                "reply_to_message_id": message["message_id"],
-                "reply_markup": {
-                    "inline_keyboard": [
-                        [{"text": "✅ Yuborish", "callback_data": f"adm:bcok:{message['message_id']}"}, {"text": "❌ Bekor", "callback_data": "adm:bcno"}]
-                    ]
-                },
-            },
-        )
+        await _bc_confirm(runner, bot, chat_id, message["message_id"], "all", None)
         return True
     if kind == "user_msg":
         await set_state(runner, bot, chat_id, None)
@@ -1118,13 +1111,31 @@ async def on_message(runner: "Runner", bot: "RunningBot", message: dict) -> bool
     return False
 
 
-async def _start_broadcast(runner: "Runner", bot: "RunningBot", chat_id: int, message_id: int, confirm: dict) -> None:
+async def _bc_confirm(runner: "Runner", bot: "RunningBot", chat_id: int, message_id: int, seg: str, confirm: dict | None) -> None:
+    """Tarqatish tasdig'i: auditoriya (segment) tanlanadi, soni ko'rsatiladi."""
+    from core.segments import SEGMENTS, conditions
+
+    seg = seg if seg in SEGMENTS else "all"
+    async with async_session() as db:
+        n = await db.scalar(select(func.count(BotSubscriber.id)).where(*conditions(seg, bot.bot_id)))
+    ok = f"adm:bcok:{message_id}" + ("" if seg == "all" else f":{seg}")
+    seg_rows = [[{"text": ("✔️ " if k == seg else "") + label, "callback_data": f"adm:bcs:{message_id}:{k}"} for k, label in list(SEGMENTS.items())[i : i + 2]] for i in range(0, len(SEGMENTS), 2)]
+    rows = [[{"text": "✅ Yuborish", "callback_data": ok}, {"text": "❌ Bekor", "callback_data": "adm:bcno"}]] + seg_rows
+    text = f"☝️ Shu xabar <b>{n}</b> ta obunachiga yuborilsinmi?\n🎯 Auditoriya: {SEGMENTS[seg]}"
+    data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "reply_markup": {"inline_keyboard": rows}}
+    if confirm is not None and "message_id" in confirm and "text" in confirm:
+        await runner.api(bot, "editMessageText", {**data, "message_id": confirm["message_id"]})
+    else:
+        await runner.api(bot, "sendMessage", {**data, "reply_to_message_id": message_id})
+
+
+async def _start_broadcast(runner: "Runner", bot: "RunningBot", chat_id: int, message_id: int, confirm: dict, segment: str = "all") -> None:
     async with async_session() as db:
         running = await db.scalar(select(BotBroadcast.id).where(BotBroadcast.bot_id == bot.bot_id, BotBroadcast.status == "sending"))
         if running:
             await runner.api(bot, "sendMessage", {"chat_id": chat_id, "text": "⏳ Oldingi xabar hali tarqatilmoqda — tugashini kuting."})
             return
-        item = BotBroadcast(bot_id=bot.bot_id, text="", from_chat_id=chat_id, message_id=message_id)
+        item = BotBroadcast(bot_id=bot.bot_id, text="", from_chat_id=chat_id, message_id=message_id, segment=segment if segment in SEGMENT_KEYS else "all")
         db.add(item)
         await db.commit()
         broadcast_id = item.id

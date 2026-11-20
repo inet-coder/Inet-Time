@@ -143,7 +143,7 @@ Egasi yozadi → AI niyatni aniqlaydi (qaysi tizim(lar)?) → kerakli modullar t
 | **A** | **Modul reyestri + panel modullarga qarab chiziladi** + statistika (voronka) | Hamma narsaning poydevori; admin panel talabi |
 | **B** | **Tizimlar galereyasi** (14 tizim kartasi + savollar) — AI'siz yaratish | Yangi foydalanuvchi uchun asosiy qulaylik |
 | **C** ✅ | **Yozilish moduli** (booking) | 2-o'rinda eng ko'p so'raladigan tur |
-| **D** | **Avtomatik xabarlar** + rejalashtirilgan post + segmentlar | Savdo va kanal botlari uchun marketing |
+| **D** ✅ | **Avtomatik xabarlar** + rejalashtirilgan post + segmentlar | Savdo va kanal botlari uchun marketing |
 | **E** | **Viktorina / reyting / kunlik bonus / konkurs / kapcha** | Kanal va jalb qilish botlari |
 | **F** | **Tiketlar + operatorlar + rollar** | Yordam xizmati botlari |
 | **G** | **To'lovlar** (Telegram Payments) + promokod + ombor | Savdo va pullik obuna |

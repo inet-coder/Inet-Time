@@ -54,6 +54,7 @@ from core.webapp_url import discover_webapp_url
 
 import admin
 import ai_chat
+import auto
 import booking
 import editor
 import home
@@ -1140,11 +1141,13 @@ class Runner:
             await self.answer(bot, query["id"])
             return
         chat_id = message["chat"]["id"]
-        if data.startswith(("adm:", "e:", "ai:", "sh:", "bm:")):
+        if data.startswith(("adm:", "e:", "ai:", "sh:", "bm:", "au:")):
             await self.answer(bot, query["id"])
             if self.is_admin(bot, chat_id):
                 if data.startswith("sh:"):
                     await shop.admin_callback(self, bot, chat_id, data, message, user)
+                elif data.startswith("au:"):
+                    await auto.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("bm:"):
                     await booking.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("adm:"):
@@ -1497,6 +1500,7 @@ class Runner:
                 if loop.time() - last_remind >= 60 and await self.is_leader():
                     last_remind = loop.time()
                     await booking.reminder_tick(self)
+                    await auto.tick(self)
             except Exception:  # noqa: BLE001
                 logger.exception("eslatmalarda xato")
             await asyncio.sleep(CHECK_SECONDS)

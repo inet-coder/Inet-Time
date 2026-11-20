@@ -573,11 +573,9 @@ async def user_bot_broadcast_job(ctx, broadcast_id: int) -> None:
         if bot is None:
             return
         token = crypto.decrypt_packed(bot.token_encrypted)
-        chat_ids = list(
-            await db.scalars(
-                select(BotSubscriber.tg_user_id).where(BotSubscriber.bot_id == bot.id, BotSubscriber.blocked == False)  # noqa: E712
-            )
-        )
+        from core.segments import conditions
+
+        chat_ids = list(await db.scalars(select(BotSubscriber.tg_user_id).where(*conditions(item.segment or "all", bot.id))))
         photo = None
         if item.media_id:
             media = await db.get(MediaFile, item.media_id)

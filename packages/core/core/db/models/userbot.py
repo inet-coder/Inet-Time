@@ -60,6 +60,7 @@ class BotBroadcast(CreatedAtMixin, Base):
     message_id: Mapped[int | None] = mapped_column(Integer)
     # sending | done
     status: Mapped[str] = mapped_column(String(16), default="sending")
+    segment: Mapped[str] = mapped_column(String(16), default="all", server_default="all")
     total: Mapped[int] = mapped_column(Integer, default=0)
     sent: Mapped[int] = mapped_column(Integer, default=0)
     failed: Mapped[int] = mapped_column(Integer, default=0)
@@ -118,3 +119,17 @@ class BotBooking(TimestampMixin, Base):
     # pending | confirmed | cancelled | done
     status: Mapped[str] = mapped_column(String(12), default="pending", index=True)
     reminded: Mapped[list] = mapped_column(JSONB, default=list)  # yuborilgan eslatmalar (soat oldin)
+
+
+class BotAutoLog(Base):
+    """Avtomatik xabar yuborilganlik yozuvi — bir foydalanuvchiga bir qoida bir davrda (period) faqat bir marta."""
+
+    __tablename__ = "bot_auto_log"
+    __table_args__ = (UniqueConstraint("bot_id", "rule_id", "tg_user_id", "period", name="uq_bot_auto_log"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("user_bots.id", ondelete="CASCADE"), index=True)
+    rule_id: Mapped[str] = mapped_column(String(32))
+    tg_user_id: Mapped[int] = mapped_column(BigInteger)  # 0 — qoida darajasidagi belgi (jadval bo'yicha tarqatish)
+    period: Mapped[str] = mapped_column(String(32))
+    sent_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

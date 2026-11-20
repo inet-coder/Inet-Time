@@ -13,6 +13,7 @@ sm (buyurtmalarim), so (admin: holat), sh (admin: do'kon boshqaruvi)."""
 import datetime
 import html
 import re
+import time
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
@@ -78,6 +79,7 @@ async def change(runner: "Runner", bot: "RunningBot", chat_id: int, item_id: str
         await runner.redis.hset(key, item_id, 99)
         qty = 99
     await runner.redis.expire(key, CART_TTL)
+    await runner.redis.set(f"ub:{bot.bot_id}:cartat:{chat_id}", time.time(), ex=CART_TTL)
     return qty
 
 
@@ -320,7 +322,7 @@ async def on_callback(runner, bot, chat_id: int, data: str, message: dict, user:
         await runner.answer(bot, query_id)
         await render_cart(runner, bot, chat_id, message=message)
     elif cmd == "sz":
-        await runner.redis.delete(_ck(bot, chat_id))
+        await runner.redis.delete(_ck(bot, chat_id), f"ub:{bot.bot_id}:cartat:{chat_id}")
         await runner.answer(bot, query_id, "🗑 Savat tozalandi")
         await render_cart(runner, bot, chat_id, message=message)
     elif cmd == "sx":
@@ -419,7 +421,7 @@ async def create_order(runner, bot, chat_id: int, user: dict, data: dict) -> Non
     if order is None:
         await runner.api(bot, "sendMessage", {"chat_id": chat_id, "text": "⚠️ Buyurtmani saqlab bo'lmadi, qayta urinib ko'ring."})
         return
-    await runner.redis.delete(_ck(bot, chat_id))
+    await runner.redis.delete(_ck(bot, chat_id), f"ub:{bot.bot_id}:cartat:{chat_id}")
     await runner.set_vars(bot, user["id"], {k: v for k, v in data.items() if k})
     vals = await runner.values(bot, user)
     vals.update({"order": str(order.number), "total": money(total, cur(bot))})

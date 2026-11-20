@@ -57,6 +57,7 @@ SYSTEMS: dict[str, dict] = {
             "contacts": _post(CONTACTS, MAP),
         },
         "fallback": "Menyudan tanlang 👇",
+        "auto": [{"trigger": "cart", "hours": 3, "text": "🛒 {name}, savatingizda <b>{cart_count}</b> ta mahsulot qoldi ({cart_total}).\nBuyurtmani yakunlang — biz tayyormiz! 👇", "section": "cart"}],
     },
     "sys_cafe": {
         "icon": "🍽",
@@ -86,6 +87,7 @@ SYSTEMS: dict[str, dict] = {
             "contacts": _post(CONTACTS, MAP),
         },
         "done": {"book": "✅ Rahmat, {ism}! Arizangiz qabul qilindi — tez orada {telefon} raqamingizga qo'ng'iroq qilamiz."},
+        "auto": [{"trigger": "cart", "hours": 2, "text": "🍽 {name}, savatingizda <b>{cart_count}</b> ta taom qoldi. Issiq-issiq yetkazamiz! 👇", "section": "cart"}],
     },
     "sys_booking": {
         "icon": "📅",
@@ -134,6 +136,7 @@ SYSTEMS: dict[str, dict] = {
             {"key": "ball", "label": "Ball", "default": "0", "scope": "user"},
         ],
         "referral": {"enabled": True, "reward": 5, "var": "ball"},
+        "auto": [{"trigger": "inactive", "hours": 168, "text": "👋 {name}, sizni sog'indik! Kanalimizda yangi materiallar bor — bir ko'z tashlang.", "section": "about"}],
         "steps": [
             {"key": "biz", "label": "🏷 Kanalingiz (botingiz) nomi?", "example": "Foydali maslahatlar"},
             {"key": "kanal", "label": "📢 Kanalingiz havolasi?", "example": "https://t.me/mening_kanalim"},
@@ -278,6 +281,7 @@ def build_system(code: str) -> dict | None:
         "variables": (COMMON_VARS if use_common else COMMON_VARS[:1]) + system.get("variables", []),
         "referral": system.get("referral") or {},
         "booking": system.get("booking"),
+        "auto": system.get("auto"),
     }
     content = {"sections": {}, "fallback": system.get("fallback", "Menyudan tanlang 👇")}
     for sid, data in system["content"].items():

@@ -42,7 +42,7 @@ BOT DOCUMENT
  "commands": [{"command": "help", "description": "Yordam", "target": "<page id>"}],
  "referral": {"enabled": false, "reward": 1, "var": "balance", "notify": true, "text": "🎉 {name} sizning havolangiz orqali qo'shildi! +{reward}"},
  "fallback": "<reply to unknown messages>", "feedback_prompt": "...", "feedback_done": "...", "forward_all": false,
- "shop": SHOP, "booking": BOOKING
+ "shop": SHOP, "booking": BOOKING, "auto": [AUTO], "tz": 5
 }
 SHOP (built-in store with cart, checkout and order statuses — use it for ANY selling bot instead of order forms):
  {"enabled": true, "currency": "so'm", "delivery_fee": 0, "free_from": 0, "min_order": 0,
@@ -55,6 +55,12 @@ SHOP (built-in store with cart, checkout and order statuses — use it for ANY s
  {"type": "orders"} — "My orders". A shop needs catalog pages, one cart page and one orders page reachable from the menu.
  Keep existing items (same id, file_id) unless the owner asks to change them; never invent file_id.
  Variables {cart_count} {cart_total} show the user's cart.
+AUTO (messages the bot sends by itself — use for retention and marketing):
+ {"id": "<[a-z0-9_-]>", "trigger": "start_delay" | "inactive" | "cart" | "schedule", "hours": 24 (delay for start_delay/inactive/cart),
+  "at": "10:00" + "days": [0..6] (0=Monday; schedule only), "segment": "all|new7|active7|inactive30|ordered|booked|referrers",
+  "text": "<Telegram HTML, may use {name} {cart_count} {cart_total} {ref_link} and variables>", "page": "<page id for a button>" | null, "enabled": true}
+ start_delay = N hours after the user first started; inactive = N hours without opening the bot; cart = items left in the cart N hours;
+ schedule = broadcast at a time of day. Typical: shops → cart reminder (3h) + welcome offer (start_delay 1h); channels/bonus bots → inactive (168h).
 BOOKING (appointments: salon, clinic, car service, tutor, gym... — use it instead of "booking forms"):
  {"enabled": true, "services": [{"id": "<[a-z0-9_-]>", "title": "Soch olish", "minutes": 45, "price": 80000}],
   "staff": [{"id": "<id>", "title": "Aziza"}] (optional; empty = one shared schedule),
@@ -269,6 +275,17 @@ def prepare(new: dict, current: dict) -> dict:
             f["target"] = remap(f.get("target"))
     _prepare_shop(doc, current, remap)
     _prepare_booking(doc, current)
+    if not isinstance(doc.get("auto"), list):
+        doc["auto"] = copy.deepcopy(current.get("auto") or [])
+    used_auto: set = set()
+    clean_auto = []
+    for r in doc["auto"]:
+        if isinstance(r, dict) and r.get("text") and r.get("trigger") in ("start_delay", "inactive", "cart", "schedule"):
+            r["id"] = _clean_id(r.get("id") or "a_" + r["trigger"], used_auto)
+            r["page"] = remap(r.get("page")) if r.get("page") else None
+            clean_auto.append(r)
+    doc["auto"] = clean_auto
+    doc.setdefault("tz", current.get("tz", 5))
     # Tizim kodi va tugallanmagan sozlash ustasi AI tahririda yo'qolmasin
     if current.get("system") and not doc.get("system"):
         doc["system"] = current["system"]
@@ -447,6 +464,8 @@ def summary(menu: dict) -> str:
         parts.append("👥 referal")
     if (menu.get("shop") or {}).get("items"):
         parts.append(f"🛒 do'kon: {len(menu['shop']['items'])} mahsulot")
+    if menu.get("auto"):
+        parts.append(f"⚡ {len(menu['auto'])} avto xabar")
     if (menu.get("booking") or {}).get("enabled"):
         parts.append(f"📅 yozilish: {len(menu['booking'].get('services') or [])} xizmat")
     style = {"reply": "⌨️ klaviatura", "inline": "💬 inline", "hybrid": "🔀 aralash"}.get(menu.get("style", "reply"), "")
@@ -872,6 +891,7 @@ PLAN FORMAT
  "keywords": [{"words": ["narx", "menyu"], "section": "<id>"}],
  "commands": [{"command": "menu", "description": "Menyu", "section": "<id>"}],
  "referral": {"enabled": false, "reward": 1, "var": "ball"},
+ "auto": [{"trigger": "cart" | "start_delay" | "inactive" | "schedule", "hours": 3, "at": "10:00", "days": [0,1,2,3,4,5,6], "text": "<short persuasive HTML text>", "section": "<section id for a button>"}]  (0-4 rules; optional),
  "booking": null | {"services": [{"title": "Soch olish", "minutes": 45, "price": 80000}], "staff": ["Aziza", "Dilnoza"],
                     "hours": "Du-Sha 09:00-18:00\\nYa yopiq", "confirm": "manual", "days_ahead": 14},
  "shop": null | {"currency": "so'm", "delivery_fee": 15000, "free_from": 200000, "min_order": 0, "pickup": false,
@@ -1306,12 +1326,14 @@ def compile_plan(plan: dict, content: dict) -> dict:
                 {"key": "ism", "label": "👤 Ismingiz?", "type": "text", "options": []},
                 {"key": "telefon", "label": "📱 Telefon raqamingiz?", "type": "phone", "options": []},
             ]
+    auto = _auto_rules(plan, {p["id"] for p in pages})
     booking = _booking_cfg(plan) if any(sct["kind"] == "booking" for sct in sections) else {"enabled": False}
     return {
         "start": "start",
         "style": style,
         "shop": shop,
         "booking": booking,
+        "auto": auto,
         "pages": pages,
         "variables": variables,
         "forms": forms,
@@ -1323,6 +1345,32 @@ def compile_plan(plan: dict, content: dict) -> dict:
 
 
 _VARKEY = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+
+
+def _auto_rules(plan: dict, page_ids: set) -> list[dict]:
+    """Rejadagi avtomatik xabarlar → tekshirilgan qoidalar (noto'g'rilari tashlanadi)."""
+    out: list[dict] = []
+    used: set = set()
+    for x in (plan.get("auto") or [])[:5]:
+        if not isinstance(x, dict) or x.get("trigger") not in ("start_delay", "inactive", "cart", "schedule") or not str(x.get("text") or "").strip():
+            continue
+        if x["trigger"] == "cart" and not any(sct["kind"] == "catalog" for sct in plan.get("sections") or []):
+            continue
+        try:
+            hours = min(720, max(1, int(float(x.get("hours") or 24))))
+        except (TypeError, ValueError):
+            hours = 24
+        at = str(x.get("at") or "10:00")
+        if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", at):
+            at = "10:00"
+        days = [d for d in x.get("days") or [] if isinstance(d, int) and 0 <= d <= 6] or list(range(7))
+        out.append(
+            {
+                "id": _clean_id("a_" + x["trigger"], used), "title": x["trigger"], "trigger": x["trigger"], "hours": hours, "at": at, "days": days,
+                "text": str(x["text"]).strip()[:1500], "page": x.get("section") if x.get("section") in page_ids else None, "enabled": True,
+            }
+        )
+    return out
 
 
 def _booking_cfg(plan: dict) -> dict:

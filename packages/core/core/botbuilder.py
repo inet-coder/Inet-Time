@@ -545,6 +545,39 @@ class Booking(_M):
         return self
 
 
+AUTO_TRIGGERS = ("start_delay", "inactive", "cart", "schedule")
+AUTO_SEGMENTS = ("all", "new7", "active7", "inactive30", "ordered", "booked", "referrers")
+
+
+class AutoRule(_M):
+    """Avtomatik xabar: start'dan keyin / faol bo'lmaganga / savat tashlab ketilsa / jadval bo'yicha."""
+
+    id: str
+    title: str = Field(default="", max_length=64)
+    trigger: Literal["start_delay", "inactive", "cart", "schedule"]
+    hours: int = Field(default=24, ge=1, le=720)  # kechikish (soat); jadvalda ishlatilmaydi
+    at: str = Field(default="10:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")  # jadval: soat (bot vaqti bilan)
+    days: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6], max_length=7)  # jadval: hafta kunlari
+    segment: str = "all"  # kimlarga (faqat jadval va start/inactive uchun foydali)
+    text: str = Field(min_length=1, max_length=1500)  # HTML, {o'zgaruvchilar}
+    page: str | None = None  # xabar ostida shu sahifani ochadigan tugma
+    enabled: bool = True
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v: str) -> str:
+        if not _PAGE_ID.match(v):
+            raise ValueError("qoida identifikatori noto'g'ri")
+        return v
+
+    @model_validator(mode="after")
+    def _check(self):
+        if self.segment not in AUTO_SEGMENTS:
+            self.segment = "all"
+        self.days = sorted({d for d in self.days if 0 <= d <= 6}) or list(range(7))
+        return self
+
+
 STYLES = ("reply", "inline", "hybrid")
 
 
@@ -571,6 +604,9 @@ class Menu(_M):
     forward_all: bool = False
     shop: Shop = Shop()
     booking: Booking = Booking()
+    # Avtomatik xabarlar va ularning vaqt zonasi (UTC farqi, Toshkent +5)
+    auto: list[AutoRule] = Field(default_factory=list, max_length=20)
+    tz: int = Field(default=5, ge=-12, le=14)
     # Tayyor tizim kodi (sys_shop...) va hali bajarilmagan sozlash ustasi qadamlari (bo'sh — usta tugagan)
     system: str = Field(default="", max_length=32)
     setup: list[SetupStep] = Field(default_factory=list, max_length=12)
@@ -588,6 +624,12 @@ class Menu(_M):
         forms = {f.id for f in self.forms}
         if len(forms) != len(self.forms):
             raise ValueError("formalar takrorlanmasin")
+        rule_ids = [r.id for r in self.auto]
+        if len(set(rule_ids)) != len(rule_ids):
+            raise ValueError("avtomatik xabar identifikatorlari takrorlanmasin")
+        for rule in self.auto:
+            if rule.page and rule.page not in known:
+                rule.page = None
         for page in self.pages:
             all_rows = list(page.buttons) + [row for m in page.messages for row in m.buttons]
             for row in all_rows:

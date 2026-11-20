@@ -81,7 +81,7 @@ def _templates_text(templates: list[dict], title: str) -> str:
     lines = [title, ""]
     for t in templates:
         lines.append(f"{t['icon']} <b>{t['title']}</b> — {t['desc']}")
-    lines += ["", "Shablon — tayyor menyu. Yaratilgandan keyin hammasini o'zgartirishingiz mumkin."]
+    lines += ["", "Tanlangan tizim darhol ishlaydi: bot yaratilgach, uning o'zida 4 ta qisqa savol so'raladi (nom, telefon, manzil...) — matnlar o'zi to'ladi. Keyin hammasini o'zgartirish mumkin, yoki 🤖 AI bilan boshqatdan tuzish."]
     return "\n".join(lines)
 
 

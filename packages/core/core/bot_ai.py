@@ -260,6 +260,11 @@ def prepare(new: dict, current: dict) -> dict:
         if isinstance(f, dict):
             f["target"] = remap(f.get("target"))
     _prepare_shop(doc, current, remap)
+    # Tizim kodi va tugallanmagan sozlash ustasi AI tahririda yo'qolmasin
+    if current.get("system") and not doc.get("system"):
+        doc["system"] = current["system"]
+    if current.get("setup") and not doc.get("setup"):
+        doc["setup"] = current["setup"]
     # Xavfsizlik: adminlar va majburiy obuna kanallarini faqat egasi o'zgartiradi
     doc["admins"] = current.get("admins") or []
     doc["channels"] = current.get("channels") or []
@@ -1189,7 +1194,8 @@ def compile_plan(plan: dict, content: dict) -> dict:
         pages.append(page)
 
     variables = [
-        {"key": str(v.get("key")).lower(), "label": str(v.get("label") or v.get("key"))[:64], "default": str(v.get("default") or ""), "scope": "user"}
+        {"key": str(v.get("key")).lower(), "label": str(v.get("label") or v.get("key"))[:64], "default": str(v.get("default") or ""),
+         "scope": "global" if v.get("scope") == "global" else "user"}
         for v in plan.get("variables") or []
         if isinstance(v, dict) and v.get("key") and _VARKEY.match(str(v.get("key")).lower())
     ]
@@ -1216,7 +1222,7 @@ def compile_plan(plan: dict, content: dict) -> dict:
             if name and name not in ("start", "admin", "cancel", "edit") and not any(x["command"] == name for x in commands):
                 commands.append({"command": name, "description": str(c.get("description") or name)[:256], "target": c["section"]})
     shop = {"enabled": False}
-    if items:
+    if items or any(sct["kind"] == "catalog" for sct in sections):
         cfg = plan.get("shop") if isinstance(plan.get("shop"), dict) else {}
         shop = {"enabled": True, "items": items, "currency": str(cfg.get("currency") or "so'm")[:12]}
         for key in ("delivery_fee", "free_from", "min_order"):

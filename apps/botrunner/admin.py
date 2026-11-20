@@ -120,16 +120,20 @@ async def panel(runner: "Runner", bot: "RunningBot", chat_id: int, message: dict
         f"📄 Sahifalar: {len(m.get('pages') or [])} · 🔑 Kalit so'zlar: {len(m.get('keywords') or [])} · 📝 Formalar: {len(m.get('forms') or [])}\n"
         f"👥 Referal: {'✅' if (m.get('referral') or {}).get('enabled') else '❌'} · 📢 Majburiy obuna: {len(m.get('channels') or [])} kanal"
     )
+    import home
+
     rows = [[{"text": "✏️ Botni tahrirlash", "callback_data": "e:on"}]]
     url = await discover_webapp_url()
     if url:
         rows.append([{"text": "🧩 Kompyuterda tahrirlash (Mini App)", "web_app": {"url": f"{url.split('?')[0]}?bot={bot.bot_id}"}}])
     rows += [
         [{"text": "⚙️ Sozlamalar", "callback_data": "adm:cfg"}, {"text": "👤 Foydalanuvchilar", "callback_data": "adm:u"}],
-        [{"text": "🛒 Do'kon", "callback_data": "sh:home"}],
         [{"text": "📨 Xabar tarqatish", "callback_data": "adm:bc"}, {"text": "🔄 Yangilash", "callback_data": "adm:st"}],
         [{"text": "👁 Foydalanuvchi ko'rinishi", "callback_data": "adm:view"}, {"text": "❓ Yordam", "callback_data": "adm:help"}],
     ]
+    # Modul bo'limlari (Do'kon, Arizalar...), «Boshlash» ro'yxati, statistika — botdagi modullarga qarab
+    at = next(i for i, r in enumerate(rows) if any(b.get("callback_data") == "adm:cfg" for b in r))
+    rows = rows[:at] + await home.module_rows(runner, bot) + rows[at:]
     await show(runner, bot, chat_id, text, rows, message)
 
 
@@ -437,7 +441,36 @@ async def on_callback(runner: "Runner", bot: "RunningBot", chat_id: int, data: s
         await panel(runner, bot, chat_id, message)
     elif action == "help":
         await view((HELP, [[{"text": "⬅️ Panel", "callback_data": "adm:st"}]]))
+    elif action == "stats":
+        import home
+
+        await view(await home.stats_view(runner, bot))
+    elif action == "mods":
+        import home
+
+        await view(home.mods_view(bot))
+    elif action == "todo":
+        import home
+
+        await view(await home.todo_view(runner, bot))
+    elif action == "share":
+        import home
+
+        await view(await home.share_view(runner, bot))
+    elif action == "su":
+        import home
+
+        await home.wizard_next(runner, bot, chat_id, intro=True)
+    elif action == "suskip":
+        import home
+
+        state = await get_state(runner, bot, chat_id) or {}
+        if state.get("k") == "setup":
+            await home.wizard_answer(runner, bot, chat_id, user, state, None)
     elif action == "view":
+        import home
+
+        await home.set_flag(runner, bot, "tried")
         await editor.set_mode(runner, bot, chat_id, None)
         start = page_by_id(bot.menu, bot.menu.get("start"))
         if start is not None:
@@ -802,6 +835,12 @@ async def on_message(runner: "Runner", bot: "RunningBot", message: dict) -> bool
         await runner.api(bot, "sendMessage", {"chat_id": chat_id, "text": "❌ Bekor qilindi."})
         return True
     kind = state.get("k")
+    if kind == "setup":
+        import home
+
+        if text:
+            await home.wizard_answer(runner, bot, chat_id, message["from"], state, text)
+        return True
     if str(kind).startswith("shop_"):
         import shop
 

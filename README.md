@@ -31,6 +31,11 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
     Web App konstruktorida ham «✨ AI» — butun tizimni tasvirlab yaratish: reja → sahifalar parallel, ma'lumotlar
     to'plamlari (boshlang'ich yozuvlar bilan), ro'yxatlar, batafsil sahifalar, to'plamga yozadigan formalar. Kunlik limit tarif bo'yicha (`builder_ai_daily`).
     OpenAI kaliti admin panelda kiritiladi (Admin → AI): saqlashdan oldin tekshiriladi, bazada shifrlangan holda turadi
+  - **Tayyor tizimlar (AI'siz, 30 soniya)**: onlayn do'kon, kafe/restoran, yozilish (salon/klinika/servis), kanal
+    yordamchisi, yordam xizmati, ariza, bonus/referal, kurs, vizitka. Bot yaratilgach uning o'zida 4 ta qisqa savol
+    (nom, telefon, manzil, ish vaqti) — javoblar hamma matnlarga o'zi joylashadi. Admin panel botdagi modullarga
+    qarab chiziladi (Do'kon, Arizalar, Referal...), 📊 statistika (start, eng ko'p ochilgan bo'limlar, savdo
+    voronkasi, tushum), 🧩 modullar ro'yxati va «🚀 Birinchi 5 daqiqa» yo'riqnomasi
   - **🛒 Do'kon moduli**: katalog (ro'yxat/kartalar), mahsulot kartasi ➖/➕, savatcha (yetkazish narxi, bepul
     yetkazish chegarasi, minimal summa), rasmiylashtirish, raqamli buyurtmalar va holatlar (egasi tugma bilan
     o'zgartiradi — mijozga xabar boradi), «📦 Buyurtmalarim». Boshqaruv chatda: /admin → 🛒 Do'kon (rasm + izoh

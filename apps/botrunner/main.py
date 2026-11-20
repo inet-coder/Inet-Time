@@ -55,7 +55,9 @@ from core.webapp_url import discover_webapp_url
 import admin
 import ai_chat
 import editor
+import home
 import shop
+import stats
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)  # URL ichida token bor
@@ -718,6 +720,7 @@ class Runner:
             await self.redis.set(leaf, page["id"], ex=STATE_TTL)
         vals = await self.values(bot, user, need_subs=self._needs_subs(page))
         await self._on_open(bot, chat_id, page, user, vals)
+        await stats.track(self, bot, f"page:{page['id']}")
         await self.deliver(bot, chat_id, page, user, vals, message=message)
 
     async def show_page(self, bot: RunningBot, chat_id: int, page: dict, user: dict, vals: dict, *, message: dict | None = None) -> None:
@@ -1049,6 +1052,7 @@ class Runner:
             await shop.create_order(self, bot, chat_id, user, data)
             return
         await self.set_vars(bot, user["id"], data)
+        await stats.track(self, bot, f"form:{form['id']}")
         async with async_session() as db:
             db.add(BotFormAnswer(bot_id=bot.bot_id, tg_user_id=user["id"], form_id=form["id"], data=data))
             await db.commit()
@@ -1337,6 +1341,7 @@ class Runner:
         await self.redis.delete(*(_k(bot.bot_id, kind, chat_id) for kind in ("st", "nav", "cur", "form", "ask", "q")))
         if is_new and payload.startswith("r") and payload[1:].isdigit():
             await self.on_referral(bot, user, int(payload[1:]))
+        await stats.track(self, bot, "start")
         if chat_id == bot.owner_chat_id:
             await admin.owner_started(self, bot, chat_id)
         if not self.is_admin(bot, chat_id):
@@ -1356,6 +1361,8 @@ class Runner:
         vals = await self.values(bot, user, sub, need_subs=self._needs_subs(page))
         await self._on_open(bot, chat_id, page, user, vals)
         await self.send_page(bot, chat_id, page, user, with_branding=True, vals=vals)
+        if chat_id == bot.owner_chat_id:
+            await home.maybe_start_wizard(self, bot, chat_id)
 
     async def on_referral(self, bot: RunningBot, user: dict, referrer: int) -> None:
         ref = bot.menu.get("referral") or {}

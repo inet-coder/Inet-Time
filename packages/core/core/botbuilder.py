@@ -314,6 +314,19 @@ class Command(_M):
         return v
 
 
+class SetupStep(_M):
+    """Sozlash ustasi qadami: egasidan bot ma'lumotini (global o'zgaruvchi) so'raydi."""
+
+    key: str
+    label: str = Field(min_length=1, max_length=300)
+    example: str = Field(default="", max_length=200)
+
+    @field_validator("key")
+    @classmethod
+    def _k(cls, v: str) -> str:
+        return _var_key(v, "qadam") or ""
+
+
 class Variable(_M):
     key: str
     label: str = Field(default="", max_length=64)
@@ -485,6 +498,9 @@ class Menu(_M):
     # true — menyuda yo'q har qanday xabar egasiga yuboriladi (qayta aloqa / Livegram uslubi)
     forward_all: bool = False
     shop: Shop = Shop()
+    # Tayyor tizim kodi (sys_shop...) va hali bajarilmagan sozlash ustasi qadamlari (bo'sh — usta tugagan)
+    system: str = Field(default="", max_length=32)
+    setup: list[SetupStep] = Field(default_factory=list, max_length=12)
 
     @model_validator(mode="after")
     def _check(self):
@@ -831,6 +847,12 @@ ACTION_LABELS = {
 
 
 def template_menu(code: str) -> dict:
+    if code.startswith("sys_"):
+        from core.systems import build_system
+
+        built = build_system(code)
+        if built is not None:
+            return built
     template = TEMPLATES.get(code) or TEMPLATES["blank"]
     menu = copy.deepcopy(template["menu"])
     for key, default in DEFAULT_TEXTS.items():
@@ -839,9 +861,14 @@ def template_menu(code: str) -> dict:
 
 
 def templates_public() -> list[dict]:
-    return [
+    """Tayyor tizimlar (savollar bilan sozlanadi) birinchi, keyin oddiy shablonlar."""
+    from core.systems import systems_public
+
+    # Eski shablonlar (shop, salon...) tizimlar bilan almashtirilgan — kod bo'yicha hamon ishlaydi, ro'yxatda ko'rinmaydi
+    return systems_public() + [
         {"code": code, "icon": t["icon"], "title": t["title"], "desc": t["desc"], "pages": len(t["menu"]["pages"])}
         for code, t in TEMPLATES.items()
+        if code == "blank"
     ]
 
 

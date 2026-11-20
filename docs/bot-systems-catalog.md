@@ -151,4 +151,6 @@ Egasi yozadi → AI niyatni aniqlaydi (qaysi tizim(lar)?) → kerakli modullar t
 | **I** | **Ko'p til** + eksport/import | Kengayish |
 | **J** | **40 brifli sifat to'plami** | Har bosqichdan keyin regressiya |
 
-Birinchi navbatdagi ish — **A + B**: ular qolgan hamma modulni «bir xil usulda» qo'shish imkonini beradi.
+✅ **A + B bajarildi**: modul reyestri (`core/botmodules.py`), modullarga qarab chiziladigan panel, statistika (`apps/botrunner/stats.py`), «Boshlash» ro'yxati, 9 ta tayyor tizim (`core/systems.py`) va bot ichidagi sozlash ustasi.
+
+Birinchi navbatdagi ish edi — **A + B**: ular qolgan hamma modulni «bir xil usulda» qo'shish imkonini beradi.

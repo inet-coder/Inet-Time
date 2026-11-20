@@ -23,6 +23,8 @@ from core.botbuilder import catalog_pages, fill, money, new_page_id, page_by_id,
 from core.db.base import async_session
 from core.db.models import BotOrder
 
+import stats
+
 if TYPE_CHECKING:
     from main import RunningBot, Runner
 
@@ -300,6 +302,8 @@ async def on_callback(runner, bot, chat_id: int, data: str, message: dict, user:
             await runner.answer(bot, query_id, "Bu mahsulot hozir mavjud emas", alert=True)
             return
         qty = await change(runner, bot, chat_id, item["id"], 1 if parts[2] == "+" else -1)
+        if parts[2] == "+":
+            await stats.track(runner, bot, "cart_add")
         await runner.answer(bot, query_id, f"🛒 {item['title']}: {qty} ta" if qty else "Savatdan olib tashlandi")
         if parts[3] == "k":
             await render_cart(runner, bot, chat_id, message=message)
@@ -352,6 +356,7 @@ async def start_checkout(runner, bot, chat_id: int, user: dict, query_id: str | 
         await runner.answer(bot, query_id, f"Minimal buyurtma: {money(min_order, cur(bot))}", alert=True)
         return
     await runner.answer(bot, query_id)
+    await stats.track(runner, bot, "checkout")
     await runner.start_form(bot, chat_id, CHECKOUT_ID, user)
 
 

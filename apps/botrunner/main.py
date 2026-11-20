@@ -57,6 +57,7 @@ import ai_chat
 import auto
 import booking
 import editor
+import flows
 import games
 import home
 import integrations
@@ -291,7 +292,7 @@ class Runner:
                     self.http,
                     bot.token,
                     "getUpdates",
-                    {"offset": offset, "timeout": POLL_TIMEOUT, "allowed_updates": ["message", "callback_query", "my_chat_member", "pre_checkout_query"]},
+                    {"offset": offset, "timeout": POLL_TIMEOUT, "allowed_updates": ["message", "callback_query", "my_chat_member", "pre_checkout_query", "poll_answer"]},
                 )
                 delay = 2
                 if bot.conflict_reported:
@@ -514,6 +515,8 @@ class Runner:
                     line.append({"text": t, "url": fill(b["url"], vals, escape=False)})
                 elif a == "webapp":
                     line.append({"text": t, "web_app": {"url": bot.webapp_url}})
+                elif a == "copy":
+                    line.append({"text": t, "copy_text": {"text": fill(b.get("value") or "", vals, escape=False)[:256]}})
                 elif a == "share":
                     text = fill(b.get("share_text") or "{ref_link}", vals, escape=False)
                     link = vals.get("ref_link", "")
@@ -1027,6 +1030,22 @@ class Runner:
             if message.get("photo"):
                 return message["photo"][-1]["file_id"], None
             return None, "🖼 Rasm yuboring"
+        if kind in ("document", "voice", "video", "audio", "sticker", "video_note", "animation"):
+            if message.get(kind):
+                return message[kind]["file_id"], None
+            return None, {"document": "📎 Hujjat (fayl) yuboring", "voice": "🎤 Ovozli xabar yuboring", "video": "🎬 Video yuboring", "audio": "🎵 Audio yuboring", "sticker": "💟 Stiker yuboring"}.get(kind, "📎 Fayl yuboring")
+        if kind == "any":
+            for k in ("photo", "document", "voice", "video", "audio", "sticker", "video_note", "animation"):
+                if message.get(k):
+                    obj = message[k][-1] if k == "photo" else message[k]
+                    return obj["file_id"], None
+            if message.get("location"):
+                return f"{message['location']['latitude']:.6f},{message['location']['longitude']:.6f}", None
+            if message.get("contact"):
+                return message["contact"].get("phone_number", ""), None
+            if not text:
+                return None, "✍️ Javob yuboring"
+            return text[:1000], None
         if not text:
             return None, "✍️ Javobni matn ko'rinishida yozing"
         if kind == "number":
@@ -1163,6 +1182,8 @@ class Runner:
             return
         if "callback_query" in upd:
             await self.on_callback(bot, upd["callback_query"])
+        elif "poll_answer" in upd:
+            await flows.on_poll_answer(self, bot, upd["poll_answer"])
         elif "pre_checkout_query" in upd:
             await shop.on_pre_checkout(self, bot, upd["pre_checkout_query"])
         elif "message" in upd:
@@ -1189,7 +1210,7 @@ class Runner:
         if data.startswith("tr:"):
             await tickets.rate(self, bot, chat_id, data, message, query["id"])
             return
-        if data.startswith(("adm:", "e:", "ai:", "sh:", "bm:", "au:", "gm:", "wh:", "pc:")):
+        if data.startswith(("adm:", "e:", "ai:", "sh:", "bm:", "au:", "gm:", "wh:", "pc:", "fl:")):
             await self.answer(bot, query["id"])
             if self.is_admin(bot, chat_id):
                 if data.startswith("sh:"):
@@ -1198,6 +1219,8 @@ class Runner:
                     await auto.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("gm:"):
                     await games.admin_callback(self, bot, chat_id, data, message, user)
+                elif data.startswith("fl:"):
+                    await flows.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("wh:"):
                     await integrations.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("pc:"):
@@ -1350,6 +1373,10 @@ class Runner:
             await self.on_form_message(bot, chat_id, message, user, json.loads(form_state))
             return
 
+        # Oqim «ask» qadamida javob kutmoqda
+        if await flows.on_wait(self, bot, message, user):
+            return
+
         if not is_admin:
             missing = await self.missing_channels(bot, user["id"])
             if missing:
@@ -1388,6 +1415,9 @@ class Runner:
         if text == "/cancel":
             await self.redis.delete(_k(bot.bot_id, "st", chat_id))
 
+        if text.startswith("/") and await flows.on_trigger(self, bot, message, user, "command"):
+            return
+
         if text.startswith("/"):
             cmd = text[1:].split()[0].split("@")[0].lower()
             for c in bot.menu.get("commands") or []:
@@ -1410,6 +1440,8 @@ class Runner:
                 return
             if await self.on_keyword(bot, chat_id, text, user, vals):
                 return
+        if await flows.on_trigger(self, bot, message, user, "message"):
+            return
         # Qayta aloqa rejimi: menyuda yo'q har qanday xabar (matn, rasm, ovoz...) egasiga boradi.
         if bot.menu.get("forward_all") and not staff and not text.startswith("/"):
             await self.forward_feedback(bot, message, user)
@@ -1422,11 +1454,12 @@ class Runner:
         sub = await self.subscriber(bot, user["id"])
         if sub["banned"]:
             return
-        await self.redis.delete(*(_k(bot.bot_id, kind, chat_id) for kind in ("st", "nav", "cur", "form", "ask", "q")))
+        await self.redis.delete(*(_k(bot.bot_id, kind, chat_id) for kind in ("st", "nav", "cur", "form", "ask", "q", "flow")))
         if is_new and payload.startswith("r") and payload[1:].isdigit():
             await self.on_referral(bot, user, int(payload[1:]))
         await stats.track(self, bot, "start")
         if is_new:
+            asyncio.create_task(flows.on_new_user(self, bot, chat_id, user))
             integrations.emit(self, bot, "user.started", {"user": {"id": user["id"], "first_name": user.get("first_name"), "username": user.get("username")}, "referrer": int(payload[1:]) if payload.startswith("r") and payload[1:].isdigit() else None})
         if chat_id in (bot.menu.get("operators") or []):
             await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": "🎫 Siz operatorsiz — murojaatlar shu yerga keladi. Ro'yxat: /tickets"})

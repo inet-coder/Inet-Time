@@ -52,8 +52,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from core.bot_templates import TEMPLATES
 
-ACTIONS = ("page", "url", "back", "home", "feedback", "webapp", "alert", "form", "set", "share", "check_sub", "contact", "location", "notify", "random")
-INLINE_ONLY = ("url", "alert")
+ACTIONS = ("page", "url", "back", "home", "feedback", "webapp", "alert", "form", "set", "share", "check_sub", "contact", "location", "notify", "random", "copy")
+INLINE_ONLY = ("url", "alert", "copy")
 KEYBOARDS = ("inline", "reply")
 MSG_TYPES = ("text", "photo", "video", "animation", "document", "audio", "voice", "video_note", "sticker")
 CAPTIONLESS = ("sticker", "video_note")
@@ -166,6 +166,8 @@ class Button(_M):
             raise ValueError(f"«{self.text}» tugmasi havolasi noto'g'ri (https:// bilan boshlansin)")
         if self.action == "alert" and not self.alert.strip():
             raise ValueError(f"«{self.text}»: ogohlantirish matni kiritilmagan")
+        if self.action == "copy" and not self.value.strip():
+            raise ValueError(f"«{self.text}»: nusxalanadigan matn kiritilmagan")
         if self.action == "form" and not self.form:
             raise ValueError(f"«{self.text}»: forma tanlanmagan")
         if self.action == "set" and not self.var:
@@ -710,6 +712,50 @@ class PostChannel(_M):
     title: str = Field(default="", max_length=64)
 
 
+class FlowStep(_M):
+    """Oqim qadami: amal (core/capabilities reyestridan) + parametrlar + ixtiyoriy shart."""
+
+    type: str
+    params: dict = Field(default_factory=dict)
+    when: Cond | None = None
+
+    @model_validator(mode="after")
+    def _check(self):
+        from core import capabilities
+
+        self.params = capabilities.validate("action", self.type, self.params)
+        return self
+
+
+class FlowTrigger(_M):
+    type: str
+    params: dict = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check(self):
+        from core import capabilities
+
+        self.params = capabilities.validate("trigger", self.type, self.params)
+        return self
+
+
+class Flow(_M):
+    """Oqim: trigger → qadamlar. Tayyor modullar qoplamagan har qanday mantiq uchun."""
+
+    id: str
+    title: str = Field(default="", max_length=64)
+    enabled: bool = True
+    trigger: FlowTrigger
+    steps: list[FlowStep] = Field(min_length=1, max_length=30)
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v: str) -> str:
+        if not _PAGE_ID.match(v):
+            raise ValueError("oqim identifikatori noto'g'ri")
+        return v
+
+
 AUTO_TRIGGERS = ("start_delay", "inactive", "cart", "schedule")
 AUTO_SEGMENTS = ("all", "new7", "active7", "inactive30", "ordered", "booked", "referrers")
 
@@ -776,6 +822,7 @@ class Menu(_M):
     bonus: Bonus = Bonus()
     tickets: Tickets = Tickets()
     webhooks: list[Webhook] = Field(default_factory=list, max_length=10)
+    flows: list[Flow] = Field(default_factory=list, max_length=30)
     post_channels: list[PostChannel] = Field(default_factory=list, max_length=5)
     operators: list[int] = Field(default_factory=list, max_length=20)  # faqat murojaatlarga javob beradigan xodimlar
     canned: list[Canned] = Field(default_factory=list, max_length=20)
@@ -802,6 +849,13 @@ class Menu(_M):
             ids_ = [x.id for x in coll]
             if len(set(ids_)) != len(ids_):
                 raise ValueError(f"{what} identifikatorlari takrorlanmasin")
+        flow_ids = [f.id for f in self.flows]
+        if len(set(flow_ids)) != len(flow_ids):
+            raise ValueError("oqimlar identifikatorlari takrorlanmasin")
+        for flow in self.flows:
+            for step in flow.steps:
+                if step.type == "open_page" and step.params.get("page") not in known:
+                    raise ValueError(f"«{flow.title or flow.id}» oqimi: bo'lim topilmadi ({step.params.get('page')})")
         hook_ids = [h.id for h in self.webhooks]
         if len(set(hook_ids)) != len(hook_ids):
             raise ValueError("webhooklar takrorlanmasin")
@@ -1140,6 +1194,7 @@ ACTION_LABELS = {
     "location": "📍 Joylashuv so'rash",
     "notify": "🔔 Adminga bildirish",
     "random": "🎲 Tasodifiy sahifa",
+    "copy": "📋 Nusxalash",
 }
 
 

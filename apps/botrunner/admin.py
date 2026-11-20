@@ -848,6 +848,10 @@ async def on_message(runner: "Runner", bot: "RunningBot", message: dict) -> bool
         import shop
 
         return await shop.admin_input(runner, bot, chat_id, message, state)
+    if str(kind).startswith("fl_"):
+        import flows
+
+        return await flows.admin_input(runner, bot, chat_id, message, state)
     if str(kind).startswith("wh_"):
         import integrations
 

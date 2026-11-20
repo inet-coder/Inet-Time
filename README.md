@@ -36,6 +36,13 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
     (nom, telefon, manzil, ish vaqti) — javoblar hamma matnlarga o'zi joylashadi. Admin panel botdagi modullarga
     qarab chiziladi (Do'kon, Arizalar, Referal...), 📊 statistika (start, eng ko'p ochilgan bo'limlar, savdo
     voronkasi, tushum), 🧩 modullar ro'yxati va «🚀 Birinchi 5 daqiqa» yo'riqnomasi
+  - **⚙️ Oqimlar (trigger → qadamlar)**: tayyor modullar qoplamagan har qanday mantiqni kodsiz yig'ish. Triggerlar:
+    buyruq, matn (aniq/ichida/boshida/regex), yangi foydalanuvchi, xabar turi (rasm, ovoz, hujjat, joylashuv, kontakt,
+    stiker, so'rovnoma, dice...), so'rovnomaga javob. Qadamlar: xabar, joylashuv/joy, kontakt, so'rovnoma va viktorina-poll,
+    dice (natija o'zgaruvchiga), «yozmoqda…», reaksiya, o'zgaruvchi, adminga bildirish, kutish, bo'lim ochish, **savol berib
+    javobni kutish** (matn, son, telefon, rasm, hujjat, ovoz...). Har qadamga shart («ball ≥ 10»). Egasi chatda yig'adi
+    (so'rovlar reyestr sxemasidan avtomatik), AI ham yozadi. Yangi imkoniyat = reyestrga bitta e'lon: interfeys, tekshiruv, AI
+    hujjati va API qamrov hisoboti o'zi yangilanadi. «📋 Nusxalash» tugmasi (inline). `python tools/api_coverage.py` — Bot API qamrovi
   - **🧪 Sifat to'plami**: 40 ta turli brif (gul do'koni, salon, klinika, kurs, viktorina, yordam xizmati...) bo'yicha
     AI quruvchini avtomatik baholash — tekshiruv, yetib borish, joy tutuvchilar, kutilgan modullar, mazmun va tugma
     sifati, o'zgaruvchilar, xavfsizlik (0–100 ball). Promptni o'zgartirgach regressiyani ushlaydi:

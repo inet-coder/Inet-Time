@@ -13,7 +13,7 @@ import json
 import re
 from zoneinfo import ZoneInfo
 
-from core import ai
+from core import ai, capabilities
 from core.botbuilder import MenuError, html_to_plain, validate_menu
 from core.settings import settings
 
@@ -286,6 +286,7 @@ def prepare(new: dict, current: dict) -> dict:
             f["target"] = remap(f.get("target"))
     _prepare_shop(doc, current, remap)
     _prepare_booking(doc, current)
+    _prepare_flows(doc, current, remap)
     doc["operators"] = current.get("operators") or []  # xodimlar ro'yxatini faqat egasi o'zgartiradi
     doc["webhooks"] = copy.deepcopy(current.get("webhooks") or [])  # tashqi manzillar va sirlar — faqat egasi
     doc["post_channels"] = copy.deepcopy(current.get("post_channels") or [])
@@ -370,6 +371,43 @@ def _prepare_shop(doc: dict, current: dict, remap) -> None:
         shop["promos"] = copy.deepcopy(cur_shop.get("promos") or [])
 
 
+def _prepare_flows(doc: dict, current: dict, remap) -> None:
+    """Oqimlar: AI bermasa — egasining oqimlari saqlanadi; yaroqsiz qadam/triggerlar tashlanadi; bo'lim id'lari yangilanadi."""
+    flows = doc.get("flows")
+    if not isinstance(flows, list):
+        doc["flows"] = copy.deepcopy(current.get("flows") or [])
+        return
+    page_ids = {p["id"] for p in doc["pages"]}
+    used: set = set()
+    clean = []
+    for f in flows:
+        if not isinstance(f, dict) or not isinstance(f.get("trigger"), dict):
+            continue
+        try:
+            trigger = {"type": f["trigger"].get("type"), "params": capabilities.validate("trigger", f["trigger"].get("type"), f["trigger"].get("params"))}
+        except ValueError:
+            continue
+        steps = []
+        for s in f.get("steps") or []:
+            if not isinstance(s, dict):
+                continue
+            params = s.get("params") or {}
+            if s.get("type") == "open_page":
+                params = {**params, "page": remap(params.get("page"))}
+                if params["page"] not in page_ids:
+                    continue
+            try:
+                step = {"type": s.get("type"), "params": capabilities.validate("action", s.get("type"), params)}
+            except ValueError:
+                continue
+            if isinstance(s.get("when"), dict):
+                step["when"] = s["when"]
+            steps.append(step)
+        if steps:
+            clean.append({"id": _clean_id(f.get("id") or f.get("title") or "flow", used), "title": str(f.get("title") or "")[:64], "enabled": f.get("enabled", True) is not False, "trigger": trigger, "steps": steps[:30]})
+    doc["flows"] = clean[:30]
+
+
 def _prepare_booking(doc: dict, current: dict) -> None:
     """Yozilish: AI tashlab ketsa — egasining xizmat/xodim/jadvali saqlanadi; id'lar tozalanadi; sahifa yo'q bo'lsa — o'chiriladi."""
     cur = current.get("booking") or {}
@@ -413,7 +451,7 @@ def _parse(text: str) -> dict:
 
 async def build_bot(model: str, current: dict, history: list[dict], request: str, max_pages: int) -> tuple[str, dict | None, list, dict]:
     """Mavjud botni o'zgartirish: (javob matni, yangi hujjat yoki None, [AIResult...], linter hisoboti)."""
-    system = BOT_SYSTEM.replace("{max_pages}", str(max_pages))
+    system = BOT_SYSTEM.replace("{max_pages}", str(max_pages)) + "\n" + capabilities.ai_doc() + "\nBUTTON action \"copy\" (inline only): {\"text\": \"📋 Promokod\", \"action\": \"copy\", \"value\": \"BAHOR20\"} copies the value to the clipboard.\n"
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": "CURRENT BOT DOCUMENT (modify it, or replace it entirely if the owner asks for a new bot):\n" + compact(current)},

@@ -500,6 +500,10 @@ oqim dvigateli "murakkab" qatlamda turadi, oddiy egasiga F40 ("agar X bo'lsa Y q
 
 ## 5. Bajarish tartibi
 
+**Holat:** 1-bosqich (poydevor) boshlandi — Sprint 1 bajarildi: imkoniyat reyestri (`core/capabilities.py`), oqim dvigateli (`apps/botrunner/flows.py`,
+F01–F05, F10 qisman, F16 qisman, F37), O14 qamrov matritsasi (`tools/api_coverage.py` → `docs/api-coverage.md`), K02 K05 K06 K07 K10 K11 K12 K31(qisman) B02.
+Qamrov: metodlar 21% → (hozirgi raqam `docs/api-coverage.md` da).
+
 Har bosqich oxirida: sifat to'plami + regressiya + hujjat + deploy ko'rsatmasi. Bog'liqliklar bo'yicha:
 
 | Bosqich | Mazmuni | Nima uchun shu tartibda |

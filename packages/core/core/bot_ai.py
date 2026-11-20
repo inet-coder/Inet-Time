@@ -64,6 +64,9 @@ TICKETS: "tickets": {"enabled": true, "rating": true} turns every feedback messa
  with owner/operator assignment, close + rating; "canned": [{"id": "c1", "title": "Salomlashish", "text": "<reply template, may use {name}>"}]. Use for support/help-desk bots.
  Never change "operators" (staff IDs belong to the owner). Pages with "module": {"type": "quiz", "ref": "<quiz id>"} | {"type": "top"} (leaderboard by {ball}) |
  {"type": "bonus"} (daily bonus) run them. Points accumulate in the user's variable {ball}. Keep the owner's quizzes/contests/captcha unless asked.
+TABLES (owner's data lists): "tables": [{"id": "<id>", "title": "Vakansiyalar", "fields": [{"key": "lavozim", "label": "Lavozim", "type": "text|number|photo|link"}]}]; records are owner data (never create or change them).
+ A page shows a table with "module": {"type": "table", "ref": "<table id>", "template": "<b>{lavozim}</b> · {maosh}", "detail": "<HTML with {field}>"}. Keep "tables" and "segments" ("segments": [{"id": "...", "title": "...", "conds": [{"var": "ball", "op": "ge", "value": "100"}]}]) unless asked.
+ Tags: users get tags via flow actions add_tag/remove_tag; conditions use var "tag_<name>" with op set/unset; template {tags}.
 AUTO (messages the bot sends by itself — use for retention and marketing):
  {"id": "<[a-z0-9_-]>", "trigger": "start_delay" | "inactive" | "cart" | "schedule", "hours": 24 (delay for start_delay/inactive/cart),
   "at": "10:00" + "days": [0..6] (0=Monday; schedule only), "segment": "all|new7|active7|inactive30|ordered|booked|referrers",
@@ -185,6 +188,10 @@ def compact(menu: dict) -> str:
     doc = _strip(copy.deepcopy(menu))
     doc.pop("webhooks", None)
     doc.pop("post_channels", None)
+    for flow in doc.get("flows") or []:  # HTTP sarlavhalari (API kalitlari) AI'ga berilmaydi
+        for step in flow.get("steps") or []:
+            if step.get("type") == "http_request":
+                (step.get("params") or {}).pop("headers", None)
     for p in doc.get("pages", []):
         p.pop("text", None)  # postlardan tiklanadi
         if p.get("media_id") is None:
@@ -287,6 +294,9 @@ def prepare(new: dict, current: dict) -> dict:
     _prepare_shop(doc, current, remap)
     _prepare_booking(doc, current)
     _prepare_flows(doc, current, remap)
+    for key in ("tables", "segments"):
+        if key not in doc:
+            doc[key] = copy.deepcopy(current.get(key) or [])
     doc["operators"] = current.get("operators") or []  # xodimlar ro'yxatini faqat egasi o'zgartiradi
     doc["webhooks"] = copy.deepcopy(current.get("webhooks") or [])  # tashqi manzillar va sirlar — faqat egasi
     doc["post_channels"] = copy.deepcopy(current.get("post_channels") or [])
@@ -346,7 +356,7 @@ def _prepare_shop(doc: dict, current: dict, remap) -> None:
         shop["items"] = copy.deepcopy(list(old_items.values()))
     catalogs = [p["id"] for p in doc["pages"] if isinstance(p.get("module"), dict) and p["module"].get("type") == "catalog"]
     for p in doc["pages"]:
-        if p.get("module") is not None and (not isinstance(p["module"], dict) or p["module"].get("type") not in ("catalog", "cart", "orders", "booking", "mybookings", "quiz", "top", "bonus", "contest")):
+        if p.get("module") is not None and (not isinstance(p["module"], dict) or p["module"].get("type") not in ("catalog", "cart", "orders", "booking", "mybookings", "quiz", "top", "bonus", "contest", "table")):
             p["module"] = None
     items, used = [], set()
     for it in shop.get("items") or []:
@@ -396,6 +406,10 @@ def _prepare_flows(doc: dict, current: dict, remap) -> None:
                 params = {**params, "page": remap(params.get("page"))}
                 if params["page"] not in page_ids:
                     continue
+            if s.get("type") == "http_request" and not params.get("headers"):
+                old = next((x for cf in current.get("flows") or [] if cf.get("id") == f.get("id") for x in cf.get("steps") or [] if x.get("type") == "http_request" and x["params"].get("url") == params.get("url")), None)
+                if old and old["params"].get("headers"):
+                    params = {**params, "headers": old["params"]["headers"]}  # egasining API kalitlari saqlanadi
             try:
                 step = {"type": s.get("type"), "params": capabilities.validate("action", s.get("type"), params)}
             except ValueError:
@@ -416,7 +430,7 @@ def _prepare_booking(doc: dict, current: dict) -> None:
         bk = copy.deepcopy(cur) if cur else {"enabled": False}
         doc["booking"] = bk
     for page in doc["pages"]:
-        if page.get("module") is not None and (not isinstance(page["module"], dict) or page["module"].get("type") not in ("catalog", "cart", "orders", "booking", "mybookings", "quiz", "top", "bonus", "contest")):
+        if page.get("module") is not None and (not isinstance(page["module"], dict) or page["module"].get("type") not in ("catalog", "cart", "orders", "booking", "mybookings", "quiz", "top", "bonus", "contest", "table")):
             page["module"] = None
     has_page = any(isinstance(p.get("module"), dict) and p["module"].get("type") == "booking" for p in doc["pages"])
     if not has_page:

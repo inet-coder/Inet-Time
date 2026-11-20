@@ -69,10 +69,15 @@ async def _schedule_delete(runner, bot, chat_id: int, message_id: int | None, mi
 
 
 async def tick(runner: "Runner") -> None:
-    """Avto-o'chirish: muddati kelgan xabarlarni o'chiradi."""
+    """Avto-o'chirish; uzoq kutishdan davom ettirish; jadval triggeri."""
     import time
 
     for bot in list(runner.bots.values()):
+        try:
+            await _resume_delayed(runner, bot)
+            await _scheduled(runner, bot)
+        except Exception:  # noqa: BLE001
+            logger.exception("oqim tick xatosi")
         key = f"ub:{bot.bot_id}:autodel"
         due = await runner.redis.zrangebyscore(key, 0, time.time(), start=0, num=100)
         for member in due:
@@ -82,6 +87,57 @@ async def tick(runner: "Runner") -> None:
             except BotApiError:
                 pass
             await runner.redis.zrem(key, member)
+
+
+async def _resume_delayed(runner: "Runner", bot: "RunningBot") -> None:
+    import time
+
+    key = f"ub:{bot.bot_id}:delayed"
+    for member in await runner.redis.zrangebyscore(key, 0, time.time(), start=0, num=50):
+        if not await runner.redis.zrem(key, member):
+            continue  # boshqa jarayon olgan
+        info = json.loads(member)
+        flow = _flow(bot, info["flow"])
+        if flow is None or not flow.get("enabled", True):
+            continue
+        user = {"id": info["uid"], "first_name": info.get("n"), "username": info.get("un")}
+        await run(runner, bot, flow, await _ctx(runner, bot, info["chat"], user, None), info["pc"])
+
+
+async def _scheduled(runner: "Runner", bot: "RunningBot") -> None:
+    import datetime
+
+    import auto
+    from sqlalchemy import select
+
+    from core.db.base import async_session
+    from core.db.models import BotSubscriber
+    from core.segments import conditions
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    local = now + datetime.timedelta(hours=int(bot.menu.get("tz", 5)))
+    for f in bot.menu.get("flows") or []:
+        t = f["trigger"]
+        if not f.get("enabled", True) or t["type"] != "schedule":
+            continue
+        p = t["params"]
+        wd = local.weekday()
+        ok = p["days"] == "har kuni" or (p["days"] == "Du–Ju" and wd < 5) or (p["days"] == "Sha–Ya" and wd >= 5)
+        minutes = local.hour * 60 + local.minute - (int(p["at"][:2]) * 60 + int(p["at"][3:]))
+        if not ok or minutes < 0 or minutes > 180:
+            continue
+        async with async_session() as db:
+            if not await auto._claim(db, bot.bot_id, f"f:{f['id']}"[:32], 0, f"{local:%Y%m%d}"):
+                continue
+            await db.commit()
+            audience = (await db.execute(select(BotSubscriber.tg_user_id, BotSubscriber.first_name, BotSubscriber.username).where(*conditions(p.get("segment") or "all", bot.bot_id, bot.menu)).limit(5000))).all()
+        asyncio.create_task(_broadcast_flow(runner, bot, f, [(u, n, un) for u, n, un in audience if u != bot.owner_chat_id]))
+
+
+async def _broadcast_flow(runner: "Runner", bot: "RunningBot", flow: dict, audience: list) -> None:
+    for uid, first, username in audience:
+        await run(runner, bot, flow, await _ctx(runner, bot, uid, {"id": uid, "first_name": first, "username": username}, None))
+        await asyncio.sleep(0.05)
 
 
 async def _text(runner, bot, ctx, p):
@@ -277,6 +333,103 @@ async def _set_var(runner, bot, ctx, p):
     ctx["vals"][p["var"]] = new
 
 
+async def _add_tag(runner, bot, ctx, p):
+    import crm
+
+    if await crm.add_tag(runner, bot, ctx["user"]["id"], p["tag"]):
+        ctx["vals"][f"tag_{p['tag']}"] = "1"
+        ctx["vals"]["tags"] = ", ".join([t for t in (ctx["vals"].get("tags") or "").split(", ") if t] + [p["tag"]])
+
+
+async def _remove_tag(runner, bot, ctx, p):
+    import crm
+
+    if await crm.remove_tag(runner, bot, ctx["user"]["id"], p["tag"]):
+        ctx["vals"].pop(f"tag_{p['tag']}", None)
+        ctx["vals"]["tags"] = ", ".join(t for t in (ctx["vals"].get("tags") or "").split(", ") if t and t != p["tag"])
+
+
+async def _add_record(runner, bot, ctx, p):
+    import tables
+
+    values = {}
+    for line in p["values"]:
+        key, _, val = line.partition("=")
+        values[key.strip()] = fill(val.strip(), ctx["vals"], escape=False)
+    try:
+        rid = await tables.add_record(bot, p["table"], values)
+        ctx["vals"]["record_id"] = str(rid or "")
+    except ValueError as exc:
+        logger.info("add_record: %s", exc)
+
+
+def _dig(data, path: str):
+    """«0.Rate» / «data.items.2.price» → ichma-ich qiymat."""
+    for part in [x for x in path.split(".") if x != ""]:
+        if isinstance(data, list):
+            data = data[int(part)]
+        elif isinstance(data, dict):
+            data = data[part]
+        else:
+            raise KeyError(part)
+    return data
+
+
+async def _http(runner, bot, ctx, p):
+    import httpx
+
+    import integrations
+
+    vals = ctx["vals"]
+    url = fill(p["url"], vals, escape=False)
+    ctx["vals"]["http_ok"] = "0"
+    problem = await integrations.safe_url(url) if url.startswith("https://") else "faqat https"
+    if problem:
+        logger.info("http_request rad etildi: %s", problem)
+        return
+    headers = {"User-Agent": "InetTime-Flow/1"}
+    for line in p.get("headers") or []:
+        name, _, value = line.partition(":")
+        headers[name.strip()] = fill(value.strip(), vals, escape=False)
+    body = fill(p.get("body") or "", vals, escape=False).encode() if p.get("method") == "POST" else None
+    if body and "content-type" not in {k.lower() for k in headers}:
+        headers["Content-Type"] = "application/json"
+    try:
+        async with httpx.AsyncClient(timeout=8, follow_redirects=False) as client:
+            async with client.stream(p.get("method", "GET"), url, headers=headers, content=body) as resp:
+                chunks, size = [], 0
+                async for chunk in resp.aiter_bytes():
+                    size += len(chunk)
+                    if size > 65536:
+                        break
+                    chunks.append(chunk)
+        status = resp.status_code
+    except httpx.HTTPError:
+        return
+    vals["http_status"] = str(status)
+    vals["http_ok"] = "1" if status < 400 else "0"
+    if status >= 400:
+        return
+    raw = b"".join(chunks).decode("utf-8", errors="replace")
+    value = raw
+    if p.get("path"):
+        try:
+            value = _dig(json.loads(raw), p["path"])
+        except (ValueError, KeyError, IndexError, TypeError):
+            vals["http_ok"] = "0"
+            return
+    text = value if isinstance(value, str) else (json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value))
+    vals["http_body"] = text[:1000]
+    if p.get("var"):
+        await runner.set_vars(bot, ctx["user"]["id"], {p["var"]: text[:1000]})
+        vals[p["var"]] = text[:1000]
+
+
+async def _delay(runner, bot, ctx, p):
+    seconds = int(p["amount"]) * {"daqiqa": 60, "soat": 3600, "kun": 86400}[p.get("unit", "kun")]
+    return ("delay", min(seconds, 30 * 86400))
+
+
 async def _notify(runner, bot, ctx, p):
     user = ctx["user"]
     who = esc(user.get("first_name") or "Foydalanuvchi") + (f" (@{esc(user['username'])})" if user.get("username") else "") + f" · <code>{user['id']}</code>"
@@ -324,7 +477,7 @@ async def _stop(runner, bot, ctx, p):
 
 ACTIONS = {
     "send_text": _text, "send_media": _media, "send_album": _album, "send_carousel": _carousel, "send_location": _location, "send_contact": _contact, "send_poll": _poll, "send_dice": _dice, "typing": _typing,
-    "react": _react, "set_var": _set_var, "notify_admin": _notify, "wait": _wait, "open_page": _open_page, "ask": _ask, "stop": _stop,
+    "react": _react, "set_var": _set_var, "add_tag": _add_tag, "remove_tag": _remove_tag, "add_record": _add_record, "http_request": _http, "delay": _delay, "notify_admin": _notify, "wait": _wait, "open_page": _open_page, "ask": _ask, "stop": _stop,
 }
 
 
@@ -348,6 +501,15 @@ async def run(runner: "Runner", bot: "RunningBot", flow: dict, ctx: dict, start:
             handler = ACTIONS.get(step["type"])
             result = await handler(runner, bot, ctx, step["params"]) if handler else None
             if result == "stop":
+                return
+            if isinstance(result, tuple) and result[0] == "delay":
+                import time
+
+                u = ctx["user"]
+                await runner.redis.zadd(
+                    f"ub:{bot.bot_id}:delayed",
+                    {json.dumps({"flow": flow["id"], "pc": pc + 1, "chat": ctx["chat_id"], "uid": u["id"], "n": u.get("first_name"), "un": u.get("username"), "r": new_page_id()}): time.time() + result[1]},
+                )
                 return
             if result == "wait":
                 p = step["params"]
@@ -560,6 +722,13 @@ async def _ask_next(runner, bot, chat_id: int, st: dict) -> None:
         markup = [[{"text": "✅ Ha", "callback_data": "fl:pv:ha"}, {"text": "❌ Yo'q", "callback_data": "fl:pv:yo'q"}]]
     elif spec.ui == "page":
         markup = [[{"text": p["title"][:40], "callback_data": f"fl:pv:{p['id']}"}] for p in (bot.menu.get("pages") or [])[:20]]
+    elif spec.ui == "table":
+        markup = [[{"text": f"📚 {t['title']}"[:40], "callback_data": f"fl:pv:{t['id']}"}] for t in (bot.menu.get("tables") or [])[:20]]
+        if not markup:
+            await runner.api(bot, "sendMessage", {"chat_id": chat_id, "text": "📚 Avval jadval yarating: /admin → 🧩 Modullar → 📚 Jadvallar"})
+            await admin.set_state(runner, bot, chat_id, None)
+            return
+        head += "\n\n<i>Maydon kalitlari jadval ko'rinishida (📚 Jadvallar → jadval) ko'rsatiladi.</i>"
     data = {"chat_id": chat_id, "text": head + "\n\nBekor qilish: /cancel", "parse_mode": "HTML"}
     if markup:
         data["reply_markup"] = {"inline_keyboard": markup}
@@ -602,6 +771,10 @@ async def _accept(runner, bot, chat_id: int, st: dict, raw: str, message: dict |
             if spec.ui == "page":
                 if page_by_id(bot.menu, raw.strip()) is None:
                     raise ValueError("bunday bo'lim yo'q")
+                value = raw.strip()
+            elif spec.ui == "table":
+                if not any(t["id"] == raw.strip() for t in bot.menu.get("tables") or []):
+                    raise ValueError("bunday jadval yo'q")
                 value = raw.strip()
             else:
                 value = caps.parse_value(spec, raw)

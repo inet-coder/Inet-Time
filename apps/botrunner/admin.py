@@ -29,6 +29,7 @@ from core.botbuilder import (
 )
 from core.db.base import async_session
 from core.db.models import BotBroadcast, BotFormAnswer, BotSubscriber
+from core.segments import tags_of
 from core.webapp_url import discover_webapp_url
 
 import editor
@@ -36,7 +37,7 @@ import editor
 if TYPE_CHECKING:
     from main import RunningBot, Runner
 
-SEGMENT_KEYS = ("all", "new7", "active7", "inactive30", "ordered", "booked", "referrers")
+from core.segments import SEGMENT_RE as SEGMENT_RE_  # noqa: E402
 STATE_KEY = "ub:{bot}:ast:{chat}"  # egasining panel holati (JSON yoki eski "bc")
 OWNER_HINT_KEY = "ub:{bot}:ownerhint"
 
@@ -356,7 +357,7 @@ async def user_card(bot: "RunningBot", tg_id: int) -> tuple[str, list] | None:
     if s is None:
         return None
     data = s.data or {}
-    vars_text = "\n".join(f"<code>{{{esc(k)}}}</code> = {esc(str(v))[:100]}" for k, v in data.items()) or "—"
+    vars_text = "\n".join(f"<code>{{{esc(k)}}}</code> = {esc(str(v))[:100]}" for k, v in data.items() if not k.startswith("_")) or "—"
     text = (
         f"👤 <b>{esc(s.first_name or 'Foydalanuvchi')}</b>" + (f" (@{esc(s.username)})" if s.username else "") + "\n"
         f"🆔 <code>{s.tg_user_id}</code>\n"
@@ -364,11 +365,12 @@ async def user_card(bot: "RunningBot", tg_id: int) -> tuple[str, list] | None:
         f"👥 Taklif qilgan: {s.ref_count or 0}" + (f" · uni taklif qilgan: <code>{s.referred_by}</code>" if s.referred_by else "") + "\n"
         + ("🚫 Botni bloklagan\n" if s.blocked else "")
         + ("⛔️ Siz bloklagansiz\n" if s.banned else "")
+        + (f"🏷 Teglar: {', '.join(esc(t) for t in tags_of(data))}\n" if tags_of(data) else "")
         + f"\n🔢 <b>Ma'lumotlari</b>:\n{vars_text}"
     )
     rows = [
         [{"text": "✉️ Xabar yuborish", "callback_data": f"adm:um:{tg_id}"}, {"text": "🔢 O'zgaruvchi", "callback_data": f"adm:uv:{tg_id}"}],
-        [{"text": "✅ Blokdan chiqarish" if s.banned else "⛔️ Bloklash", "callback_data": f"adm:ub:{tg_id}"}],
+        [{"text": "🏷 Teg qo'shish/olish", "callback_data": f"adm:ut:{tg_id}"}, {"text": "✅ Blokdan chiqarish" if s.banned else "⛔️ Bloklash", "callback_data": f"adm:ub:{tg_id}"}],
         [{"text": "⬅️ Foydalanuvchilar", "callback_data": "adm:u"}],
     ]
     return text, rows
@@ -698,6 +700,8 @@ async def on_callback(runner: "Runner", bot: "RunningBot", chat_id: int, data: s
         await ask(runner, bot, chat_id, {"k": "text", "field": kind}, f"✍️ Yangi matnni yuboring.\n\nHozirgi: «{esc(current)}»")
 
     # Foydalanuvchilar
+    elif action == "ut":
+        await ask(runner, bot, chat_id, {"k": "user_tag", "id": int(arg) if arg and arg.isdigit() else i}, "🏷 Teg nomini yuboring (lotin harf/raqam, 12 belgigacha). Bor bo'lsa — olib tashlanadi, yo'q bo'lsa — qo'shiladi.")
     elif action == "u":
         await set_state(runner, bot, chat_id, None)
         await view(await users_view(bot))
@@ -735,9 +739,9 @@ async def on_callback(runner: "Runner", bot: "RunningBot", chat_id: int, data: s
             "u barcha obunachilarga aynan shu ko'rinishda boradi.",
         )
     elif action == "bcs" and i is not None:
-        await _bc_confirm(runner, bot, chat_id, i, parts[3] if len(parts) > 3 else "all", message)
+        await _bc_confirm(runner, bot, chat_id, i, ":".join(parts[3:]) or "all", message)
     elif action == "bcok" and i is not None:
-        await _start_broadcast(runner, bot, chat_id, i, message, parts[3] if len(parts) > 3 else "all")
+        await _start_broadcast(runner, bot, chat_id, i, message, ":".join(parts[3:]) or "all")
     elif action == "bcno":
         await runner.api(bot, "editMessageText", {"chat_id": chat_id, "message_id": message["message_id"], "text": "❌ Bekor qilindi."})
 
@@ -888,6 +892,14 @@ async def on_message(runner: "Runner", bot: "RunningBot", message: dict) -> bool
         await set_state(runner, bot, chat_id, None)
         await _bc_confirm(runner, bot, chat_id, message["message_id"], "all", None)
         return True
+    if str(kind).startswith("tl_"):
+        import tables
+
+        return await tables.admin_input(runner, bot, chat_id, message, state)
+    if kind == "user_tag" or str(kind).startswith("sg_"):
+        import crm
+
+        return await crm.admin_input(runner, bot, chat_id, message, state)
     if kind == "user_msg":
         await set_state(runner, bot, chat_id, None)
         try:
@@ -1133,15 +1145,17 @@ async def on_message(runner: "Runner", bot: "RunningBot", message: dict) -> bool
 
 async def _bc_confirm(runner: "Runner", bot: "RunningBot", chat_id: int, message_id: int, seg: str, confirm: dict | None) -> None:
     """Tarqatish tasdig'i: auditoriya (segment) tanlanadi, soni ko'rsatiladi."""
-    from core.segments import SEGMENTS, conditions
+    import crm
+    from core.segments import SEGMENT_RE, conditions, label
 
-    seg = seg if seg in SEGMENTS else "all"
+    seg = seg if SEGMENT_RE.match(seg) else "all"
     async with async_session() as db:
-        n = await db.scalar(select(func.count(BotSubscriber.id)).where(*conditions(seg, bot.bot_id)))
+        n = await db.scalar(select(func.count(BotSubscriber.id)).where(*conditions(seg, bot.bot_id, bot.menu)))
     ok = f"adm:bcok:{message_id}" + ("" if seg == "all" else f":{seg}")
-    seg_rows = [[{"text": ("✔️ " if k == seg else "") + label, "callback_data": f"adm:bcs:{message_id}:{k}"} for k, label in list(SEGMENTS.items())[i : i + 2]] for i in range(0, len(SEGMENTS), 2)]
+    options = await crm.segment_options(bot)
+    seg_rows = [[{"text": ("✔️ " if k == seg else "") + label(k, bot.menu), "callback_data": f"adm:bcs:{message_id}:{k}"} for k in options[i : i + 2]] for i in range(0, len(options), 2)]
     rows = [[{"text": "✅ Yuborish", "callback_data": ok}, {"text": "❌ Bekor", "callback_data": "adm:bcno"}]] + seg_rows
-    text = f"☝️ Shu xabar <b>{n}</b> ta obunachiga yuborilsinmi?\n🎯 Auditoriya: {SEGMENTS[seg]}"
+    text = f"☝️ Shu xabar <b>{n}</b> ta obunachiga yuborilsinmi?\n🎯 Auditoriya: {label(seg, bot.menu)}"
     data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "reply_markup": {"inline_keyboard": rows}}
     if confirm is not None and "message_id" in confirm and "text" in confirm:
         await runner.api(bot, "editMessageText", {**data, "message_id": confirm["message_id"]})
@@ -1155,7 +1169,7 @@ async def _start_broadcast(runner: "Runner", bot: "RunningBot", chat_id: int, me
         if running:
             await runner.api(bot, "sendMessage", {"chat_id": chat_id, "text": "⏳ Oldingi xabar hali tarqatilmoqda — tugashini kuting."})
             return
-        item = BotBroadcast(bot_id=bot.bot_id, text="", from_chat_id=chat_id, message_id=message_id, segment=segment if segment in SEGMENT_KEYS else "all")
+        item = BotBroadcast(bot_id=bot.bot_id, text="", from_chat_id=chat_id, message_id=message_id, segment=segment if SEGMENT_RE_.match(segment) else "all")
         db.add(item)
         await db.commit()
         broadcast_id = item.id

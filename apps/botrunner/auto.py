@@ -132,7 +132,7 @@ async def _run_rule(runner, bot, rule: dict) -> None:
         col = BotSubscriber.started_at if trigger == "start_delay" else BotSubscriber.last_active_at
         q = (
             select(BotSubscriber.tg_user_id, BotSubscriber.first_name, BotSubscriber.username, col)
-            .where(*conditions(seg, bot.bot_id), col <= now - datetime.timedelta(hours=h), col >= now - datetime.timedelta(hours=h + WINDOW_H))
+            .where(*conditions(seg, bot.bot_id, bot.menu), col <= now - datetime.timedelta(hours=h), col >= now - datetime.timedelta(hours=h + WINDOW_H))
             .limit(PER_TICK)
         )
         async with async_session() as db:
@@ -164,7 +164,7 @@ async def _run_cart(runner, bot, rule: dict, now: datetime.datetime) -> None:
     if not due:
         return
     async with async_session() as db:
-        subs = {r.tg_user_id: r for r in (await db.scalars(select(BotSubscriber).where(*conditions(rule.get("segment") or "all", bot.bot_id), BotSubscriber.tg_user_id.in_([c for c, _ in due])))).all()}
+        subs = {r.tg_user_id: r for r in (await db.scalars(select(BotSubscriber).where(*conditions(rule.get("segment") or "all", bot.bot_id, bot.menu), BotSubscriber.tg_user_id.in_([c for c, _ in due])))).all()}
     await _send_to(runner, bot, rule, [(c, subs[c].first_name, subs[c].username, str(ts)) for c, ts in due if c in subs])
 
 
@@ -179,7 +179,7 @@ async def _run_schedule(runner, bot, rule: dict, now: datetime.datetime) -> None
         if not await _claim(db, bot.bot_id, rule["id"], 0, period):
             return
         await db.commit()
-        audience = (await db.execute(select(BotSubscriber.tg_user_id, BotSubscriber.first_name, BotSubscriber.username).where(*conditions(rule.get("segment") or "all", bot.bot_id)).limit(5000))).all()
+        audience = (await db.execute(select(BotSubscriber.tg_user_id, BotSubscriber.first_name, BotSubscriber.username).where(*conditions(rule.get("segment") or "all", bot.bot_id, bot.menu)).limit(5000))).all()
     # Tarqatish fonda: daqiqalik sikl kutib qolmasin
     asyncio.create_task(_broadcast(runner, bot, rule, [(u, f, n) for u, f, n in audience if u != bot.owner_chat_id]))
 

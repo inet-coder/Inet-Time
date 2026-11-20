@@ -43,6 +43,13 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
     javobni kutish** (matn, son, telefon, rasm, hujjat, ovoz...). Har qadamga shart («ball ≥ 10»). Egasi chatda yig'adi
     (so'rovlar reyestr sxemasidan avtomatik), AI ham yozadi. Yangi imkoniyat = reyestrga bitta e'lon: interfeys, tekshiruv, AI
     hujjati va API qamrov hisoboti o'zi yangilanadi. «📋 Nusxalash» tugmasi (inline). `python tools/api_coverage.py` — Bot API qamrovi
+  - **Ma'lumot va CRM (3-sprint)**: 🏷 **teglar** (foydalanuvchi kartasidan yoki oqimda; `tag_vip bor` shartlari, `{tags}`),
+    🎯 **segmentlar** (o'zgaruvchi shartlari «va» bilan, saqlanadi, tarqatish/avto xabar/oqim auditoriyasi sifatida tanlanadi),
+    📚 **bot jadvallari** (mahsulot, vakansiya, kurs, uy-joy... — chatda maydonma-maydon qo'shish, tahrir, 📥 CSV import,
+    📤 eksport, menyuga ro'yxat sahifasi: sahifalash + batafsil + rasm), oqimda «jadvalga yozuv qo'shish», 🌐 **tashqi API so'rovi**
+    (GET/POST, sarlavhalar, JSON yo'lidan qiymat → o'zgaruvchi; SSRF himoyasi; API kalitlarini AI ko'rmaydi), ⏳ **uzoq kutish**
+    (daqiqa/soat/kun, bot qayta ishga tushsa ham yo'qolmaydi → ketma-ket xabarlar voronkasi, shartli chiqish) va 🗓 **jadval
+    triggeri** (har kuni soat X da auditoriyaga «kun taklifi»)
   - **Kontent va tugmalar (2-sprint)**: oqimda 🖼 rasm/video/hujjat (faylni chatda yuborasiz — tur o'zi aniqlanadi; spoiler,
     izoh tepada, tugmalar), 🗂 albom, 🎠 karusel (◀️ ▶️ bilan rasmlar almashinadi), effektli xabar 🔥🎉, «reply» sifatida
     yuborish, ⏳ avto-o'chirish. Tugmalar: 🔐 Telegram orqali kirish, 🔁 ulashish (inline), 📋 nusxalash, ⚙️ oqim ishga

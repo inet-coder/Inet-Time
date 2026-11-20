@@ -2,7 +2,7 @@
 
 `python tools/api_coverage.py --write docs/api-coverage.md` bilan yangilanadi.
 
-**Metodlar: 32/142 (23%)** · update turlari: 5/23 (22%)
+**Metodlar: 33/142 (23%)** · update turlari: 5/23 (22%)
 
 ## Update turlari
 
@@ -24,9 +24,9 @@
 
 ✅ `editMessageText` ❌ `editMessageCaption` ✅ `editMessageMedia` ❌ `editMessageLiveLocation` ❌ `stopMessageLiveLocation` ✅ `editMessageReplyMarkup` ❌ `stopPoll` ✅ `deleteMessage` ❌ `deleteMessages`
 
-## Fayl va foydalanuvchi (0/5)
+## Fayl va foydalanuvchi (1/5)
 
-❌ `getFile` ❌ `getUserProfilePhotos` ⛔ `setUserEmojiStatus` ❌ `getUserChatBoosts` ❌ `getBusinessConnection`
+✅ `getFile` ❌ `getUserProfilePhotos` ⛔ `setUserEmojiStatus` ❌ `getUserChatBoosts` ❌ `getBusinessConnection`
 
 ## Chat boshqaruvi (2/30)
 

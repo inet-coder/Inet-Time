@@ -255,6 +255,85 @@ class SetVar(_P):
         return v
 
 
+@action("add_tag", "Teg qo'shish", "🏷", "Ma'lumot", (), "Foydalanuvchiga yorliq (segmentlar va shartlarda ishlatiladi: tag_<nom> bor)")
+class AddTag(_P):
+    tag: str = Field(min_length=1, max_length=12, description="Teg nomi (lotin harf/raqam, 12 belgigacha)", json_schema_extra=_ui("text", "vip"))
+
+    @field_validator("tag")
+    @classmethod
+    def _t(cls, v: str) -> str:
+        v = re.sub(r"[^a-z0-9_]", "", v.strip().lower().replace(" ", "_").replace("'", ""))[:12]
+        if not v:
+            raise ValueError("teg lotin harf/raqamdan iborat bo'lsin")
+        return v
+
+
+@action("remove_tag", "Tegni olib tashlash", "🏷", "Ma'lumot", (), "Foydalanuvchidan yorliqni olib tashlaydi")
+class RemoveTag(AddTag):
+    pass
+
+
+@action("add_record", "Jadvalga yozuv qo'shish", "📚", "Ma'lumot", (), "Bot jadvaliga yangi qator (ariza, lid, bron...): «maydon = qiymat»")
+class AddRecord(_P):
+    table: str = Field(min_length=1, max_length=32, description="Qaysi jadval?", json_schema_extra=_ui("table"))
+    values: list[str] = Field(min_length=1, max_length=10, description="Qiymatlar: har qatorga «maydon_kaliti = qiymat» ({o'zgaruvchi} ishlatish mumkin)", json_schema_extra=_ui("lines", "ism = {name}\ntelefon = {phone}"))
+
+    @field_validator("values")
+    @classmethod
+    def _vals(cls, v: list[str]) -> list[str]:
+        out = [x.strip() for x in v if x.strip()]
+        if not out or any("=" not in x for x in out):
+            raise ValueError("har qator «maydon = qiymat» ko'rinishida bo'lsin")
+        return out
+
+
+@action("http_request", "Tashqi API so'rovi (HTTP)", "🌐", "Ma'lumot", (), "GET/POST so'rov; javobdan qiymat olib o'zgaruvchiga saqlaydi (kurs, ob-havo, CRM...)")
+class HttpRequest(_P):
+    method: Literal["GET", "POST"] = Field(default="GET", description="Usul", json_schema_extra=_ui("choice"))
+    url: str = Field(min_length=10, max_length=500, description="Manzil (https://..., {o'zgaruvchi} mumkin)", json_schema_extra=_ui("text", "https://cbu.uz/uz/arkhiv-kursov-valyut/json/USD/"))
+    headers: list[str] = Field(default_factory=list, max_length=6, description="Sarlavhalar (ixtiyoriy): har qatorga «Nom: qiymat»", json_schema_extra=_ui("lines", "Authorization: Bearer ..."))
+    body: str = Field(default="", max_length=2000, description="So'rov matni (POST uchun, JSON) — ixtiyoriy", json_schema_extra=_ui("long", '{"ism": "{name}"}'))
+    path: str = Field(default="", max_length=100, description="Javobdan qaysi qiymat? JSON yo'li (masalan 0.Rate yoki data.price) — ixtiyoriy", json_schema_extra=_ui("text", "0.Rate"))
+    var: str | None = Field(default=None, description="Qiymat saqlanadigan o'zgaruvchi (ixtiyoriy)", json_schema_extra=_ui("var", "kurs"))
+
+    @field_validator("url")
+    @classmethod
+    def _url(cls, v: str) -> str:
+        v = v.strip()
+        if not v.startswith("https://"):
+            raise ValueError("manzil https:// bilan boshlansin")
+        return v
+
+    @field_validator("headers")
+    @classmethod
+    def _h(cls, v: list[str]) -> list[str]:
+        out = [x.strip() for x in v if x.strip()]
+        for line in out:
+            name = line.split(":", 1)[0].strip().lower()
+            if ":" not in line or not re.fullmatch(r"[a-z0-9-]{1,40}", name) or name in ("host", "content-length", "connection", "transfer-encoding"):
+                raise ValueError(f"sarlavha «{line[:20]}» noto'g'ri («Nom: qiymat» ko'rinishida)")
+        return out
+
+    @field_validator("var")
+    @classmethod
+    def _var(cls, v: str | None) -> str | None:
+        v = (v or "").strip().lower().strip("{}")
+        if v and not _KEY.match(v):
+            raise ValueError("o'zgaruvchi nomi lotin kichik harf/raqam/_ bo'lsin")
+        return v or None
+
+
+@action("delay", "Uzoq kutish (daqiqa/soat/kun)", "⏳", "Boshqaruv", (), "Oqim to'xtab, belgilangan vaqtdan keyin davom etadi (voronka); bot qayta ishga tushsa ham yo'qolmaydi")
+class Delay(_P):
+    amount: int = Field(default=1, ge=1, le=43200, description="Qancha? (son)", json_schema_extra=_ui("int", "1"))
+    unit: Literal["daqiqa", "soat", "kun"] = Field(default="kun", description="Birligi", json_schema_extra=_ui("choice"))
+
+    @field_validator("amount")
+    @classmethod
+    def _a(cls, v: int) -> int:
+        return v
+
+
 @action("notify_admin", "Adminga bildirish", "🔔", "Ma'lumot", ("sendMessage",), "Egasi va adminlarga xabar (foydalanuvchi ma'lumoti bilan)")
 class NotifyAdmin(_P):
     text: str = Field(min_length=1, max_length=1000, description="Bildirish matni", json_schema_extra=_ui("long", "{name} yangi so'rov qoldirdi"))
@@ -338,6 +417,21 @@ class TrMessageType(_P):
     kind: Literal["photo", "video", "voice", "audio", "document", "sticker", "animation", "video_note", "location", "contact", "poll", "dice"] = Field(
         default="photo", description="Qaysi tur?", json_schema_extra=_ui("choice")
     )
+
+
+@trigger("schedule", "Jadval bo'yicha", "🗓", "Triggerlar", (), "Har kuni belgilangan vaqtda auditoriyaning har bir a'zosi uchun ishga tushadi (kun taklifi, eslatma)")
+class TrSchedule(_P):
+    at: str = Field(default="10:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="Soat (SS:DD)", json_schema_extra=_ui("text", "10:00"))
+    days: Literal["har kuni", "Du–Ju", "Sha–Ya"] = Field(default="har kuni", description="Qaysi kunlari?", json_schema_extra=_ui("choice"))
+    segment: str = Field(default="all", max_length=30, description="Auditoriya (all, new7, active7, t:<teg>, s:<segment>)", json_schema_extra=_ui("text", "all"))
+
+    @field_validator("segment")
+    @classmethod
+    def _seg(cls, v: str) -> str:
+        v = v.strip() or "all"
+        if not re.fullmatch(r"(all|new7|active7|inactive30|ordered|booked|referrers|t:[a-z0-9_]{1,12}|s:[A-Za-z0-9_-]{1,24})", v):
+            raise ValueError("auditoriya noto'g'ri (all, active7, t:vip, s:<id> ...)")
+        return v
 
 
 @trigger("poll_answer", "So'rovnomaga javob", "🗳", "Triggerlar", ("getUpdates",), "Foydalanuvchi oqim yuborgan so'rovnomada ovoz berganda ({poll_choice} o'zgaruvchisi)")

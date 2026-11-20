@@ -413,7 +413,9 @@ class Channel(_M):
 
 
 class Module(_M):
-    type: Literal["catalog", "cart", "orders", "booking", "mybookings", "quiz", "top", "bonus", "contest"]
+    type: Literal["catalog", "cart", "orders", "booking", "mybookings", "quiz", "top", "bonus", "contest", "table"]
+    template: str = Field(default="", max_length=500)  # table: ro'yxatdagi har bir yozuv ko'rinishi ({maydon})
+    detail: str = Field(default="", max_length=1000)  # table: yozuv batafsil ko'rinishi
     ref: str | None = None  # quiz / contest identifikatori
     var: str = "ball"  # reyting va bonus uchun ball o'zgaruvchisi
     layout: Literal["list", "cards"] = "list"  # list — bitta xabarda ro'yxat; cards — har mahsulot alohida xabar
@@ -715,6 +717,54 @@ class PostChannel(_M):
     title: str = Field(default="", max_length=64)
 
 
+class TableField(_M):
+    key: str
+    label: str = Field(min_length=1, max_length=40)
+    type: Literal["text", "number", "photo", "link"] = "text"
+
+    @field_validator("key")
+    @classmethod
+    def _k(cls, v: str) -> str:
+        return _var_key(v, "maydon") or ""
+
+
+class Table(_M):
+    """Egasi chatda yuritadigan jadval (mahsulotlar, vakansiyalar, tadbirlar...). Yozuvlar bazada (bot_records)."""
+
+    id: str
+    title: str = Field(min_length=1, max_length=40)
+    fields: list[TableField] = Field(min_length=1, max_length=10)
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v: str) -> str:
+        if not _PAGE_ID.match(v):
+            raise ValueError("jadval identifikatori noto'g'ri")
+        return v
+
+    @model_validator(mode="after")
+    def _check(self):
+        keys = [f.key for f in self.fields]
+        if len(set(keys)) != len(keys):
+            raise ValueError("jadval maydonlari takrorlanmasin")
+        return self
+
+
+class Segment(_M):
+    """Egasi yaratgan segment: shartlar «va» bilan birlashadi (o'zgaruvchilar bo'yicha)."""
+
+    id: str
+    title: str = Field(min_length=1, max_length=40)
+    conds: list[Cond] = Field(min_length=1, max_length=6)
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v: str) -> str:
+        if not _PAGE_ID.match(v):
+            raise ValueError("segment identifikatori noto'g'ri")
+        return v
+
+
 class FlowStep(_M):
     """Oqim qadami: amal (core/capabilities reyestridan) + parametrlar + ixtiyoriy shart."""
 
@@ -786,7 +836,7 @@ class AutoRule(_M):
 
     @model_validator(mode="after")
     def _check(self):
-        if self.segment not in AUTO_SEGMENTS:
+        if self.segment not in AUTO_SEGMENTS and not re.fullmatch(r"(t:[a-z0-9_]{1,12}|s:[A-Za-z0-9_-]{1,24})", self.segment):
             self.segment = "all"
         self.days = sorted({d for d in self.days if 0 <= d <= 6}) or list(range(7))
         return self
@@ -826,6 +876,8 @@ class Menu(_M):
     tickets: Tickets = Tickets()
     webhooks: list[Webhook] = Field(default_factory=list, max_length=10)
     flows: list[Flow] = Field(default_factory=list, max_length=30)
+    segments: list[Segment] = Field(default_factory=list, max_length=20)
+    tables: list[Table] = Field(default_factory=list, max_length=10)
     post_channels: list[PostChannel] = Field(default_factory=list, max_length=5)
     operators: list[int] = Field(default_factory=list, max_length=20)  # faqat murojaatlarga javob beradigan xodimlar
     canned: list[Canned] = Field(default_factory=list, max_length=20)
@@ -852,6 +904,15 @@ class Menu(_M):
             ids_ = [x.id for x in coll]
             if len(set(ids_)) != len(ids_):
                 raise ValueError(f"{what} identifikatorlari takrorlanmasin")
+        table_ids = [t.id for t in self.tables]
+        if len(set(table_ids)) != len(table_ids):
+            raise ValueError("jadvallar takrorlanmasin")
+        for page in self.pages:
+            if page.module and page.module.type == "table" and page.module.ref not in table_ids:
+                page.module = None
+        seg_ids = [s.id for s in self.segments]
+        if len(set(seg_ids)) != len(seg_ids):
+            raise ValueError("segmentlar takrorlanmasin")
         flow_ids = [f.id for f in self.flows]
         if len(set(flow_ids)) != len(flow_ids):
             raise ValueError("oqimlar identifikatorlari takrorlanmasin")

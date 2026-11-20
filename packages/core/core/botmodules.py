@@ -18,6 +18,8 @@ MODULES: list[dict] = [
         "id": "games", "icon": "🎮", "title": "O'yinlar", "desc": "Viktorina, reyting, bonus, konkurs, kapcha", "cb": "gm:home",
         "present": lambda m: bool(m.get("quizzes") or m.get("contests") or (m.get("bonus") or {}).get("enabled") or m.get("captcha")),
     },
+    {"id": "tables", "icon": "📚", "title": "Jadvallar", "desc": "Mahsulot, vakansiya, kurs... ro'yxatlari", "cb": "tl:home", "present": lambda m: bool(m.get("tables"))},
+    {"id": "segments", "icon": "🎯", "title": "Segment va teglar", "desc": "Auditoriya guruhlari, teglar", "cb": "sn:home", "present": lambda m: bool(m.get("segments"))},
     {"id": "flows", "icon": "⚙️", "title": "Oqimlar", "desc": "Trigger → qadamlar: har qanday mantiq", "cb": "fl:home", "present": lambda m: bool(m.get("flows"))},
     {"id": "integrations", "icon": "🔌", "title": "Integratsiyalar", "desc": "Google Sheets, webhook", "cb": "wh:home", "present": lambda m: bool(m.get("webhooks"))},
     {"id": "posting", "icon": "📣", "title": "Kanal postlari", "desc": "Kanalga post: hozir yoki rejalashtirilgan", "cb": "pc:home", "present": lambda m: bool(m.get("post_channels"))},

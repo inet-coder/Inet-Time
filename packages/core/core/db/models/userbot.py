@@ -191,3 +191,17 @@ class BotPost(Base):
     error: Mapped[str] = mapped_column(String(200), default="")
     sent_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BotRecord(Base):
+    """Bot jadvali yozuvi (egasi chatda yuritadigan ma'lumot: mahsulot, vakansiya, tadbir...)."""
+
+    __tablename__ = "bot_records"
+    __table_args__ = (Index("ix_bot_records_table", "bot_id", "table_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("user_bots.id", ondelete="CASCADE"))
+    table_id: Mapped[str] = mapped_column(String(32))
+    data: Mapped[dict] = mapped_column(JSONB)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

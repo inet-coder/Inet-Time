@@ -46,6 +46,7 @@ from core.botbuilder import (
     render_text,
 )
 from core.db.base import async_session
+from core.segments import tags_of
 from core.db.models import BotFormAnswer, BotSubscriber, MediaFile, User, UserBot, WebApp
 from core.entitlements import get_entitlement
 from core.notify import send_telegram
@@ -56,7 +57,9 @@ import admin
 import ai_chat
 import auto
 import booking
+import crm
 import editor
+import tables
 import flows
 import games
 import home
@@ -456,7 +459,10 @@ class Runner:
         for v in bot.menu.get("variables") or []:
             vals[v["key"]] = v.get("default", "")
         vals.update({k: str(v) for k, v in (bot.globals or {}).items()})
-        vals.update({k: str(v) for k, v in sub["data"].items()})
+        vals.update({k: str(v) for k, v in sub["data"].items() if not k.startswith("_")})
+        tags = tags_of(sub["data"])
+        vals["tags"] = ", ".join(tags)
+        vals.update({f"tag_{t}": "1" for t in tags})
         vals.update(now_values())
         vals.update(
             {
@@ -676,6 +682,7 @@ class Runner:
             await shop.render_module(self, bot, chat_id, page, vals, message=message)
             or await booking.render_module(self, bot, chat_id, page, vals, message=message)
             or await games.render_module(self, bot, chat_id, page, vals, message=message)
+            or await tables.render_module(self, bot, chat_id, page, vals, message=message)
         ):
             return
         msgs = self.page_msgs(bot, page, vals, user, with_branding=with_branding, start=start)
@@ -1229,7 +1236,7 @@ class Runner:
         if data.startswith("tr:"):
             await tickets.rate(self, bot, chat_id, data, message, query["id"])
             return
-        if data.startswith(("adm:", "e:", "ai:", "sh:", "bm:", "au:", "gm:", "wh:", "pc:", "fl:")):
+        if data.startswith(("adm:", "e:", "ai:", "sh:", "bm:", "au:", "gm:", "wh:", "pc:", "fl:", "sn:", "tl:")):
             await self.answer(bot, query["id"])
             if self.is_admin(bot, chat_id):
                 if data.startswith("sh:"):
@@ -1238,6 +1245,10 @@ class Runner:
                     await auto.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("gm:"):
                     await games.admin_callback(self, bot, chat_id, data, message, user)
+                elif data.startswith("tl:"):
+                    await tables.admin_callback(self, bot, chat_id, data, message, user)
+                elif data.startswith("sn:"):
+                    await crm.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("fl:"):
                     await flows.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("wh:"):
@@ -1276,7 +1287,9 @@ class Runner:
                 await self.answer(bot, query["id"], "❗ Avval kanallarga obuna bo'ling", alert=True)
                 await self.ask_subscribe(bot, chat_id, missing)
                 return
-        if data.startswith("fx:"):
+        if data.startswith("tb:"):
+            await tables.on_callback(self, bot, chat_id, data, message, user, query["id"])
+        elif data.startswith("fx:"):
             await flows.on_button(self, bot, chat_id, data[3:], user, message, query["id"])
         elif data.startswith("cr:"):
             await flows.on_carousel(self, bot, chat_id, data, message, query["id"])

@@ -390,6 +390,14 @@ async def create_order(runner, bot, chat_id: int, user: dict, data: dict) -> Non
         await runner.api(bot, "sendMessage", {"chat_id": chat_id, "text": "⚠️ Savatingiz bo'sh — buyurtma yaratilmadi.", "reply_markup": {"remove_keyboard": True}})
         return
     subtotal, fee, total = totals(bot, items)
+    if getattr(bot, "sandbox", False):
+        await runner.redis.delete(_ck(bot, chat_id))
+        await runner.api(
+            bot,
+            "sendMessage",
+            {"chat_id": chat_id, "text": f"🧪 Sinov rejimi: buyurtma ({money(total, cur(bot))}) to'g'ri yig'ildi, lekin saqlanmadi.", "reply_markup": {"remove_keyboard": True}},
+        )
+        return
     lines = [{"id": i, "title": shop_item(bot.menu, i)["title"], "price": shop_item(bot.menu, i)["price"], "qty": q} for i, q in items.items()]
     order = None
     for _ in range(4):

@@ -41,8 +41,20 @@ BOT DOCUMENT
  "keywords": [{"words": ["narx", "price"], "match": "exact" | "contains" | "start", "target": "<page id>" | null, "reply": "<HTML text>"}],
  "commands": [{"command": "help", "description": "Yordam", "target": "<page id>"}],
  "referral": {"enabled": false, "reward": 1, "var": "balance", "notify": true, "text": "🎉 {name} sizning havolangiz orqali qo'shildi! +{reward}"},
- "fallback": "<reply to unknown messages>", "feedback_prompt": "...", "feedback_done": "...", "forward_all": false
+ "fallback": "<reply to unknown messages>", "feedback_prompt": "...", "feedback_done": "...", "forward_all": false,
+ "shop": SHOP
 }
+SHOP (built-in store with cart, checkout and order statuses — use it for ANY selling bot instead of order forms):
+ {"enabled": true, "currency": "so'm", "delivery_fee": 0, "free_from": 0, "min_order": 0,
+  "items": [{"id": "<[a-z0-9_-]>", "category": "<id of a page with module catalog>", "title": "Latte", "price": 28000,
+             "old_price": null, "badge": "🔥 Hit", "text": "<HTML description>", "active": true}],
+  "checkout": [{"key": "ism", "label": "👤 Ismingiz?", "type": "text|number|phone|email|choice|location", "options": []}],
+  "done_text": "✅ Buyurtmangiz qabul qilindi! Raqami: <b>#{order}</b>"}
+ Pages with "module": {"type": "catalog", "layout": "list"|"cards", "per_page": 8} show their category's items with
+ ➕/➖ and a cart button (keyboard "inline", one intro post, a back button). {"type": "cart"} — the cart page;
+ {"type": "orders"} — "My orders". A shop needs catalog pages, one cart page and one orders page reachable from the menu.
+ Keep existing items (same id, file_id) unless the owner asks to change them; never invent file_id.
+ Variables {cart_count} {cart_total} show the user's cart.
 PAGE = {"id": "<[a-z0-9_-], max 24>", "title": "<short name>", "keyboard": "reply" | "inline", "nav": true|false,
         "messages": [POST, ...] (1-10), "buttons": [[BUTTON, ...], ...] (rows, max 8 per row, max 12 rows),
         "placeholder": "", "random_post": false, "ops": [{"var": "visits", "op": "add", "value": "1"}]}
@@ -247,6 +259,7 @@ def prepare(new: dict, current: dict) -> dict:
     for f in doc.get("forms") or []:
         if isinstance(f, dict):
             f["target"] = remap(f.get("target"))
+    _prepare_shop(doc, current, remap)
     # Xavfsizlik: adminlar va majburiy obuna kanallarini faqat egasi o'zgartiradi
     doc["admins"] = current.get("admins") or []
     doc["channels"] = current.get("channels") or []
@@ -260,6 +273,38 @@ def prepare(new: dict, current: dict) -> dict:
                 doc.setdefault("variables", []).append({"key": m["var"], "label": m["var"], "default": "", "scope": "user"})
                 declared.add(m["var"])
     return doc
+
+
+def _prepare_shop(doc: dict, current: dict, remap) -> None:
+    """Do'kon: AI tashlab ketsa — egasining mahsulotlari saqlanadi; rasm (file_id) faqat mavjud mahsulotdan;
+    bo'lim id'lari yangilanadi; katalog bo'limi yo'qolgan mahsulotlar birinchi katalogga o'tadi."""
+    cur_shop = current.get("shop") or {}
+    shop = doc.get("shop")
+    if not isinstance(shop, dict):
+        shop = copy.deepcopy(cur_shop) if cur_shop.get("items") else {"enabled": False}
+        doc["shop"] = shop
+    old_items = {i.get("id"): i for i in cur_shop.get("items") or []}
+    if "items" not in shop and old_items:
+        shop["items"] = copy.deepcopy(list(old_items.values()))
+    catalogs = [p["id"] for p in doc["pages"] if isinstance(p.get("module"), dict) and p["module"].get("type") == "catalog"]
+    for p in doc["pages"]:
+        if p.get("module") is not None and (not isinstance(p["module"], dict) or p["module"].get("type") not in ("catalog", "cart", "orders")):
+            p["module"] = None
+    items, used = [], set()
+    for it in shop.get("items") or []:
+        if not isinstance(it, dict) or not it.get("title"):
+            continue
+        it["id"] = _clean_id(it.get("id") or it["title"], used)
+        prev = old_items.get(it["id"])
+        it["file_id"] = prev.get("file_id") if prev else None
+        it["media_id"] = prev.get("media_id") if prev else None
+        it["category"] = remap(it.get("category"))
+        if it["category"] not in catalogs:
+            if not catalogs:
+                raise MenuError("mahsulotlar bor, lekin katalog bo'limi (module catalog) yo'q — katalog sahifalarini saqlang")
+            it["category"] = catalogs[0]
+        items.append(it)
+    shop["items"] = items
 
 
 def _parse(text: str) -> dict:
@@ -324,6 +369,12 @@ def tree(menu: dict, limit: int = 45) -> str:
         posts = len(p.get("messages") or [])
         q = sum(1 for m in p.get("messages") or [] if m.get("type") == "question")
         extra = f" · ❓{q}" if q else ""
+        mod = (p.get("module") or {}).get("type")
+        if mod == "catalog":
+            n = sum(1 for i in (menu.get("shop") or {}).get("items") or [] if i.get("category") == pid)
+            extra += f" · 🛍 {n} mahsulot"
+        elif mod:
+            extra += " · " + {"cart": "🛒 savat", "orders": "📦 buyurtmalar"}[mod]
         lines.append(f"{'   ' * depth}{icon} {p['title']} ({posts} post{extra})")
         children = [b for row in p.get("buttons") or [] for b in row] + [b for m in p.get("messages") or [] for row in m.get("buttons") or [] for b in row]
         for b in children:
@@ -355,6 +406,8 @@ def summary(menu: dict) -> str:
         parts.append(f"⌨️ {len(menu['commands'])} buyruq")
     if (menu.get("referral") or {}).get("enabled"):
         parts.append("👥 referal")
+    if (menu.get("shop") or {}).get("items"):
+        parts.append(f"🛒 do'kon: {len(menu['shop']['items'])} mahsulot")
     style = {"reply": "⌨️ klaviatura", "inline": "💬 inline", "hybrid": "🔀 aralash"}.get(menu.get("style", "reply"), "")
     return " · ".join(parts) + f" · uslub: {style}"
 
@@ -528,7 +581,7 @@ async def build_webapp(model: str, current: dict, history: list[dict], request: 
 
 import asyncio  # noqa: E402
 
-KINDS = ("menu", "info", "item", "form", "faq", "contacts", "profile", "referral", "feedback", "link")
+KINDS = ("menu", "info", "item", "form", "faq", "contacts", "profile", "referral", "feedback", "link", "catalog", "cart", "orders")
 
 PLAN_SYSTEM = """You are the lead architect of InetTime AI, a no-code Telegram bot builder. You work like a senior bot developer:
 first understand the business, then design a clean, logical bot architecture. Another step will write the texts.
@@ -556,7 +609,9 @@ PLAN FORMAT
  "variables": [{"key": "ball", "label": "Ball", "default": "0"}],
  "keywords": [{"words": ["narx", "menyu"], "section": "<id>"}],
  "commands": [{"command": "menu", "description": "Menyu", "section": "<id>"}],
- "referral": {"enabled": false, "reward": 1, "var": "ball"}}
+ "referral": {"enabled": false, "reward": 1, "var": "ball"},
+ "shop": null | {"currency": "so'm", "delivery_fee": 15000, "free_from": 200000, "min_order": 0, "pickup": false,
+                 "checkout": [{"key": "ism", "label": "👤 Ismingiz?", "type": "text"}, ...]}}
 KIND:
  menu — a group with children sections (catalog, categories, services list). info — a content page (about, delivery terms, promotions).
  item — one product/service card (name, description, price). form — a questionnaire/application/order form with
@@ -564,12 +619,21 @@ KIND:
  faq — frequently asked questions. contacts — phone, address, hours, map. profile — the user's personal cabinet (their variables,
  points, referral stats). referral — invite friends page (needs referral.enabled). feedback — "write to admin" (live chat with the owner).
  link — opens an external URL (site, channel, Instagram) — needs "url".
+ catalog — a product category of the built-in STORE (cart, checkout, order numbers and statuses are automatic). Needs
+ "products": [{"title": "Latte", "price": 28000, "old_price": null, "badge": "", "text": "1-2 appetizing lines: taste, size, weight"}]
+ (4-12 realistic products per category, integer prices in the currency). Leaf section (no children). "layout": "cards" when
+ photos/visuals matter (clothes, cakes), otherwise "list".
+ cart — the shopping cart page. orders — "📦 Buyurtmalarim" (the user's orders and their statuses).
 ARCHITECTURE RULES
 - Exactly one section with id "start" and parent null; every other section has an existing parent; max depth 3.
 - The start menu has 4-8 children. A menu has 2-12 children. Put related things together (e.g. catalog → categories → items).
 - Real businesses need: what you offer (catalog/services with real items), how to order/book (form), promotions, about,
   contacts, FAQ, feedback. Add profile + referral when points/bonuses/contests make sense.
-- For a shop/restaurant/menu create real categories and 3-6 real items per category (item sections).
+- Anything that SELLS products (shop, restaurant/cafe delivery, bakery, flowers, clothes, pharmacy...) uses the STORE:
+  "catalog" sections (one per category, under a "🛍 Katalog"/"🍽 Menyu" menu if more than one) + one "cart" + one "orders"
+  section in the start menu + "shop" settings. Do NOT build order forms or item sections for such products.
+  Services with booking (salon, clinic, courses) use info/item sections + a booking form instead.
+- Products do not count as sections; sections count is limited.
 - Titles: emoji + 1-3 words, max 24 characters, unique within a parent.
 - Style: follow the owner's request exactly. If not specified: "hybrid" (main menus as keyboard, details inline).
 - Typical size: 10-30 sections. Max {max_pages} sections.
@@ -597,6 +661,8 @@ FORMAT RULES
 - form: 2-4 lines explaining what happens after submitting (the start button is added automatically).
 - profile: template with {name} and the plan variables, e.g. "💎 Ballaringiz: <b>{ball}</b>".
 - referral: how it works + "🔗 Sizning havolangiz:\\n{ref_link}" + "👥 Taklif qilganlaringiz: <b>{ref_count}</b>".
+- catalog: 1-2 lines inviting to choose from this category (products and prices are shown automatically — do NOT list them).
+- cart / orders: one short line title (content is generated automatically).
 - start: a warm welcome with {name}, the bot's value in 2-3 lines, and a hint to use the menu.
 - url buttons only with real https links. Never placeholders like "...", "[narx]", "XXX". If a fact is unknown,
   write a realistic value and add it to "verify"."""
@@ -660,7 +726,23 @@ def _plan_fix(plan: dict, max_pages: int) -> dict:
             depth += 1
         if depth > 4:
             sct["parent"] = "start"
-    # bolasi bor bo'limlar — menyu
+    # do'kon: savat va buyurtmalar bitta; katalog bo'lsa — avtomatik qo'shiladi
+    for mod in ("cart", "orders"):
+        dup = [sct for sct in sections if sct.get("kind") == mod][1:]
+        for sct in dup:
+            sections.remove(sct)
+    if any(sct.get("kind") == "catalog" for sct in sections):
+        for mod, title in (("cart", "🛒 Savat"), ("orders", "📦 Buyurtmalarim")):
+            if not any(sct.get("kind") == mod for sct in sections):
+                sid = _sid(mod, used)
+                used.add(sid)
+                sections.append({"id": sid, "parent": "start", "title": title, "kind": mod, "purpose": title})
+        by_id = {sct["id"]: sct for sct in sections}
+    # bolasi bor bo'limlar — menyu (katalog/savat bargligicha qoladi — bolalari ota menyuga ko'chadi)
+    for sct in sections:
+        parent = by_id.get(sct.get("parent"))
+        if parent and parent.get("kind") in ("catalog", "cart", "orders"):
+            sct["parent"] = parent.get("parent") or "start"
     parents = {sct["parent"] for sct in sections if sct.get("parent")}
     for sct in sections:
         if sct["id"] in parents and sct["kind"] not in ("menu",):
@@ -694,6 +776,8 @@ def _plan_fix(plan: dict, max_pages: int) -> dict:
                 sct["kind"] = "info"
                 sct["purpose"] = f"{sct.get('purpose', '')}. List these items with short descriptions and prices in the text: " + ", ".join(k["title"] for k in kids)
     plan["sections"] = [sct for sct in sections if sct["id"] in keep]
+    if not any(sct["kind"] == "catalog" for sct in plan["sections"]):
+        plan["sections"] = [sct for sct in plan["sections"] if sct["kind"] not in ("cart", "orders")]
     plan["style"] = plan.get("style") if plan.get("style") in ("reply", "inline", "hybrid") else "hybrid"
     return plan
 
@@ -708,7 +792,7 @@ async def plan_request(model: str, current: dict, history: list[dict], request: 
     messages = [{"role": "system", "content": system}, {"role": "user", "content": context}]
     messages += [h for h in history[-HISTORY:] if h.get("role") in ("user", "assistant")]
     messages.append({"role": "user", "content": request[:4000]})
-    result = await ai._complete(model, messages, 6000, json_mode=True)
+    result = await ai._complete(model, messages, 9000, json_mode=True)
     data = _parse(result.text)
     mode = data.get("mode") if data.get("mode") in ("new", "edit", "ask", "answer") else "new"
     if mode == "ask" and not allow_questions:
@@ -727,6 +811,7 @@ async def write_content(model: str, brief: dict, plan: dict) -> tuple[dict, list
     outline = "\n".join(
         f"- {sct['id']} | parent: {sct.get('parent')} | {sct['kind']} | {sct['title']} | {sct.get('purpose', '')}"
         + (f" | fields: {', '.join(f.get('label', '') for f in sct.get('fields') or [] if isinstance(f, dict))}" if sct["kind"] == "form" else "")
+        + (f" | products: {', '.join(str(x.get('title', '')) for x in sct.get('products') or [] if isinstance(x, dict))[:300]}" if sct["kind"] == "catalog" else "")
         for sct in sections
     )
     variables = ", ".join(f"{{{v.get('key')}}}" for v in plan.get("variables") or [] if isinstance(v, dict))
@@ -734,7 +819,7 @@ async def write_content(model: str, brief: dict, plan: dict) -> tuple[dict, list
         f"BUSINESS BRIEF: {json.dumps(brief, ensure_ascii=False)}\nSTYLE: {plan['style']}\nVARIABLES: {variables or '—'}\n"
         f"FULL ARCHITECTURE (id | parent | kind | title | purpose):\n{outline}\n\n"
     )
-    writable = [sct for sct in sections if sct["kind"] != "feedback"]
+    writable = [sct for sct in sections if sct["kind"] not in ("feedback", "cart", "orders")]
     chunks = [writable[i : i + 10] for i in range(0, len(writable), 10)] or [[]]
 
     async def one(chunk: list) -> tuple[dict, ai.AIResult]:
@@ -804,9 +889,16 @@ def compile_plan(plan: dict, content: dict) -> dict:
         parent = by_id.get(sct.get("parent"))
         return keyboard(parent) if parent and parent["kind"] == "menu" and depth(parent) > 1 else "reply"
 
-    forms, pages = [], []
+    forms, pages, items = [], [], []
+    item_ids: set = set()
     for sct in sections:
         if sct["kind"] == "feedback":
+            continue
+        if sct["kind"] in ("catalog", "cart", "orders"):
+            page = _store_page(sct, (content.get("sections") or {}).get(sct["id"]) or {})
+            if sct["kind"] == "catalog":
+                items += _products(sct, item_ids)
+            pages.append(page)
             continue
         data = (content.get("sections") or {}).get(sct["id"]) or {}
         posts = []
@@ -902,9 +994,40 @@ def compile_plan(plan: dict, content: dict) -> dict:
             name = _ID.sub("", str(c.get("command") or "").lower().lstrip("/")).replace("-", "_")[:32]
             if name and name not in ("start", "admin", "cancel", "edit") and not any(x["command"] == name for x in commands):
                 commands.append({"command": name, "description": str(c.get("description") or name)[:256], "target": c["section"]})
+    shop = {"enabled": False}
+    if items:
+        cfg = plan.get("shop") if isinstance(plan.get("shop"), dict) else {}
+        shop = {"enabled": True, "items": items, "currency": str(cfg.get("currency") or "so'm")[:12]}
+        for key in ("delivery_fee", "free_from", "min_order"):
+            try:
+                shop[key] = max(0, int(float(cfg.get(key) or 0)))
+            except (TypeError, ValueError):
+                pass
+        checkout, keys = [], set()
+        for i, f in enumerate(cfg.get("checkout") or []):
+            if not isinstance(f, dict) or not f.get("label"):
+                continue
+            key = _ID.sub("", str(f.get("key") or f"javob{i + 1}").lower()).replace("-", "_")[:32] or f"javob{i + 1}"
+            key = key if key[0].isalpha() else "j" + key
+            if key in keys:
+                continue
+            keys.add(key)
+            ftype = f.get("type") if f.get("type") in ("text", "number", "phone", "email", "choice", "location") else "text"
+            opts = [str(o)[:64] for o in f.get("options") or [] if str(o).strip()][:12]
+            checkout.append({"key": key, "label": str(f["label"])[:200], "type": ftype if (ftype != "choice" or opts) else "text", "options": opts})
+        if checkout:
+            if not any(f["type"] == "phone" for f in checkout) and len(checkout) < 10:
+                checkout.insert(min(1, len(checkout)), {"key": "telefon" if "telefon" not in keys else "tel", "label": "📱 Telefon raqamingiz?", "type": "phone", "options": []})
+            shop["checkout"] = checkout[:10]
+        elif cfg.get("pickup"):
+            shop["checkout"] = [
+                {"key": "ism", "label": "👤 Ismingiz?", "type": "text", "options": []},
+                {"key": "telefon", "label": "📱 Telefon raqamingiz?", "type": "phone", "options": []},
+            ]
     return {
         "start": "start",
         "style": style,
+        "shop": shop,
         "pages": pages,
         "variables": variables,
         "forms": forms,
@@ -916,6 +1039,54 @@ def compile_plan(plan: dict, content: dict) -> dict:
 
 
 _VARKEY = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+
+
+def _store_page(sct: dict, data: dict) -> dict:
+    """Do'kon bo'limi (katalog / savat / buyurtmalar) — doim inline, bitta kirish posti va «Orqaga»."""
+    post = next((p for p in data.get("posts") or [] if (isinstance(p, dict) and str(p.get("text", "")).strip()) or (isinstance(p, str) and p.strip())), None)
+    text = (post["text"] if isinstance(post, dict) else post) if post else f"<b>{sct['title']}</b>"
+    module: dict = {"type": sct["kind"]}
+    if sct["kind"] == "catalog":
+        module.update(layout="cards" if sct.get("layout") == "cards" else "list", per_page=8)
+    return {
+        "id": sct["id"],
+        "title": sct["title"],
+        "keyboard": "inline",
+        "messages": [{"type": "text", "text": str(text)[:1000], "buttons": []}],
+        "buttons": [[{"text": "⬅️ Orqaga", "action": "back"}]] if sct.get("parent") != "start" else [],
+        "nav": False,
+        "module": module,
+    }
+
+
+def _products(sct: dict, used: set) -> list[dict]:
+    out = []
+    for x in (sct.get("products") or [])[:60]:
+        if not isinstance(x, dict) or not str(x.get("title", "")).strip():
+            continue
+        try:
+            price = max(0, int(float(str(x.get("price") or 0).replace(" ", "").replace(",", "."))))
+        except ValueError:
+            continue
+        item = {
+            "id": _clean_id("i_" + sct["id"][:12] + f"_{len(out) + 1}", used),
+            "category": sct["id"],
+            "title": str(x["title"]).strip()[:64],
+            "price": price,
+            "text": str(x.get("text") or "").strip()[:900],
+            "badge": str(x.get("badge") or "").strip()[:20],
+            "active": True,
+        }
+        try:
+            old = int(float(x.get("old_price") or 0))
+            if old > price:
+                item["old_price"] = old
+        except (TypeError, ValueError):
+            pass
+        out.append(item)
+    return out
+
+
 _PLACEHOLDER = re.compile(r"(\.\.\.|…|\[[^\]]{1,30}\]|XXX|lorem ipsum|TODO)", re.I)
 
 

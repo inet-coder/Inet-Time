@@ -1,5 +1,5 @@
 // Kodsiz Web App konstruktori: sahifalar, bloklar, uslub, sozlamalar, arizalar va jonli ko'rinish.
-import { useQuery } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowLeft,
@@ -31,7 +31,7 @@ import {
   X,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { api, mediaUrl, type WASubmission, type WebAppInfo, type WebAppState } from "../api";
+import { type AICollection, api, mediaUrl, type WASubmission, type WebAppInfo, type WebAppState } from "../api";
 import { confirmDialog, haptic, tg } from "../tg";
 import { WebAppRuntime, type RuntimeProps } from "../webapp/Runtime";
 import { clearDataCache, type DataLoader } from "../webapp/data";
@@ -540,7 +540,18 @@ export function WebAppBuilder({ botId, state, toast, onClose }: { botId: number;
     />
   );
 
-  const applyAI = (next: AppDoc) => {
+  const queryClient = useQueryClient();
+  const applyAI = async (next: AppDoc, colls: AICollection[] = []) => {
+    if (colls.length) {
+      try {
+        const res = await api.webappAICollections(botId, colls);
+        void queryClient.invalidateQueries({ queryKey: ["collections", botId] });
+        if (res.created.length) toast(`🗄 ${res.created.map((c) => `${c.name} (${c.records})`).join(", ")} — ma'lumotlar bazasiga qo'shildi`);
+      } catch (e) {
+        toast((e as Error).message, "err");
+        return;
+      }
+    }
     history.current.last = 0;
     update((d) => {
       for (const k of Object.keys(d)) delete (d as Record<string, unknown>)[k];
@@ -1556,10 +1567,11 @@ function AISheet({
   botId: number;
   doc: AppDoc;
   toast: Toast;
-  onApply: (d: AppDoc) => void;
+  onApply: (d: AppDoc, colls: AICollection[]) => void;
   onClose: () => void;
 }) {
   const [prompt, setPrompt] = useState("");
+  const [colls, setColls] = useState<AICollection[]>([]);
   const [busy, setBusy] = useState(false);
   const [chat, setChat] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
   const [result, setResult] = useState<AppDoc | null>(null);
@@ -1574,6 +1586,7 @@ function AISheet({
       const res = await api.webappAI(botId, { prompt: text, doc, history: chat });
       setChat((c) => [...c, { role: "user", content: text }, { role: "assistant", content: res.reply }]);
       setResult(res.doc);
+      setColls(res.collections ?? []);
       setQuota(`Bugun: ${res.used}/${res.limit}`);
       setPrompt("");
     } catch (e) {
@@ -1615,8 +1628,13 @@ function AISheet({
               ✨ Tayyor: {result.pages.length} sahifa · {blocks} blok
             </b>
             <span className="hint">{result.pages.map((p) => `${p.emoji || "📄"} ${p.title}`).join(" · ")}</span>
+            {colls.length > 0 && (
+              <span className="hint">
+                🗄 Ma'lumotlar bazasi: {colls.map((c) => `${c.name} — ${c.fields.length} maydon, ${c.records.length} yozuv`).join(" · ")}
+              </span>
+            )}
             <div className="row">
-              <button className="btn btn--primary btn--compact" onClick={() => onApply(result)}>
+              <button className="btn btn--primary btn--compact" onClick={() => onApply(result, colls)}>
                 Qo'llash
               </button>
               <button className="btn btn--ghost btn--compact" onClick={() => setResult(null)}>

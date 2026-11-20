@@ -416,13 +416,15 @@ def summary(menu: dict) -> str:
 # Web App (Mini App) — AI bilan yaratish
 # ============================================================
 
-WEBAPP_SYSTEM = """You are InetTime AI — an expert designer of Telegram Mini Apps inside a no-code Web App builder.
+WEBAPP_HEAD = """You are InetTime AI — an expert designer of Telegram Mini Apps inside a no-code Web App builder.
 The owner describes the app in plain words; you return the COMPLETE app document.
 
-Answer ONLY with JSON: {"reply": "<1-4 sentences to the owner in their language (default Uzbek, Latin script)>", "doc": <full app document> | null}
+Answer ONLY with JSON: {"reply": "<1-4 sentences to the owner in their language (default Uzbek, Latin script)>", "doc": <full app document> | null,
+                        "collections": [COLLECTION, ...] (only NEW data collections the app needs; omit if none)}
 "doc": null only for questions/clarifications.
+"""
 
-APP DOCUMENT
+WEBAPP_SPEC = """APP DOCUMENT
 {"version": 1,
  "theme": {"preset": "light", "adaptive": false, "primary": "#RRGGBB", "background": "#RRGGBB", "surface": "#RRGGBB", "text": "#RRGGBB", "radius": 0-28,
            "font": "system|rounded|serif|mono|inter|manrope|montserrat|rubik|nunito|poppins|raleway|playfair|lora|oswald|comfortaa|jetbrains"},
@@ -461,6 +463,54 @@ RULES
   realistic Uzbek content (unless the owner writes in another language), prices with real-looking numbers as placeholders.
 - Use "custom" blocks for creative/unique sections when the owner wants a special design.
 - When modifying, keep everything not asked to change. Never invent media_id values (images are uploaded by the owner).
+
+DATA — build WHOLE SYSTEMS, not just pages. When the app shows a list of things the owner will keep updating (products,
+menu items, services, courses, doctors, real estate, events, job vacancies, news, portfolio...) or collects submissions
+(applications, bookings, reviews), create a data COLLECTION and bind blocks to it:
+COLLECTION = {"key": "<[a-z][a-z0-9_]>", "name": "Mahsulotlar", "read": "public|own|none", "create": false,
+              "fields": [{"key": "title", "label": "Nomi", "type": "text|longtext|number|money|date|bool|select|phone|url|email|image",
+                          "required": true, "private": false, "options": []}],
+              "records": [{"title": "...", "price": 45000, ...}]  (6-20 realistic starter records; never values for image fields)}
+ {"type": "collection", "title": "...", "query": {"collection": "<key>", "limit": 20, "sort_field": null, "sort_dir": "desc",
+   "filter_field": null, "filter_value": null, "search": true}, "layout": "cards|list|grid", "columns": 2,
+   "title_field": "title", "subtitle_field": "...", "image_field": null, "price_field": "price", "badge_field": null,
+   "detail_page": "<id of a detail page>"}
+ Detail page: {"id": "item", "title": "Batafsil", "in_nav": false, "collection": "<key>", "blocks": [...]} — its texts use
+   {{field_key}} placeholders (e.g. heading "{{title}}", text "{{description}}", button "Buyurtma berish").
+ Submissions: a form block with "save_to": "<key>" writes answers into a collection with "read": "none" (owner only) or
+   "own" (each user sees their own, e.g. "My bookings"), "create": true; the form field "id"s MUST equal the collection field keys.
+ A "collection" block with read "own" shows the current user's own records (e.g. "📋 Mening arizalarim").
+"""
+
+WEBAPP_SYSTEM = WEBAPP_HEAD + "\n" + WEBAPP_SPEC
+
+WEBAPP_PLAN_SYSTEM = """You are the lead product architect of InetTime AI, a no-code Telegram Mini App builder. Like a senior
+product designer you first design the whole system: pages, navigation, data collections and the visual identity.
+Other designers will build each page from your plan.
+
+Answer ONLY with JSON:
+{"mode": "new" | "edit" | "answer",
+ "reply": "<1-3 sentences to the owner in their language (default Uzbek, Latin script)>",
+ "brief": {"name": "", "business": "", "audience": "", "tone": "", "facts": {"phone": "", "address": "", "hours": "", "city": ""}},
+ "theme": {"preset": "light", "adaptive": false, "primary": "#RRGGBB", "background": "#RRGGBB", "surface": "#RRGGBB", "text": "#RRGGBB",
+           "radius": 0-28, "font": "inter|manrope|montserrat|rubik|nunito|poppins|raleway|playfair|lora|oswald|comfortaa|system"},
+ "settings": {"title": "<app name>", "currency": "so'm"},
+ "pages": [{"id": "home", "title": "Bosh sahifa", "emoji": "🏠", "in_nav": true, "collection": null,
+            "purpose": "<what this page contains, block by block, specific to the business>"}],
+ "collections": [COLLECTION]}
+Modes: "new" — the owner describes an app to create (the current app is empty). "edit" — change the current app. "answer" — a question.
+RULES
+- 3-7 pages in the bottom navigation (in_nav true) + detail pages (in_nav false, "collection": "<key>") for collections.
+- Home page: a strong hero, the value proposition, highlights and shortcuts to the main pages.
+- Use collections for everything list-like the owner will update and for submissions (see DATA below).
+- Pick a coherent, attractive palette and font that fit the business (e.g. coffee: warm browns; clinic: clean blue/white).
+""" 
+
+WEBAPP_PAGE_SYSTEM = """You are a senior UI designer and copywriter of InetTime AI. Build the blocks of ONE page of a Telegram
+Mini App whose architecture is already designed. Make it beautiful, concrete and specific to the business: realistic Uzbek
+texts (or the owner's language), real-looking prices and facts, creative "custom" sections where they add wow.
+Answer ONLY with JSON: {"blocks": [BLOCK, ...]} (5-14 blocks).
+Use only page ids, collection keys and field keys that exist in the plan. Navigation between pages uses ACTION {"type": "page"}.
 """
 
 
@@ -470,7 +520,9 @@ def _rid(prefix: str) -> str:
     return prefix + secrets.token_hex(4)
 
 
-def prepare_webapp(new: dict, allowed_media: set[int]) -> dict:
+def prepare_webapp(new: dict, allowed_media: set[int], collections: dict[str, list[str]] | None = None) -> dict:
+    """collections — {kalit: [maydon kalitlari]}: mavjud + AI taklif qilgan to'plamlar (ulardan boshqasiga bog'lanish olib tashlanadi)."""
+    collections = collections or {}
     if not isinstance(new, dict) or not isinstance(new.get("pages"), list) or not new["pages"]:
         raise MenuError("AI bo'sh ilova qaytardi")
     doc = copy.deepcopy(new)
@@ -503,12 +555,36 @@ def prepare_webapp(new: dict, allowed_media: set[int]) -> dict:
         for c in n.get("children") or []:
             walk_node(c)
 
+    page_ids = {p["id"] for p in doc["pages"]}
     for p in doc["pages"]:
         p["title"] = str(p.get("title") or "Sahifa")[:40]
+        if p.get("collection") not in collections:
+            p["collection"] = None
         blocks = []
         for b in p.get("blocks") or []:
-            if not isinstance(b, dict) or b.get("type") in ("image", "gallery", "collection"):
-                continue  # rasm/ma'lumot bloklari egasining fayllari va to'plamlarini talab qiladi
+            if not isinstance(b, dict) or b.get("type") in ("image", "gallery"):
+                continue  # rasm bloklari egasining fayllarini talab qiladi
+            if b.get("type") == "collection":
+                q = b.get("query") if isinstance(b.get("query"), dict) else {}
+                fields = collections.get(q.get("collection"))
+                if fields is None:
+                    continue
+                b["query"] = q
+                for name in ("title_field", "subtitle_field", "image_field", "price_field", "badge_field"):
+                    if b.get(name) not in fields:
+                        b[name] = None
+                for name in ("sort_field", "filter_field"):
+                    if q.get(name) not in fields:
+                        q[name] = None
+                if not q.get("filter_field"):
+                    q["filter_value"] = None
+                if not b.get("title_field") and fields:
+                    b["title_field"] = fields[0]
+                b["detail_page"] = mapping.get(b.get("detail_page"), b.get("detail_page"))
+                if b["detail_page"] not in page_ids:
+                    b["detail_page"] = None
+            if b.get("type") == "form" and b.get("save_to") and b["save_to"] not in collections:
+                b["save_to"] = None
             b["id"] = _rid("b")
             if b.get("media_id") not in allowed_media:
                 b.pop("media_id", None)
@@ -525,9 +601,15 @@ def prepare_webapp(new: dict, allowed_media: set[int]) -> dict:
                         fix_action(item["action"])
                     if isinstance(item.get("button"), dict):
                         fix_action(item["button"].get("action"))
+            keep_ids = bool(b.get("type") == "form" and b.get("save_to"))
+            seen_f: set = set()
             for f in b.get("fields") or []:
                 if isinstance(f, dict):
-                    f["id"] = _rid("f")
+                    fid = str(f.get("id") or "")
+                    if not (keep_ids and re.match(r"^[a-z][a-z0-9_]{0,31}$", fid) and fid not in seen_f):
+                        fid = _rid("f")
+                    seen_f.add(fid)
+                    f["id"] = fid
             if b.get("type") == "custom":
                 walk_node(b.get("root"))
             blocks.append(b)
@@ -535,9 +617,68 @@ def prepare_webapp(new: dict, allowed_media: set[int]) -> dict:
     return doc
 
 
-async def build_webapp(model: str, current: dict, history: list[dict], request: str, allowed_media: set[int]) -> tuple[str, dict | None, list]:
+MAX_AI_COLLECTIONS = 8
+MAX_AI_RECORDS = 40
+
+
+def prepare_collections(raw, existing: dict[str, list[str]]) -> list[dict]:
+    """AI taklif qilgan to'plamlar: tekshiriladi, yozuvlar tozalanadi (rasm qiymatlarisiz). Mavjud kalitlar o'tkaziladi."""
+    from core.appdata import DataError, clean_record, validate_collection
+
+    out: list[dict] = []
+    for c in raw if isinstance(raw, list) else []:
+        if not isinstance(c, dict) or len(out) >= MAX_AI_COLLECTIONS:
+            continue
+        key = re.sub(r"[^a-z0-9_]", "", str(c.get("key") or "").lower())[:32]
+        if not key or not key[0].isalpha() or key in existing or any(x["key"] == key for x in out):
+            continue
+        fields = []
+        for f in c.get("fields") or []:
+            if not isinstance(f, dict):
+                continue
+            fk = re.sub(r"[^a-z0-9_]", "", str(f.get("key") or "").lower())[:32]
+            if not fk or not fk[0].isalpha() or fk == "id" or any(x["key"] == fk for x in fields):
+                continue
+            opts = [str(o)[:80] for o in f.get("options") or [] if str(o).strip()][:50]
+            ftype = f.get("type") if f.get("type") in ("text", "longtext", "number", "money", "image", "date", "bool", "select", "phone", "url", "email") else "text"
+            if ftype == "select" and not opts:
+                ftype = "text"
+            fields.append({"key": fk, "label": str(f.get("label") or fk)[:64], "type": ftype, "required": bool(f.get("required")) and ftype != "image",
+                           "private": bool(f.get("private")), "options": opts})
+        try:
+            spec = validate_collection({"key": key, "name": str(c.get("name") or key)[:64], "read": c.get("read") if c.get("read") in ("public", "own", "none") else "public",
+                                        "create": bool(c.get("create")), "fields": fields[:40]})
+        except DataError:
+            continue
+        records = []
+        for r in (c.get("records") or [])[:MAX_AI_RECORDS]:
+            if not isinstance(r, dict):
+                continue
+            r = {k: v for k, v in r.items() if k in {f["key"] for f in spec["fields"] if f["type"] != "image"}}
+            try:
+                records.append(clean_record([{**f, "required": False} if f["type"] == "image" else f for f in spec["fields"]], r))
+            except DataError:
+                continue
+        spec["records"] = records
+        out.append(spec)
+    return out
+
+
+def _app_blank(doc: dict) -> bool:
+    return sum(len(p.get("blocks") or []) for p in doc.get("pages") or []) <= 3
+
+
+async def build_webapp(
+    model: str, current: dict, history: list[dict], request: str, allowed_media: set[int], existing: dict[str, list[str]] | None = None, progress=None
+) -> tuple[str, dict | None, list, list]:
+    """(javob, ilova hujjati yoki None, [AIResult], yangi to'plamlar). Bo'sh ilova uchun — v2: reja → sahifalar parallel."""
     from core.webapp_builder import WebAppError, validate_app
 
+    existing = existing or {}
+    if _app_blank(current):
+        out = await _build_webapp_v2(model, current, history, request, allowed_media, existing)
+        if out is not None:
+            return out
     messages = [
         {"role": "system", "content": WEBAPP_SYSTEM},
         {"role": "user", "content": "CURRENT APP DOCUMENT (modify it, or replace it if the owner asks for a new app):\n" + json.dumps(current, ensure_ascii=False, separators=(",", ":"))[:60000]},
@@ -552,22 +693,102 @@ async def build_webapp(model: str, current: dict, history: list[dict], request: 
         reply = str(data.get("reply") or "").strip()[:3000] or "Tayyor."
         raw = data.get("doc")
         if not raw:
-            return reply, None, results
+            return reply, None, results, []
         try:
-            doc = prepare_webapp(raw, allowed_media)
+            new_colls = prepare_collections(data.get("collections"), existing)
+            known = {**existing, **{c["key"]: [f["key"] for f in c["fields"]] for c in new_colls}}
+            doc = prepare_webapp(raw, allowed_media, known)
             # Sozlamalardagi buyurtma maydonlari egasiniki bo'lib qolsin
             if isinstance(current.get("settings"), dict):
                 doc.setdefault("settings", {})
                 for key in ("checkout_fields", "checkout_success", "currency"):
                     if key in current["settings"] and key not in doc["settings"]:
                         doc["settings"][key] = current["settings"][key]
-            return reply, validate_app(doc), results
+            used = _used_keys(doc)
+            return reply, validate_app(doc), results, [c for c in new_colls if c["key"] in used]
         except (MenuError, WebAppError) as exc:
             if attempt == 1:
                 raise BuilderAIError(f"AI tuzgan ilova tekshiruvdan o'tmadi: {exc}. Talabni aniqroq yozib qayta urinib ko'ring.") from exc
             messages.append({"role": "assistant", "content": result.text[:20000]})
             messages.append({"role": "user", "content": f"Validation error: {exc}. Fix it and return the corrected FULL JSON again (same format)."})
-    return "", None, results
+    return "", None, results, []
+
+
+def _used_keys(doc: dict) -> set[str]:
+    from core.webapp_builder import used_collections
+
+    return used_collections(doc)
+
+
+async def _build_webapp_v2(model, current, history, request, allowed_media, existing) -> tuple[str, dict | None, list, list] | None:
+    """Yangi ilova: 1) reja (sahifalar, to'plamlar, dizayn) 2) har sahifa bloklari parallel 3) yig'ish va tekshiruv.
+    None — reja «edit» dedi (oddiy yo'l bilan davom etiladi)."""
+    from core.webapp_builder import WebAppError, validate_app
+
+    msgs = [{"role": "system", "content": WEBAPP_PLAN_SYSTEM + "\nDATA — " + WEBAPP_SPEC.split("DATA — ", 1)[1]}]
+    msgs.append({"role": "user", "content": "CURRENT APP: empty (new app)." + (f" Existing data collections: {json.dumps(existing, ensure_ascii=False)}" if existing else "")})
+    msgs += [h for h in history[-HISTORY:] if isinstance(h, dict) and h.get("role") in ("user", "assistant") and isinstance(h.get("content"), str)]
+    msgs.append({"role": "user", "content": request[:4000]})
+    res = await ai._complete(model, msgs, 9000, json_mode=True)
+    results = [res]
+    plan = _parse(res.text)
+    mode = plan.get("mode")
+    reply = str(plan.get("reply") or "").strip()[:3000] or "Tayyor."
+    if mode == "answer":
+        return reply, None, results, []
+    if mode == "edit" or not isinstance(plan.get("pages"), list) or not plan["pages"]:
+        return None
+    new_colls = prepare_collections(plan.get("collections"), existing)
+    known = {**existing, **{c["key"]: [f["key"] for f in c["fields"]] for c in new_colls}}
+    pages = [p for p in plan["pages"] if isinstance(p, dict) and p.get("title")][:12]
+    for p in pages:
+        p["id"] = re.sub(r"[^A-Za-z0-9_-]", "", str(p.get("id") or ""))[:32] or _rid("p")
+    outline = "\n".join(
+        f"- {p['id']} | {p.get('emoji', '')} {p['title']} | nav: {bool(p.get('in_nav', True))} | detail of: {p.get('collection') or '—'} | {p.get('purpose', '')}" for p in pages
+    )
+    colls = "\n".join(f"- {k}: fields {', '.join(v)}" for k, v in known.items()) or "—"
+    head = (
+        f"BRIEF: {json.dumps(plan.get('brief') or {}, ensure_ascii=False)}\nTHEME: {json.dumps(plan.get('theme') or {}, ensure_ascii=False)}\n"
+        f"PAGES (id | title | nav | detail of collection | purpose):\n{outline}\nCOLLECTIONS:\n{colls}\n\n"
+    )
+    system = WEBAPP_PAGE_SYSTEM + "\n" + WEBAPP_SPEC
+
+    async def one(p: dict):
+        r = await ai._complete(model, [{"role": "system", "content": system}, {"role": "user", "content": head + f"BUILD PAGE: {p['id']}"}], 9000, json_mode=True)
+        try:
+            blocks = _parse(r.text).get("blocks")
+        except BuilderAIError:
+            blocks = None
+        return (blocks if isinstance(blocks, list) else []), r
+
+    built = await asyncio.gather(*(one(p) for p in pages))
+    results += [r for _, r in built]
+    raw = {
+        "version": 1,
+        "theme": plan.get("theme") if isinstance(plan.get("theme"), dict) else {},
+        "settings": plan.get("settings") if isinstance(plan.get("settings"), dict) else {},
+        "start": pages[0]["id"],
+        "pages": [
+            {"id": p["id"], "title": p["title"], "emoji": str(p.get("emoji") or "")[:8], "in_nav": bool(p.get("in_nav", True)) and not p.get("collection"),
+             "collection": p.get("collection"), "blocks": blocks}
+            for p, (blocks, _) in zip(pages, built)
+        ],
+    }
+    if isinstance(current.get("settings"), dict):
+        for key in ("checkout_fields", "checkout_success"):
+            if key in current["settings"]:
+                raw["settings"].setdefault(key, current["settings"][key])
+    try:
+        doc = prepare_webapp(raw, allowed_media, known)
+        # bo'sh qolgan sahifa — sarlavha bilan (validatsiya o'tsin, egasi to'ldiradi)
+        for p in doc["pages"]:
+            if not p["blocks"]:
+                p["blocks"] = [{"id": _rid("b"), "type": "heading", "text": p["title"], "size": 1, "align": "left"}]
+        doc = validate_app(doc)
+    except (MenuError, WebAppError):
+        return None  # bitta so'rovli yo'l bilan qayta urinadi
+    used = _used_keys(doc)
+    return reply, doc, results, [c for c in new_colls if c["key"] in used]
 
 
 

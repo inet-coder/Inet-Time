@@ -53,15 +53,40 @@ Natija tajribali dasturchi qilganidan **tezroq va sifatliroq** bo'lsin. **Sifat 
 
 ## Bosqichlar
 
-1. **AI quruvchi v2 (hozir)** — konveyer (reja → mazmun → yig'ish → linter), aniqlashtiruvchi savollar,
-   alohida kuchli «quruvchi modeli», joy tutuvchilarsiz aniq mazmun, **🧪 sinov rejimi** (egasi yangi botni
-   foydalanuvchilarga ko'rsatmasdan sinaydi), sifat hisoboti.
-2. **Katalog + savatcha + buyurtmalar + dinamik ro'yxatlar.**
-3. **Yozilish + eslatmalar + avtomatik xabarlar.**
-4. **Test/viktorina, reyting, kunlik bonus, kapcha, murojaat holatlari.**
-5. **Usta (wizard) + vizual xarita (Mini App) + ko'p til.**
-6. **To'lovlar.**
-7. **Sifat to'plami** — 40 brif, avtomatik baholash, doimiy yaxshilash.
+Belgilar: ✅ tayyor · 🔜 keyingi · ⏳ reja.
+
+1. ✅ **AI quruvchi v2** — konveyer (reja → mazmun → yig'ish → linter), aniqlashtiruvchi savollar,
+   alohida kuchli «quruvchi modeli», joy tutuvchilarsiz aniq mazmun, **🧪 sinov rejimi**, sifat hisoboti.
+2. ✅ **Do'kon moduli** — bo'lim moduli `catalog` (ro'yxat yoki kartalar, sahifalash), `cart`, `orders`;
+   mahsulot kartasi ➖/➕, savatcha (yetkazish narxi, «N dan bepul», minimal summa), rasmiylashtirish
+   (sozlanadigan maydonlar: ism, telefon, manzil/joylashuv...), har bot uchun #1, #2... raqamli buyurtmalar,
+   egasiga holat tugmalari (✅ qabul · 🚚 yo'lda · ✔️ yetkazildi · ❌ bekor), mijozga holat xabari,
+   «📦 Buyurtmalarim», `{cart_count}` `{cart_total}`. Egasi chatda: /admin → 🛒 Do'kon — kategoriyalar,
+   rasm + izoh bilan mahsulot qo'shish («Latte / 28000 / tavsif»), tahrirlash, yashirish, buyurtmalar, sozlamalar.
+   **AI** sotuvchi bizneslar uchun avtomatik do'kon quradi (kategoriyalar + 4–12 real mahsulot + sozlamalar),
+   tahrirlashda egasining mahsulotlari va rasmlari saqlanadi; sinov rejimida buyurtma saqlanmaydi.
+3. ✅ **Web App AI v2 — butun tizimlar** — bo'sh ilova uchun: reja (sahifalar, navigatsiya, dizayn, ma'lumotlar
+   to'plamlari) → har sahifa bloklari parallel → tekshiruv. AI to'plamlar yaratadi (maydonlar + 6–20 boshlang'ich
+   yozuv), ro'yxat bloklarini ularga bog'laydi, batafsil sahifalar (`{{maydon}}`), formalarni to'plamga yozadi
+   («Mening arizalarim» — `read: own`). «Qo'llash» to'plamlarni yaratadi va ilovani yangilaydi.
+4. 🔜 **Yozilish (booking) moduli** — xizmatlar × mutaxassislar × ish jadvali → bo'sh vaqtlar (inline kalendar),
+   band qilish, egasiga tasdiqlash, mijozga eslatma (24 soat va 1 soat oldin), bekor qilish/ko'chirish,
+   «Mening yozilishlarim». AI: salon, klinika, avtoservis, repetitor uchun avtomatik.
+5. ⏳ **Avtomatik xabarlar va voronkalar** — /start dan keyin N soatda, foydalanuvchi harakatsiz bo'lsa,
+   tashlab ketilgan savatcha eslatmasi, tug'ilgan kun, segmentlar (o'zgaruvchi sharti bo'yicha) uchun tarqatish,
+   rejalashtirilgan postlar. Worker + scheduler orqali.
+6. ⏳ **O'yin va jalb qilish modullari** — test/viktorina (ball, natija sahifasi), reyting (TOP-10 `{ball}` bo'yicha),
+   kunlik bonus, konkurs (tasodifiy g'olib), kapcha (bot himoyasi), promokodlar.
+7. ⏳ **Murojaatlar (tiketlar)** — raqamli murojaat, holatlar, operatorlar (bir nechta admin), shablon javoblar,
+   murojaat tarixi.
+8. ⏳ **To'lovlar** — Telegram Payments (Click/Payme provayder tokeni), do'kon va yozilish uchun oldindan to'lov,
+   to'lov holati buyurtmada; obuna (pullik kanal/klub) — muddat tugashi bilan avtomatik chiqarish.
+9. ⏳ **Ko'p til va usta (wizard)** — foydalanuvchi tilni tanlaydi, AI barcha matnlarni tarjima qiladi;
+   egasi uchun 5 savolli usta va vizual xarita (Mini App).
+10. ⏳ **Analitika** — bo'limlar bo'yicha bosishlar, voronka (start → katalog → savat → buyurtma), konversiya,
+    eng ko'p sotilganlar; AI tavsiyalari («savatcha tashlab ketilmoqda — eslatma yoqing»).
+11. ⏳ **Sifat to'plami** — 40 ta turli brif (do'kon, restoran, klinika, kurs, kanal, o'yin...), avtomatik
+    baholash (linter + LLM-hakam), har o'zgarishda regressiya, natijalar asosida promptlarni yaxshilash.
 
 ## Sifat mezonlari (har bir yaratilgan bot uchun)
 

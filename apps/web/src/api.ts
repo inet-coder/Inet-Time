@@ -378,7 +378,9 @@ export const api = {
     request<{ imported: number }>("POST", `/webapp/bots/${botId}/app/collections/${id}/import`, { csv }),
   exportCsvUrl: (botId: number, id: number) => `/api/webapp/bots/${botId}/app/collections/${id}/export.csv?t=${token}`,
   webappAI: (botId: number, body: { prompt: string; doc: AppDoc; history: { role: string; content: string }[] }) =>
-    request<{ reply: string; doc: AppDoc | null; used: number; limit: number }>("POST", `/webapp/bots/${botId}/app/ai`, body),
+    request<{ reply: string; doc: AppDoc | null; collections?: AICollection[]; used: number; limit: number }>("POST", `/webapp/bots/${botId}/app/ai`, body),
+  webappAICollections: (botId: number, collections: AICollection[]) =>
+    request<{ created: { key: string; name: string; records: number }[] }>("POST", `/webapp/bots/${botId}/app/ai/collections`, { collections }),
   components: () => request<{ items: SavedComponent[]; limit: number }>("GET", "/webapp/components"),
   saveComponent: (name: string, node: unknown) => request<SavedComponent>("POST", "/webapp/components", { name, node }),
   renameComponent: (id: number, name: string) => request<SavedComponent>("PUT", `/webapp/components/${id}`, { name }),
@@ -591,4 +593,13 @@ export const adminApi = {
   resetPacks: () => request<PacksAdmin>("DELETE", `${A}/packs`),
   paymentSettings: () => request<{ instructions: string }>("GET", `${A}/settings/payment`),
   savePaymentSettings: (instructions: string) => request<{ instructions: string }>("PUT", `${A}/settings/payment`, { instructions }),
+};
+
+export type AICollection = {
+  key: string;
+  name: string;
+  read: string;
+  create: boolean;
+  fields: { key: string; label: string; type: string }[];
+  records: Record<string, unknown>[];
 };

@@ -452,11 +452,45 @@ async def ai_build(bot_id: int, payload: AIBuildIn, user: User = Depends(current
         raise HTTPException(429, f"Bugungi InetTime AI limiti tugadi ({limit} ta) — ertaga davom eting yoki tarifni yangilang")
     current = payload.doc if isinstance(payload.doc, dict) and payload.doc.get("pages") else app.draft
     allowed = await _owned_media(db, user, current)
+    existing = {c.key: [f["key"] for f in c.fields] for c in await db.scalars(select(AppCollection).where(AppCollection.app_id == app.id))}
     try:
-        reply, doc, results = await bot_ai.build_webapp(config["model"], current, payload.history, payload.prompt, allowed)
+        reply, doc, results, collections = await bot_ai.build_webapp(
+            config.get("builder_model") or config["model"], current, payload.history, payload.prompt, allowed, existing
+        )
     except ai.AIError as exc:
         await bot_ai.refund_quota(redis, user.id)
         raise HTTPException(502, str(exc)) from exc
     for r in results:
         await ai.log_usage(db, user.id, "webapp_builder", r)
-    return {"reply": reply, "doc": doc, "used": await bot_ai.used_today(redis, user.id), "limit": limit}
+    return {"reply": reply, "doc": doc, "collections": collections, "used": await bot_ai.used_today(redis, user.id), "limit": limit}
+
+
+class AICollectionsIn(BaseModel):
+    collections: list[dict] = Field(max_length=8)
+
+
+@router.post("/bots/{bot_id}/app/ai/collections")
+async def ai_collections(bot_id: int, payload: AICollectionsIn, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    """AI taklif qilgan to'plamlarni (boshlang'ich yozuvlari bilan) yaratadi. Mavjud kalitlar o'tkazib yuboriladi."""
+    from core import bot_ai
+    from core.appdata import MAX_COLLECTIONS
+    from core.db.models import AppRecord
+
+    _, app = await _require_app(db, user, bot_id)
+    rows = list(await db.scalars(select(AppCollection).where(AppCollection.app_id == app.id)))
+    existing = {c.key: [f["key"] for f in c.fields] for c in rows}
+    specs = bot_ai.prepare_collections(payload.collections, existing)  # serverda qayta tekshiriladi
+    room = MAX_COLLECTIONS - len(rows)
+    if len(specs) > room:
+        raise HTTPException(400, f"Bitta ilovada ko'pi bilan {MAX_COLLECTIONS} ta to'plam — avval keraksizlarini o'chiring")
+    created = []
+    for spec in specs:
+        records = spec.pop("records", [])
+        c = AppCollection(app_id=app.id, **spec)
+        db.add(c)
+        await db.flush()
+        for i, data in enumerate(records):
+            db.add(AppRecord(collection_id=c.id, data=data, position=i))
+        created.append({"key": c.key, "name": c.name, "records": len(records)})
+    await db.commit()
+    return {"created": created}

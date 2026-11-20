@@ -95,3 +95,26 @@ class BotOrder(TimestampMixin, Base):
     data: Mapped[dict] = mapped_column(JSONB)  # rasmiylashtirish javoblari
     # new | accepted | delivering | done | cancelled
     status: Mapped[str] = mapped_column(String(16), default="new", index=True)
+
+
+class BotBooking(TimestampMixin, Base):
+    """Yozilish (booking). starts_at — UTC; xizmat/xodim nomlari yozilish paytidagi nusxa (keyin o'zgarsa ham tarix saqlanadi)."""
+
+    __tablename__ = "bot_bookings"
+    __table_args__ = (Index("ix_bot_bookings_time", "bot_id", "starts_at"), Index("ix_bot_bookings_user", "bot_id", "tg_user_id"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("user_bots.id", ondelete="CASCADE"))
+    number: Mapped[int] = mapped_column(Integer)
+    tg_user_id: Mapped[int] = mapped_column(BigInteger)
+    service_id: Mapped[str] = mapped_column(String(32))
+    service_title: Mapped[str] = mapped_column(String(64))
+    staff_id: Mapped[str] = mapped_column(String(32), default="main")
+    staff_title: Mapped[str] = mapped_column(String(64), default="")
+    starts_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    minutes: Mapped[int] = mapped_column(Integer)
+    price: Mapped[int] = mapped_column(BigInteger, default=0)
+    data: Mapped[dict] = mapped_column(JSONB)  # mijoz javoblari (ism, telefon...)
+    # pending | confirmed | cancelled | done
+    status: Mapped[str] = mapped_column(String(12), default="pending", index=True)
+    reminded: Mapped[list] = mapped_column(JSONB, default=list)  # yuborilgan eslatmalar (soat oldin)

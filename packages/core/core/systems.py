@@ -95,12 +95,7 @@ SYSTEMS: dict[str, dict] = {
         "sections": [
             _sec("start", None, "🏠 Bosh menyu", "menu"),
             _sec("services", "start", "✨ Xizmatlar", "info"),
-            _sec("book", "start", "📅 Yozilish", "form", fields=[
-                {"key": "ism", "label": "👤 Ismingiz?", "type": "text"},
-                {"key": "telefon", "label": "📱 Telefon raqamingiz?", "type": "phone"},
-                {"key": "xizmat", "label": "✨ Qaysi xizmat kerak?", "type": "text"},
-                {"key": "sana", "label": "📅 Qaysi kun va soat qulay? (masalan: ertaga 15:00)", "type": "text"},
-            ]),
+            _sec("book", "start", "📅 Yozilish", "booking"),
             _sec("prices", "start", "💰 Narxlar", "info"),
             _sec("faq", "start", "❓ Savol-javob", "faq"),
             _sec("contacts", "start", "📍 Manzil", "contacts"),
@@ -109,12 +104,12 @@ SYSTEMS: dict[str, dict] = {
         "content": {
             "start": _post("Assalomu alaykum, {name}! 👋\n\n<b>{biz}</b> — qabulga onlayn yoziling, navbatsiz va qulay.\n\n📅 «Yozilish» tugmasini bosing — 4 ta savol, 1 daqiqa."),
             "services": _post("<b>✨ Xizmatlarimiz</b>\n\n1️⃣ Birinchi xizmat\n2️⃣ Ikkinchi xizmat\n3️⃣ Uchinchi xizmat\n\n<i>Egasi: «✏️ Botni tahrirlash» orqali xizmatlaringizni yozing.</i>"),
-            "book": _post("<b>📅 Qabulga yozilish</b>\n\nMa'lumotlaringizni qoldiring — administrator vaqtni tasdiqlash uchun siz bilan bog'lanadi."),
+            "book": _post("<b>📅 Qabulga yozilish</b>\n\nXizmat, kun va qulay vaqtni tanlang — administrator tasdiqlaydi va oldindan eslatamiz."),
             "prices": _post("<b>💰 Narxlar</b>\n\nNarxlar ro'yxati shu yerda bo'ladi.\n\n<i>Egasi: «✏️ Botni tahrirlash» orqali narxlarni yozing.</i>"),
             "faq": _post("<b>❓ Ko'p so'raladigan savollar</b>\n\n<b>Qanday yozilaman?</b>\n«📅 Yozilish» tugmasi orqali.\n\n<b>Vaqtni o'zgartirsam bo'ladimi?</b>\nHa, {biz_tel} ga qo'ng'iroq qiling.\n\n<b>Ish vaqtingiz?</b>\n{biz_vaqt}"),
             "contacts": _post(CONTACTS, MAP),
         },
-        "done": {"book": "✅ Rahmat, {ism}! Arizangiz qabul qilindi. Vaqtni tasdiqlash uchun {telefon} raqamingizga bog'lanamiz."},
+        "booking": {"services": [{"title": "Birinchi qabul", "minutes": 30, "price": 0}], "hours": "Du-Sha 09:00-18:00\nYa yopiq", "confirm": "manual"},
     },
     "sys_channel": {
         "icon": "📢",
@@ -282,6 +277,7 @@ def build_system(code: str) -> dict | None:
         "sections": [dict(s) for s in system["sections"]],
         "variables": (COMMON_VARS if use_common else COMMON_VARS[:1]) + system.get("variables", []),
         "referral": system.get("referral") or {},
+        "booking": system.get("booking"),
     }
     content = {"sections": {}, "fallback": system.get("fallback", "Menyudan tanlang 👇")}
     for sid, data in system["content"].items():

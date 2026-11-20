@@ -408,7 +408,7 @@ class Channel(_M):
 
 
 class Module(_M):
-    type: Literal["catalog", "cart", "orders"]
+    type: Literal["catalog", "cart", "orders", "booking", "mybookings"]
     layout: Literal["list", "cards"] = "list"  # list — bitta xabarda ro'yxat; cards — har mahsulot alohida xabar
     per_page: int = Field(default=8, ge=1, le=20)
 
@@ -445,6 +445,11 @@ class CheckoutField(_M):
         return _var_key(v, "maydon") or ""
 
 
+DEFAULT_BOOKING_FIELDS = [
+    {"key": "ism", "label": "👤 Ismingiz?", "type": "text", "options": []},
+    {"key": "telefon", "label": "📱 Telefon raqamingiz?", "type": "phone", "options": []},
+]
+
 DEFAULT_CHECKOUT = [
     {"key": "ism", "label": "👤 Ismingiz?", "type": "text", "options": []},
     {"key": "telefon", "label": "📱 Telefon raqamingiz?", "type": "phone", "options": []},
@@ -473,6 +478,73 @@ class Shop(_M):
         return self
 
 
+_HOURS = re.compile(r"^(?:|([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d))$")
+DEFAULT_HOURS = {"0": "09:00-18:00", "1": "09:00-18:00", "2": "09:00-18:00", "3": "09:00-18:00", "4": "09:00-18:00", "5": "09:00-18:00", "6": ""}
+WEEKDAYS = ["Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba", "Yakshanba"]
+
+
+class BkService(_M):
+    id: str
+    title: str = Field(min_length=1, max_length=64)
+    minutes: int = Field(default=30, ge=5, le=720)
+    price: int = Field(default=0, ge=0, le=10_000_000_000)
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v: str) -> str:
+        if not _PAGE_ID.match(v):
+            raise ValueError("xizmat identifikatori noto'g'ri")
+        return v
+
+
+class BkStaff(_M):
+    id: str
+    title: str = Field(min_length=1, max_length=64)
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v: str) -> str:
+        if not _PAGE_ID.match(v):
+            raise ValueError("xodim identifikatori noto'g'ri")
+        return v
+
+
+class Booking(_M):
+    """Yozilish tizimi: xizmatlar × (ixtiyoriy) xodimlar × haftalik ish jadvali → bo'sh vaqtlar."""
+
+    enabled: bool = False
+    services: list[BkService] = Field(default_factory=list, max_length=40)
+    staff: list[BkStaff] = Field(default_factory=list, max_length=20)
+    hours: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_HOURS))  # "0"=dushanba ... "6"=yakshanba; "" — dam
+    step: int = Field(default=30, ge=10, le=240)  # vaqt oralig'i (daqiqa)
+    days_ahead: int = Field(default=14, ge=1, le=90)
+    min_notice: int = Field(default=1, ge=0, le=72)  # soat: hozirdan shuncha soat oldin yozilib bo'lmaydi
+    tz: int = Field(default=5, ge=-12, le=14)  # UTC farqi (Toshkent +5)
+    confirm: Literal["manual", "auto"] = "manual"  # manual — egasi tasdiqlaydi
+    remind: list[int] = Field(default_factory=lambda: [24, 2], max_length=3)  # necha soat oldin eslatish
+    fields: list[CheckoutField] = Field(default_factory=lambda: [CheckoutField(**f) for f in DEFAULT_BOOKING_FIELDS], min_length=1, max_length=8)
+    done_text: str = Field(default="✅ Yozilishingiz qabul qilindi!\n\n<b>#{booking}</b> · {service}\n📅 {when}", max_length=1000)
+
+    @model_validator(mode="after")
+    def _check(self):
+        for coll, what in ((self.services, "xizmat"), (self.staff, "xodim")):
+            ids = [x.id for x in coll]
+            if len(set(ids)) != len(ids):
+                raise ValueError(f"{what} identifikatorlari takrorlanmasin")
+        for k, v in self.hours.items():
+            if k not in {str(i) for i in range(7)} or not _HOURS.match(v or ""):
+                raise ValueError("ish vaqti HH:MM-HH:MM ko'rinishida bo'lsin")
+            if v and v[:5] >= v[6:]:
+                raise ValueError("ish vaqti tugashi boshlanishidan keyin bo'lsin")
+        for i in range(7):
+            self.hours.setdefault(str(i), "")
+        self.remind = sorted({h for h in self.remind if 1 <= h <= 168}, reverse=True)
+        keys = [f.key for f in self.fields]
+        if len(set(keys)) != len(keys):
+            raise ValueError("yozilish formasi maydonlari takrorlanmasin")
+        return self
+
+
 STYLES = ("reply", "inline", "hybrid")
 
 
@@ -498,6 +570,7 @@ class Menu(_M):
     # true — menyuda yo'q har qanday xabar egasiga yuboriladi (qayta aloqa / Livegram uslubi)
     forward_all: bool = False
     shop: Shop = Shop()
+    booking: Booking = Booking()
     # Tayyor tizim kodi (sys_shop...) va hali bajarilmagan sozlash ustasi qadamlari (bo'sh — usta tugagan)
     system: str = Field(default="", max_length=32)
     setup: list[SetupStep] = Field(default_factory=list, max_length=12)

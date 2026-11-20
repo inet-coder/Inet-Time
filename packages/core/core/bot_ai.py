@@ -42,7 +42,7 @@ BOT DOCUMENT
  "commands": [{"command": "help", "description": "Yordam", "target": "<page id>"}],
  "referral": {"enabled": false, "reward": 1, "var": "balance", "notify": true, "text": "🎉 {name} sizning havolangiz orqali qo'shildi! +{reward}"},
  "fallback": "<reply to unknown messages>", "feedback_prompt": "...", "feedback_done": "...", "forward_all": false,
- "shop": SHOP
+ "shop": SHOP, "booking": BOOKING
 }
 SHOP (built-in store with cart, checkout and order statuses — use it for ANY selling bot instead of order forms):
  {"enabled": true, "currency": "so'm", "delivery_fee": 0, "free_from": 0, "min_order": 0,
@@ -55,6 +55,14 @@ SHOP (built-in store with cart, checkout and order statuses — use it for ANY s
  {"type": "orders"} — "My orders". A shop needs catalog pages, one cart page and one orders page reachable from the menu.
  Keep existing items (same id, file_id) unless the owner asks to change them; never invent file_id.
  Variables {cart_count} {cart_total} show the user's cart.
+BOOKING (appointments: salon, clinic, car service, tutor, gym... — use it instead of "booking forms"):
+ {"enabled": true, "services": [{"id": "<[a-z0-9_-]>", "title": "Soch olish", "minutes": 45, "price": 80000}],
+  "staff": [{"id": "<id>", "title": "Aziza"}] (optional; empty = one shared schedule),
+  "hours": {"0": "09:00-18:00", "1": "09:00-18:00", ..., "6": ""} ("0"=Monday ... "6"=Sunday, "" = day off),
+  "step": 30, "days_ahead": 14, "min_notice": 1, "tz": 5, "confirm": "manual" | "auto", "remind": [24, 2]}
+ Pages with "module": {"type": "booking"} (the booking wizard: service → staff → day → time → name/phone) and
+ {"type": "mybookings"} ("My bookings" with cancel). Free times, double-booking protection, owner confirmation and
+ reminders are automatic. Keep the owner's existing services/staff/hours unless asked to change them.
 PAGE = {"id": "<[a-z0-9_-], max 24>", "title": "<short name>", "keyboard": "reply" | "inline", "nav": true|false,
         "messages": [POST, ...] (1-10), "buttons": [[BUTTON, ...], ...] (rows, max 8 per row, max 12 rows),
         "placeholder": "", "random_post": false, "ops": [{"var": "visits", "op": "add", "value": "1"}]}
@@ -260,6 +268,7 @@ def prepare(new: dict, current: dict) -> dict:
         if isinstance(f, dict):
             f["target"] = remap(f.get("target"))
     _prepare_shop(doc, current, remap)
+    _prepare_booking(doc, current)
     # Tizim kodi va tugallanmagan sozlash ustasi AI tahririda yo'qolmasin
     if current.get("system") and not doc.get("system"):
         doc["system"] = current["system"]
@@ -293,7 +302,7 @@ def _prepare_shop(doc: dict, current: dict, remap) -> None:
         shop["items"] = copy.deepcopy(list(old_items.values()))
     catalogs = [p["id"] for p in doc["pages"] if isinstance(p.get("module"), dict) and p["module"].get("type") == "catalog"]
     for p in doc["pages"]:
-        if p.get("module") is not None and (not isinstance(p["module"], dict) or p["module"].get("type") not in ("catalog", "cart", "orders")):
+        if p.get("module") is not None and (not isinstance(p["module"], dict) or p["module"].get("type") not in ("catalog", "cart", "orders", "booking", "mybookings")):
             p["module"] = None
     items, used = [], set()
     for it in shop.get("items") or []:
@@ -310,6 +319,31 @@ def _prepare_shop(doc: dict, current: dict, remap) -> None:
             it["category"] = catalogs[0]
         items.append(it)
     shop["items"] = items
+
+
+def _prepare_booking(doc: dict, current: dict) -> None:
+    """Yozilish: AI tashlab ketsa — egasining xizmat/xodim/jadvali saqlanadi; id'lar tozalanadi; sahifa yo'q bo'lsa — o'chiriladi."""
+    cur = current.get("booking") or {}
+    bk = doc.get("booking")
+    if not isinstance(bk, dict):
+        bk = copy.deepcopy(cur) if cur else {"enabled": False}
+        doc["booking"] = bk
+    for page in doc["pages"]:
+        if page.get("module") is not None and (not isinstance(page["module"], dict) or page["module"].get("type") not in ("catalog", "cart", "orders", "booking", "mybookings")):
+            page["module"] = None
+    has_page = any(isinstance(p.get("module"), dict) and p["module"].get("type") == "booking" for p in doc["pages"])
+    if not has_page:
+        bk["enabled"] = False
+    for key in ("services", "staff"):
+        used: set = set()
+        clean = []
+        for x in bk.get(key) or []:
+            if isinstance(x, dict) and x.get("title"):
+                x["id"] = _clean_id(x.get("id") or x["title"], used)
+                clean.append(x)
+        bk[key] = clean
+    if cur.get("hours") and not bk.get("hours"):
+        bk["hours"] = cur["hours"]
 
 
 def _parse(text: str) -> dict:
@@ -379,7 +413,7 @@ def tree(menu: dict, limit: int = 45) -> str:
             n = sum(1 for i in (menu.get("shop") or {}).get("items") or [] if i.get("category") == pid)
             extra += f" · 🛍 {n} mahsulot"
         elif mod:
-            extra += " · " + {"cart": "🛒 savat", "orders": "📦 buyurtmalar"}[mod]
+            extra += " · " + {"cart": "🛒 savat", "orders": "📦 buyurtmalar", "booking": "📅 yozilish", "mybookings": "📋 yozilishlarim"}.get(mod, mod)
         lines.append(f"{'   ' * depth}{icon} {p['title']} ({posts} post{extra})")
         children = [b for row in p.get("buttons") or [] for b in row] + [b for m in p.get("messages") or [] for row in m.get("buttons") or [] for b in row]
         for b in children:
@@ -413,6 +447,8 @@ def summary(menu: dict) -> str:
         parts.append("👥 referal")
     if (menu.get("shop") or {}).get("items"):
         parts.append(f"🛒 do'kon: {len(menu['shop']['items'])} mahsulot")
+    if (menu.get("booking") or {}).get("enabled"):
+        parts.append(f"📅 yozilish: {len(menu['booking'].get('services') or [])} xizmat")
     style = {"reply": "⌨️ klaviatura", "inline": "💬 inline", "hybrid": "🔀 aralash"}.get(menu.get("style", "reply"), "")
     return " · ".join(parts) + f" · uslub: {style}"
 
@@ -807,7 +843,7 @@ async def _build_webapp_v2(model, current, history, request, allowed_media, exis
 
 import asyncio  # noqa: E402
 
-KINDS = ("menu", "info", "item", "form", "faq", "contacts", "profile", "referral", "feedback", "link", "catalog", "cart", "orders")
+KINDS = ("menu", "info", "item", "form", "faq", "contacts", "profile", "referral", "feedback", "link", "catalog", "cart", "orders", "booking", "mybookings")
 
 PLAN_SYSTEM = """You are the lead architect of InetTime AI, a no-code Telegram bot builder. You work like a senior bot developer:
 first understand the business, then design a clean, logical bot architecture. Another step will write the texts.
@@ -836,6 +872,8 @@ PLAN FORMAT
  "keywords": [{"words": ["narx", "menyu"], "section": "<id>"}],
  "commands": [{"command": "menu", "description": "Menyu", "section": "<id>"}],
  "referral": {"enabled": false, "reward": 1, "var": "ball"},
+ "booking": null | {"services": [{"title": "Soch olish", "minutes": 45, "price": 80000}], "staff": ["Aziza", "Dilnoza"],
+                    "hours": "Du-Sha 09:00-18:00\\nYa yopiq", "confirm": "manual", "days_ahead": 14},
  "shop": null | {"currency": "so'm", "delivery_fee": 15000, "free_from": 200000, "min_order": 0, "pickup": false,
                  "checkout": [{"key": "ism", "label": "👤 Ismingiz?", "type": "text"}, ...]}}
 KIND:
@@ -850,6 +888,8 @@ KIND:
  (4-12 realistic products per category, integer prices in the currency). Leaf section (no children). "layout": "cards" when
  photos/visuals matter (clothes, cakes), otherwise "list".
  cart — the shopping cart page. orders — "📦 Buyurtmalarim" (the user's orders and their statuses).
+ booking — the appointment wizard of the built-in BOOKING system (services, optional staff, working hours, free-time calendar,
+ owner confirmation, reminders — all automatic). Define services/staff/hours in plan "booking". mybookings — "📋 Yozilishlarim".
 ARCHITECTURE RULES
 - Exactly one section with id "start" and parent null; every other section has an existing parent; max depth 3.
 - The start menu has 4-8 children. A menu has 2-12 children. Put related things together (e.g. catalog → categories → items).
@@ -858,7 +898,9 @@ ARCHITECTURE RULES
 - Anything that SELLS products (shop, restaurant/cafe delivery, bakery, flowers, clothes, pharmacy...) uses the STORE:
   "catalog" sections (one per category, under a "🛍 Katalog"/"🍽 Menyu" menu if more than one) + one "cart" + one "orders"
   section in the start menu + "shop" settings. Do NOT build order forms or item sections for such products.
-  Services with booking (salon, clinic, courses) use info/item sections + a booking form instead.
+  Businesses that take APPOINTMENTS (salon, barbershop, clinic, dentist, car service, tutor, gym, photographer...) use ONE
+  "booking" section (+ plan "booking" with 3-8 real services with minutes and prices, staff names if several specialists,
+  realistic hours) — never a plain form. Add info sections (about, prices, FAQ, contacts) around it.
 - Products do not count as sections; sections count is limited.
 - Titles: emoji + 1-3 words, max 24 characters, unique within a parent.
 - Style: follow the owner's request exactly. If not specified: "hybrid" (main menus as keyboard, details inline).
@@ -887,6 +929,7 @@ FORMAT RULES
 - form: 2-4 lines explaining what happens after submitting (the start button is added automatically).
 - profile: template with {name} and the plan variables, e.g. "💎 Ballaringiz: <b>{ball}</b>".
 - referral: how it works + "🔗 Sizning havolangiz:\\n{ref_link}" + "👥 Taklif qilganlaringiz: <b>{ref_count}</b>".
+- booking: 2-3 lines inviting to book online, what the owner will do after (confirm, remind).
 - catalog: 1-2 lines inviting to choose from this category (products and prices are shown automatically — do NOT list them).
 - cart / orders: one short line title (content is generated automatically).
 - start: a warm welcome with {name}, the bot's value in 2-3 lines, and a hint to use the menu.
@@ -952,6 +995,16 @@ def _plan_fix(plan: dict, max_pages: int) -> dict:
             depth += 1
         if depth > 4:
             sct["parent"] = "start"
+    # yozilish: «Yozilishlarim» bitta; yozilish bo'lsa — avtomatik qo'shiladi
+    for mod in ("booking", "mybookings"):
+        for sct in [x for x in sections if x.get("kind") == mod][1:]:
+            sections.remove(sct)
+    if any(sct.get("kind") == "booking" for sct in sections):
+        if not any(sct.get("kind") == "mybookings" for sct in sections):
+            sid = _sid("mybookings", used)
+            used.add(sid)
+            sections.append({"id": sid, "parent": "start", "title": "📋 Yozilishlarim", "kind": "mybookings", "purpose": "my bookings"})
+        by_id = {sct["id"]: sct for sct in sections}
     # do'kon: savat va buyurtmalar bitta; katalog bo'lsa — avtomatik qo'shiladi
     for mod in ("cart", "orders"):
         dup = [sct for sct in sections if sct.get("kind") == mod][1:]
@@ -967,7 +1020,7 @@ def _plan_fix(plan: dict, max_pages: int) -> dict:
     # bolasi bor bo'limlar — menyu (katalog/savat bargligicha qoladi — bolalari ota menyuga ko'chadi)
     for sct in sections:
         parent = by_id.get(sct.get("parent"))
-        if parent and parent.get("kind") in ("catalog", "cart", "orders"):
+        if parent and parent.get("kind") in ("catalog", "cart", "orders", "booking", "mybookings"):
             sct["parent"] = parent.get("parent") or "start"
     parents = {sct["parent"] for sct in sections if sct.get("parent")}
     for sct in sections:
@@ -1004,6 +1057,8 @@ def _plan_fix(plan: dict, max_pages: int) -> dict:
     plan["sections"] = [sct for sct in sections if sct["id"] in keep]
     if not any(sct["kind"] == "catalog" for sct in plan["sections"]):
         plan["sections"] = [sct for sct in plan["sections"] if sct["kind"] not in ("cart", "orders")]
+    if not any(sct["kind"] == "booking" for sct in plan["sections"]):
+        plan["sections"] = [sct for sct in plan["sections"] if sct["kind"] != "mybookings"]
     plan["style"] = plan.get("style") if plan.get("style") in ("reply", "inline", "hybrid") else "hybrid"
     return plan
 
@@ -1045,7 +1100,7 @@ async def write_content(model: str, brief: dict, plan: dict) -> tuple[dict, list
         f"BUSINESS BRIEF: {json.dumps(brief, ensure_ascii=False)}\nSTYLE: {plan['style']}\nVARIABLES: {variables or '—'}\n"
         f"FULL ARCHITECTURE (id | parent | kind | title | purpose):\n{outline}\n\n"
     )
-    writable = [sct for sct in sections if sct["kind"] not in ("feedback", "cart", "orders")]
+    writable = [sct for sct in sections if sct["kind"] not in ("feedback", "cart", "orders", "mybookings")]
     chunks = [writable[i : i + 10] for i in range(0, len(writable), 10)] or [[]]
 
     async def one(chunk: list) -> tuple[dict, ai.AIResult]:
@@ -1120,7 +1175,7 @@ def compile_plan(plan: dict, content: dict) -> dict:
     for sct in sections:
         if sct["kind"] == "feedback":
             continue
-        if sct["kind"] in ("catalog", "cart", "orders"):
+        if sct["kind"] in ("catalog", "cart", "orders", "booking", "mybookings"):
             page = _store_page(sct, (content.get("sections") or {}).get(sct["id"]) or {})
             if sct["kind"] == "catalog":
                 items += _products(sct, item_ids)
@@ -1251,10 +1306,12 @@ def compile_plan(plan: dict, content: dict) -> dict:
                 {"key": "ism", "label": "👤 Ismingiz?", "type": "text", "options": []},
                 {"key": "telefon", "label": "📱 Telefon raqamingiz?", "type": "phone", "options": []},
             ]
+    booking = _booking_cfg(plan) if any(sct["kind"] == "booking" for sct in sections) else {"enabled": False}
     return {
         "start": "start",
         "style": style,
         "shop": shop,
+        "booking": booking,
         "pages": pages,
         "variables": variables,
         "forms": forms,
@@ -1266,6 +1323,45 @@ def compile_plan(plan: dict, content: dict) -> dict:
 
 
 _VARKEY = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+
+
+def _booking_cfg(plan: dict) -> dict:
+    """Reja → yozilish sozlamalari (xizmatlar, xodimlar, jadval). Noto'g'ri qiymatlar standartga qaytadi."""
+    from core.booking import parse_hours
+    from core.botbuilder import DEFAULT_HOURS
+
+    cfg = plan.get("booking") if isinstance(plan.get("booking"), dict) else {}
+    used: set = set()
+    services = []
+    for x in (cfg.get("services") or [])[:40]:
+        title = str(x.get("title") if isinstance(x, dict) else x or "").strip()
+        if not title:
+            continue
+        x = x if isinstance(x, dict) else {}
+        try:
+            minutes = min(720, max(5, int(float(x.get("minutes") or 30))))
+            price = max(0, int(float(str(x.get("price") or 0).replace(" ", ""))))
+        except ValueError:
+            minutes, price = 30, 0
+        services.append({"id": _clean_id("s_" + title[:10], used), "title": title[:64], "minutes": minutes, "price": price})
+    if not services:
+        services = [{"id": "s_qabul", "title": "Qabul", "minutes": 30, "price": 0}]
+    staff = []
+    for n in (cfg.get("staff") or [])[:20]:
+        n = str(n.get("title") if isinstance(n, dict) else n or "").strip()
+        if n:
+            staff.append({"id": _clean_id("t_" + n[:10], used), "title": n[:64]})
+    hours = cfg.get("hours")
+    if isinstance(hours, str):
+        hours = parse_hours(hours)
+    elif isinstance(hours, dict):
+        hours = {str(k): str(v or "") for k, v in hours.items()}
+    out = {"enabled": True, "services": services, "staff": staff, "hours": hours or dict(DEFAULT_HOURS), "confirm": "auto" if cfg.get("confirm") == "auto" else "manual"}
+    try:
+        out["days_ahead"] = min(90, max(1, int(cfg.get("days_ahead") or 14)))
+    except (TypeError, ValueError):
+        pass
+    return out
 
 
 def _store_page(sct: dict, data: dict) -> dict:

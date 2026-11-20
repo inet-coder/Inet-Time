@@ -12,6 +12,7 @@ def _shop(m: dict) -> bool:
 
 MODULES: list[dict] = [
     {"id": "shop", "icon": "🛒", "title": "Do'kon", "desc": "Katalog, savat, buyurtmalar", "cb": "sh:home", "present": _shop},
+    {"id": "booking", "icon": "📅", "title": "Yozilishlar", "desc": "Xizmatlar, bo'sh vaqtlar, eslatmalar", "cb": "bm:home", "present": lambda m: bool((m.get("booking") or {}).get("enabled"))},
     {"id": "forms", "icon": "📝", "title": "Arizalar", "desc": "Ko'p bosqichli formalar", "cb": "adm:form", "present": lambda m: bool(m.get("forms"))},
     {"id": "referral", "icon": "👥", "title": "Referal", "desc": "Taklif, ball, mukofot", "cb": "adm:ref", "present": lambda m: bool((m.get("referral") or {}).get("enabled"))},
     {"id": "channels", "icon": "📢", "title": "Majburiy obuna", "desc": "Kanalga obuna sharti", "cb": "adm:ch", "present": lambda m: bool(m.get("channels"))},
@@ -36,6 +37,10 @@ def checklist(menu: dict, globals_: dict, flags: set[str]) -> list[dict]:
     if _shop(menu):
         items.append({"done": bool(catalog_pages(menu)), "text": "Do'kon kategoriyalarini yarating", "cb": "sh:setup"})
         items.append({"done": bool((menu.get("shop") or {}).get("items")), "text": "Mahsulot qo'shing (rasm + nom + narx)", "cb": "sh:add"})
+    bk = menu.get("booking") or {}
+    if bk.get("enabled"):
+        items.append({"done": bool(bk.get("services")), "text": "Xizmatlar va narxlarni kiriting", "cb": "bm:svc"})
+        items.append({"done": "hours" in flags, "text": "Ish jadvalini tekshiring", "cb": "bm:hrs"})
     items.append({"done": "tried" in flags, "text": "Botni o'zingiz sinab ko'ring", "cb": "adm:view"})
     items.append({"done": "shared" in flags, "text": "Havolani mijozlarga yuboring", "cb": "adm:share"})
     return items

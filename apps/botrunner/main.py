@@ -54,6 +54,7 @@ from core.webapp_url import discover_webapp_url
 
 import admin
 import ai_chat
+import booking
 import editor
 import home
 import shop
@@ -639,7 +640,9 @@ class Runner:
         if admin and start == 0 and await editor.mode(self, bot, chat_id) == "posts":
             await editor.show_posts(self, bot, chat_id, page, user)
             return
-        if page.get("module") and start == 0 and await shop.render_module(self, bot, chat_id, page, vals, message=message):
+        if page.get("module") and start == 0 and (
+            await shop.render_module(self, bot, chat_id, page, vals, message=message) or await booking.render_module(self, bot, chat_id, page, vals, message=message)
+        ):
             return
         msgs = self.page_msgs(bot, page, vals, user, with_branding=with_branding, start=start)
         legacy_inline = page.get("keyboard") != "reply"
@@ -955,6 +958,8 @@ class Runner:
     def form(bot: RunningBot, form_id: str) -> dict | None:
         if form_id == shop.CHECKOUT_ID:
             return shop.checkout_form(bot)
+        if form_id == booking.BOOKING_ID:
+            return booking.booking_form(bot)
         return form_by_id(bot.menu, form_id)
 
     async def start_form(self, bot: RunningBot, chat_id: int, form_id: str, user: dict) -> None:
@@ -1051,6 +1056,9 @@ class Runner:
         if form["id"] == shop.CHECKOUT_ID:
             await shop.create_order(self, bot, chat_id, user, data)
             return
+        if form["id"] == booking.BOOKING_ID:
+            await booking.finish(self, bot, chat_id, user, data)
+            return
         await self.set_vars(bot, user["id"], data)
         await stats.track(self, bot, f"form:{form['id']}")
         async with async_session() as db:
@@ -1132,11 +1140,13 @@ class Runner:
             await self.answer(bot, query["id"])
             return
         chat_id = message["chat"]["id"]
-        if data.startswith(("adm:", "e:", "ai:", "sh:")):
+        if data.startswith(("adm:", "e:", "ai:", "sh:", "bm:")):
             await self.answer(bot, query["id"])
             if self.is_admin(bot, chat_id):
                 if data.startswith("sh:"):
                     await shop.admin_callback(self, bot, chat_id, data, message, user)
+                elif data.startswith("bm:"):
+                    await booking.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("adm:"):
                     await admin.on_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("ai:"):
@@ -1167,7 +1177,9 @@ class Runner:
                 await self.answer(bot, query["id"], "❗ Avval kanallarga obuna bo'ling", alert=True)
                 await self.ask_subscribe(bot, chat_id, missing)
                 return
-        if data.split(":")[0] in SHOP_CALLBACKS:
+        if data.startswith("bk:"):
+            await booking.on_callback(self, bot, chat_id, data, message, user, query["id"])
+        elif data.split(":")[0] in SHOP_CALLBACKS:
             await shop.on_callback(self, bot, chat_id, data, message, user, query["id"])
         elif data.startswith("p:"):
             await self.answer(bot, query["id"])
@@ -1468,6 +1480,7 @@ class Runner:
         logger.info("botrunner ishga tushdi")
         last_marker = None
         last_full = 0.0
+        last_remind = 0.0
         loop = asyncio.get_running_loop()
         while True:
             try:
@@ -1480,6 +1493,12 @@ class Runner:
                     await self.stop_all()
             except Exception:  # noqa: BLE001 — sikl to'xtamasin
                 logger.exception("sinxronlashda xato")
+            try:
+                if loop.time() - last_remind >= 60 and await self.is_leader():
+                    last_remind = loop.time()
+                    await booking.reminder_tick(self)
+            except Exception:  # noqa: BLE001
+                logger.exception("eslatmalarda xato")
             await asyncio.sleep(CHECK_SECONDS)
 
 

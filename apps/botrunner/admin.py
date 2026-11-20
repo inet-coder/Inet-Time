@@ -845,6 +845,10 @@ async def on_message(runner: "Runner", bot: "RunningBot", message: dict) -> bool
         import shop
 
         return await shop.admin_input(runner, bot, chat_id, message, state)
+    if str(kind).startswith("bk_"):
+        import booking
+
+        return await booking.admin_input(runner, bot, chat_id, message, state)
 
     async def say(t: str, rows: list | None = None) -> None:
         data = {"chat_id": chat_id, "text": t, "parse_mode": "HTML", "disable_web_page_preview": True}

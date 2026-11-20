@@ -73,8 +73,10 @@ VARIABLES = [
     {"key": "{ref_link}", "label": "Referal havola"},
     {"key": "{ref_count}", "label": "Taklif qilganlar soni"},
     {"key": "{subscribers}", "label": "Obunachilar soni"},
+    {"key": "{cart_count}", "label": "Savatdagi mahsulotlar soni"},
+    {"key": "{cart_total}", "label": "Savat summasi"},
 ]
-BUILTIN_VARS = ("name", "first_name", "last_name", "username", "user_id", "mention", "bot", "bot_username", "date", "time", "ref_link", "ref_count", "subscribers")
+BUILTIN_VARS = ("name", "first_name", "last_name", "username", "user_id", "mention", "bot", "bot_username", "date", "time", "ref_link", "ref_count", "subscribers", "cart_count", "cart_total")
 
 _PAGE_ID = re.compile(r"^[a-z0-9_-]{1,24}$")
 _URL = re.compile(r"^(https?://|tg://)[^\s]{1,500}$")
@@ -254,6 +256,8 @@ class Page(_M):
     ops: list[VarOp] = Field(default_factory=list, max_length=5)  # ochilganda o'zgaruvchilar
     nav: bool = False  # menyuda «⬅️ Orqaga | 🏠 Bosh menyu» qatori avtomatik
     random_post: bool = False  # postlardan bittasi tasodifiy yuboriladi
+    # Maxsus modul: catalog — shu bo'lim mahsulotlari; cart — savatcha; orders — buyurtmalarim
+    module: "Module | None" = None
 
     @model_validator(mode="after")
     def _check(self):
@@ -390,6 +394,72 @@ class Channel(_M):
         return self
 
 
+class Module(_M):
+    type: Literal["catalog", "cart", "orders"]
+    layout: Literal["list", "cards"] = "list"  # list — bitta xabarda ro'yxat; cards — har mahsulot alohida xabar
+    per_page: int = Field(default=8, ge=1, le=20)
+
+
+class ShopItem(_M):
+    id: str
+    category: str  # module=catalog bo'lgan sahifa id'si
+    title: str = Field(min_length=1, max_length=64)
+    text: str = Field(default="", max_length=900)  # HTML
+    price: int = Field(ge=0, le=10_000_000_000)
+    old_price: int | None = Field(default=None, ge=0, le=10_000_000_000)
+    badge: str = Field(default="", max_length=20)
+    file_id: str | None = Field(default=None, max_length=300)  # egasi yuborgan rasm
+    media_id: int | None = None
+    active: bool = True
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v: str) -> str:
+        if not _PAGE_ID.match(v):
+            raise ValueError("mahsulot identifikatori noto'g'ri")
+        return v
+
+
+class CheckoutField(_M):
+    key: str
+    label: str = Field(min_length=1, max_length=200)
+    type: Literal["text", "number", "phone", "email", "choice", "location"] = "text"
+    options: list[str] = Field(default_factory=list, max_length=12)
+
+    @field_validator("key")
+    @classmethod
+    def _k(cls, v: str) -> str:
+        return _var_key(v, "maydon") or ""
+
+
+DEFAULT_CHECKOUT = [
+    {"key": "ism", "label": "👤 Ismingiz?", "type": "text", "options": []},
+    {"key": "telefon", "label": "📱 Telefon raqamingiz?", "type": "phone", "options": []},
+    {"key": "manzil", "label": "📍 Yetkazib berish manzili? (yoki joylashuvni yuboring)", "type": "text", "options": []},
+]
+
+
+class Shop(_M):
+    enabled: bool = False
+    currency: str = Field(default="so'm", max_length=12)
+    items: list[ShopItem] = Field(default_factory=list, max_length=500)
+    checkout: list[CheckoutField] = Field(default_factory=lambda: [CheckoutField(**f) for f in DEFAULT_CHECKOUT], min_length=1, max_length=10)
+    delivery_fee: int = Field(default=0, ge=0, le=100_000_000)
+    free_from: int = Field(default=0, ge=0, le=10_000_000_000)  # shu summadan yetkazish bepul (0 — yo'q)
+    min_order: int = Field(default=0, ge=0, le=10_000_000_000)
+    done_text: str = Field(default="✅ Buyurtmangiz qabul qilindi! Raqami: <b>#{order}</b>\nTez orada bog'lanamiz.", max_length=1000)
+
+    @model_validator(mode="after")
+    def _check(self):
+        ids = [i.id for i in self.items]
+        if len(set(ids)) != len(ids):
+            raise ValueError("mahsulot identifikatorlari takrorlanmasin")
+        keys = [f.key for f in self.checkout]
+        if len(set(keys)) != len(keys):
+            raise ValueError("buyurtma formasi maydonlari takrorlanmasin")
+        return self
+
+
 STYLES = ("reply", "inline", "hybrid")
 
 
@@ -414,6 +484,7 @@ class Menu(_M):
     feedback_anonymous: bool = False
     # true — menyuda yo'q har qanday xabar egasiga yuboriladi (qayta aloqa / Livegram uslubi)
     forward_all: bool = False
+    shop: Shop = Shop()
 
     @model_validator(mode="after")
     def _check(self):
@@ -454,6 +525,10 @@ class Menu(_M):
             if form.target and form.target not in known:
                 form.target = None
         self.admins = list(dict.fromkeys(a for a in self.admins if a > 0))
+        catalogs = {p.id for p in self.pages if p.module and p.module.type == "catalog"}
+        missing = [i.title for i in self.shop.items if i.category not in catalogs]
+        if missing:
+            raise ValueError(f"«{missing[0]}» mahsuloti katalog bo'limiga bog'lanmagan (bo'lim o'chirilgan bo'lishi mumkin)")
         return self
 
 
@@ -768,3 +843,21 @@ def templates_public() -> list[dict]:
         {"code": code, "icon": t["icon"], "title": t["title"], "desc": t["desc"], "pages": len(t["menu"]["pages"])}
         for code, t in TEMPLATES.items()
     ]
+
+
+Page.model_rebuild()
+
+
+def money(amount: int, currency: str = "so'm") -> str:
+    return f"{amount:,}".replace(",", " ") + f" {currency}"
+
+
+def shop_item(menu: dict, item_id: str | None) -> dict | None:
+    for item in (menu.get("shop") or {}).get("items") or []:
+        if item["id"] == item_id:
+            return item
+    return None
+
+
+def catalog_pages(menu: dict) -> list[dict]:
+    return [p for p in menu.get("pages", []) if (p.get("module") or {}).get("type") == "catalog"]

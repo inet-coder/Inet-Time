@@ -77,3 +77,21 @@ class BotFormAnswer(CreatedAtMixin, Base):
     tg_user_id: Mapped[int] = mapped_column(BigInteger)
     form_id: Mapped[str] = mapped_column(String(24))
     data: Mapped[dict] = mapped_column(JSONB)
+
+
+class BotOrder(TimestampMixin, Base):
+    """Bot do'konidagi buyurtma. Raqam — har bir bot uchun alohida ketma-ketlik (#1, #2...)."""
+
+    __tablename__ = "bot_orders"
+    __table_args__ = (UniqueConstraint("bot_id", "number", name="uq_bot_order_number"), Index("ix_bot_orders_user", "bot_id", "tg_user_id"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("user_bots.id", ondelete="CASCADE"))
+    number: Mapped[int] = mapped_column(Integer)
+    tg_user_id: Mapped[int] = mapped_column(BigInteger)
+    items: Mapped[list] = mapped_column(JSONB)  # [{id, title, price, qty}]
+    total: Mapped[int] = mapped_column(BigInteger)
+    delivery: Mapped[int] = mapped_column(BigInteger, default=0)
+    data: Mapped[dict] = mapped_column(JSONB)  # rasmiylashtirish javoblari
+    # new | accepted | delivering | done | cancelled
+    status: Mapped[str] = mapped_column(String(16), default="new", index=True)

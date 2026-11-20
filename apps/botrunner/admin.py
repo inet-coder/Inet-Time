@@ -126,6 +126,7 @@ async def panel(runner: "Runner", bot: "RunningBot", chat_id: int, message: dict
         rows.append([{"text": "🧩 Kompyuterda tahrirlash (Mini App)", "web_app": {"url": f"{url.split('?')[0]}?bot={bot.bot_id}"}}])
     rows += [
         [{"text": "⚙️ Sozlamalar", "callback_data": "adm:cfg"}, {"text": "👤 Foydalanuvchilar", "callback_data": "adm:u"}],
+        [{"text": "🛒 Do'kon", "callback_data": "sh:home"}],
         [{"text": "📨 Xabar tarqatish", "callback_data": "adm:bc"}, {"text": "🔄 Yangilash", "callback_data": "adm:st"}],
         [{"text": "👁 Foydalanuvchi ko'rinishi", "callback_data": "adm:view"}, {"text": "❓ Yordam", "callback_data": "adm:help"}],
     ]
@@ -801,6 +802,10 @@ async def on_message(runner: "Runner", bot: "RunningBot", message: dict) -> bool
         await runner.api(bot, "sendMessage", {"chat_id": chat_id, "text": "❌ Bekor qilindi."})
         return True
     kind = state.get("k")
+    if str(kind).startswith("shop_"):
+        import shop
+
+        return await shop.admin_input(runner, bot, chat_id, message, state)
 
     async def say(t: str, rows: list | None = None) -> None:
         data = {"chat_id": chat_id, "text": t, "parse_mode": "HTML", "disable_web_page_preview": True}

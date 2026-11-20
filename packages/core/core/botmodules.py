@@ -14,6 +14,10 @@ MODULES: list[dict] = [
     {"id": "shop", "icon": "🛒", "title": "Do'kon", "desc": "Katalog, savat, buyurtmalar", "cb": "sh:home", "present": _shop},
     {"id": "booking", "icon": "📅", "title": "Yozilishlar", "desc": "Xizmatlar, bo'sh vaqtlar, eslatmalar", "cb": "bm:home", "present": lambda m: bool((m.get("booking") or {}).get("enabled"))},
     {"id": "auto", "icon": "⚡", "title": "Avto xabarlar", "desc": "Salom, qaytarish, savat eslatmasi, jadval", "cb": "au:home", "present": lambda m: bool(m.get("auto"))},
+    {
+        "id": "games", "icon": "🎮", "title": "O'yinlar", "desc": "Viktorina, reyting, bonus, konkurs, kapcha", "cb": "gm:home",
+        "present": lambda m: bool(m.get("quizzes") or m.get("contests") or (m.get("bonus") or {}).get("enabled") or m.get("captcha")),
+    },
     {"id": "forms", "icon": "📝", "title": "Arizalar", "desc": "Ko'p bosqichli formalar", "cb": "adm:form", "present": lambda m: bool(m.get("forms"))},
     {"id": "referral", "icon": "👥", "title": "Referal", "desc": "Taklif, ball, mukofot", "cb": "adm:ref", "present": lambda m: bool((m.get("referral") or {}).get("enabled"))},
     {"id": "channels", "icon": "📢", "title": "Majburiy obuna", "desc": "Kanalga obuna sharti", "cb": "adm:ch", "present": lambda m: bool(m.get("channels"))},

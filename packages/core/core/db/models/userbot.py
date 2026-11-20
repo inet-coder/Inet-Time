@@ -133,3 +133,16 @@ class BotAutoLog(Base):
     tg_user_id: Mapped[int] = mapped_column(BigInteger)  # 0 — qoida darajasidagi belgi (jadval bo'yicha tarqatish)
     period: Mapped[str] = mapped_column(String(32))
     sent_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BotContestEntry(Base):
+    """Konkursda qatnashuvchi (har kim bir konkursda bir marta)."""
+
+    __tablename__ = "bot_contest_entries"
+    __table_args__ = (UniqueConstraint("bot_id", "contest_id", "tg_user_id", name="uq_bot_contest_entry"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("user_bots.id", ondelete="CASCADE"), index=True)
+    contest_id: Mapped[str] = mapped_column(String(32))
+    tg_user_id: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

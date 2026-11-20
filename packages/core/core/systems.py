@@ -243,6 +243,34 @@ SYSTEMS: dict[str, dict] = {
         },
         "done": {"join": "✅ Rahmat, {ism}! {kurs} bo'yicha menejerimiz {telefon} raqamingizga tez orada bog'lanadi."},
     },
+    "sys_quiz": {
+        "icon": "🧠",
+        "title": "Viktorina va o'yin boti",
+        "desc": "Savol-javob viktorinasi, reyting, kunlik bonus, do'st taklif qilish — kanal va jamoalar uchun",
+        "style": "hybrid",
+        "sections": [
+            _sec("start", None, "🏠 Bosh menyu", "menu"),
+            _sec("quiz", "start", "🧠 Viktorina", "quiz", questions=[
+                {"q": "O'zbekiston poytaxti qaysi shahar?", "options": ["Samarqand", "Toshkent", "Buxoro"], "answer": 1, "explain": "Toshkent — 2000 yildan ortiq tarixga ega shahar."},
+                {"q": "Quyoshga eng yaqin sayyora qaysi?", "options": ["Venera", "Yer", "Merkuriy", "Mars"], "answer": 2, "explain": ""},
+                {"q": "Bir yilda necha oy bor?", "options": ["10", "12", "13"], "answer": 1, "explain": ""},
+                {"q": "Suvning kimyoviy formulasi qaysi?", "options": ["CO2", "H2O", "O2"], "answer": 1, "explain": "Ikki vodorod va bir kislorod atomi."},
+            ]),
+            _sec("top", "start", "🏆 Reyting", "top"),
+            _sec("bonus", "start", "🎁 Kunlik bonus", "bonus"),
+            _sec("invite", "start", "👥 Do'st taklif qilish", "referral"),
+            _sec("chat", "start", "💬 Yozish", "feedback"),
+        ],
+        "content": {
+            "start": _post("Assalomu alaykum, {name}! 👋\n\n<b>{biz}</b> — o'ynang, ball yig'ing va reytingda yuqoriga chiqing! 🏆\n\n💎 Sizning ballaringiz: <b>{ball}</b>"),
+            "invite": _post("<b>👥 Do'stlarni taklif qiling</b>\n\nHar bir do'stingiz uchun <b>10 ball</b>!\n\n🔗 Havolangiz:\n{ref_link}\n\n👥 Takliflar: <b>{ref_count}</b>"),
+        },
+        "variables": [{"key": "ball", "label": "Ball", "default": "0", "scope": "user"}],
+        "referral": {"enabled": True, "reward": 10, "var": "ball"},
+        "bonus": {"points": 5, "streak_bonus": 1},
+        "steps": [{"key": "biz", "label": "🏷 Botingiz nomi?", "example": "Bilimdonlar klubi"}],
+        "use_common": False,
+    },
     "sys_card": {
         "icon": "🏢",
         "title": "Vizitka (kompaniya, mutaxassis)",
@@ -282,6 +310,7 @@ def build_system(code: str) -> dict | None:
         "referral": system.get("referral") or {},
         "booking": system.get("booking"),
         "auto": system.get("auto"),
+        "bonus": system.get("bonus"),
     }
     content = {"sections": {}, "fallback": system.get("fallback", "Menyudan tanlang 👇")}
     for sid, data in system["content"].items():

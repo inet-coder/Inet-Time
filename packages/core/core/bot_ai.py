@@ -55,6 +55,9 @@ SHOP (built-in store with cart, checkout and order statuses — use it for ANY s
  {"type": "orders"} — "My orders". A shop needs catalog pages, one cart page and one orders page reachable from the menu.
  Keep existing items (same id, file_id) unless the owner asks to change them; never invent file_id.
  Variables {cart_count} {cart_total} show the user's cart.
+QUIZZES: "quizzes": [{"id": "<id>", "title": "...", "questions": [{"q": "...", "options": ["A", "B", "C"], "answer": 0, "explain": "", "points": 1}], "var": "ball", "repeat": false}],
+ "bonus": {"enabled": true, "points": 5, "streak_bonus": 1}. Pages with "module": {"type": "quiz", "ref": "<quiz id>"} | {"type": "top"} (leaderboard by {ball}) |
+ {"type": "bonus"} (daily bonus) run them. Points accumulate in the user's variable {ball}. Keep the owner's quizzes/contests/captcha unless asked.
 AUTO (messages the bot sends by itself — use for retention and marketing):
  {"id": "<[a-z0-9_-]>", "trigger": "start_delay" | "inactive" | "cart" | "schedule", "hours": 24 (delay for start_delay/inactive/cart),
   "at": "10:00" + "days": [0..6] (0=Monday; schedule only), "segment": "all|new7|active7|inactive30|ordered|booked|referrers",
@@ -275,6 +278,16 @@ def prepare(new: dict, current: dict) -> dict:
             f["target"] = remap(f.get("target"))
     _prepare_shop(doc, current, remap)
     _prepare_booking(doc, current)
+    for key, empty in (("quizzes", []), ("contests", []), ("bonus", None), ("captcha", False)):
+        if key not in doc:
+            doc[key] = copy.deepcopy(current[key]) if key in current else (empty if empty is not None else {"enabled": False})
+    quiz_ids = {q.get("id") for q in doc["quizzes"] if isinstance(q, dict)}
+    for page in doc["pages"]:
+        mod = page.get("module")
+        if isinstance(mod, dict) and mod.get("type") == "quiz" and mod.get("ref") not in quiz_ids:
+            page["module"] = None
+    if doc["quizzes"] and not any(isinstance(p.get("module"), dict) and p["module"].get("type") == "quiz" for p in doc["pages"]):
+        doc["quizzes"] = []
     if not isinstance(doc.get("auto"), list):
         doc["auto"] = copy.deepcopy(current.get("auto") or [])
     used_auto: set = set()
@@ -319,7 +332,7 @@ def _prepare_shop(doc: dict, current: dict, remap) -> None:
         shop["items"] = copy.deepcopy(list(old_items.values()))
     catalogs = [p["id"] for p in doc["pages"] if isinstance(p.get("module"), dict) and p["module"].get("type") == "catalog"]
     for p in doc["pages"]:
-        if p.get("module") is not None and (not isinstance(p["module"], dict) or p["module"].get("type") not in ("catalog", "cart", "orders", "booking", "mybookings")):
+        if p.get("module") is not None and (not isinstance(p["module"], dict) or p["module"].get("type") not in ("catalog", "cart", "orders", "booking", "mybookings", "quiz", "top", "bonus", "contest")):
             p["module"] = None
     items, used = [], set()
     for it in shop.get("items") or []:
@@ -346,7 +359,7 @@ def _prepare_booking(doc: dict, current: dict) -> None:
         bk = copy.deepcopy(cur) if cur else {"enabled": False}
         doc["booking"] = bk
     for page in doc["pages"]:
-        if page.get("module") is not None and (not isinstance(page["module"], dict) or page["module"].get("type") not in ("catalog", "cart", "orders", "booking", "mybookings")):
+        if page.get("module") is not None and (not isinstance(page["module"], dict) or page["module"].get("type") not in ("catalog", "cart", "orders", "booking", "mybookings", "quiz", "top", "bonus", "contest")):
             page["module"] = None
     has_page = any(isinstance(p.get("module"), dict) and p["module"].get("type") == "booking" for p in doc["pages"])
     if not has_page:
@@ -430,7 +443,7 @@ def tree(menu: dict, limit: int = 45) -> str:
             n = sum(1 for i in (menu.get("shop") or {}).get("items") or [] if i.get("category") == pid)
             extra += f" · 🛍 {n} mahsulot"
         elif mod:
-            extra += " · " + {"cart": "🛒 savat", "orders": "📦 buyurtmalar", "booking": "📅 yozilish", "mybookings": "📋 yozilishlarim"}.get(mod, mod)
+            extra += " · " + {"cart": "🛒 savat", "orders": "📦 buyurtmalar", "booking": "📅 yozilish", "mybookings": "📋 yozilishlarim", "quiz": "🧠 viktorina", "top": "🏆 reyting", "bonus": "🎁 bonus", "contest": "🎉 konkurs"}.get(mod, mod)
         lines.append(f"{'   ' * depth}{icon} {p['title']} ({posts} post{extra})")
         children = [b for row in p.get("buttons") or [] for b in row] + [b for m in p.get("messages") or [] for row in m.get("buttons") or [] for b in row]
         for b in children:
@@ -464,6 +477,8 @@ def summary(menu: dict) -> str:
         parts.append("👥 referal")
     if (menu.get("shop") or {}).get("items"):
         parts.append(f"🛒 do'kon: {len(menu['shop']['items'])} mahsulot")
+    if menu.get("quizzes"):
+        parts.append(f"🧠 {len(menu['quizzes'])} viktorina")
     if menu.get("auto"):
         parts.append(f"⚡ {len(menu['auto'])} avto xabar")
     if (menu.get("booking") or {}).get("enabled"):
@@ -862,7 +877,7 @@ async def _build_webapp_v2(model, current, history, request, allowed_media, exis
 
 import asyncio  # noqa: E402
 
-KINDS = ("menu", "info", "item", "form", "faq", "contacts", "profile", "referral", "feedback", "link", "catalog", "cart", "orders", "booking", "mybookings")
+KINDS = ("menu", "info", "item", "form", "faq", "contacts", "profile", "referral", "feedback", "link", "catalog", "cart", "orders", "booking", "mybookings", "quiz", "top", "bonus")
 
 PLAN_SYSTEM = """You are the lead architect of InetTime AI, a no-code Telegram bot builder. You work like a senior bot developer:
 first understand the business, then design a clean, logical bot architecture. Another step will write the texts.
@@ -908,6 +923,10 @@ KIND:
  (4-12 realistic products per category, integer prices in the currency). Leaf section (no children). "layout": "cards" when
  photos/visuals matter (clothes, cakes), otherwise "list".
  cart — the shopping cart page. orders — "📦 Buyurtmalarim" (the user's orders and their statuses).
+ quiz — a multiple-choice quiz of the built-in QUIZ system (points go to the user's {ball}; owner's questions count is automatic). Needs
+ "questions": [{"q": "Poytaxt qaysi?", "options": ["Toshkent", "Samarqand", "Buxoro"], "answer": 0, "explain": "optional 1-line explanation"}] (5-12 real, well-formed questions).
+ top — "🏆 Reyting": TOP-10 users by {ball} and the viewer's rank. bonus — "🎁 Kunlik bonus": claim points once a day with streaks (plan "bonus": {"points": 5, "streak_bonus": 1}).
+ Use quiz/top/bonus (with referral) for contests, learning, "play and win" and loyalty bots.
  booking — the appointment wizard of the built-in BOOKING system (services, optional staff, working hours, free-time calendar,
  owner confirmation, reminders — all automatic). Define services/staff/hours in plan "booking". mybookings — "📋 Yozilishlarim".
 ARCHITECTURE RULES
@@ -1040,7 +1059,7 @@ def _plan_fix(plan: dict, max_pages: int) -> dict:
     # bolasi bor bo'limlar — menyu (katalog/savat bargligicha qoladi — bolalari ota menyuga ko'chadi)
     for sct in sections:
         parent = by_id.get(sct.get("parent"))
-        if parent and parent.get("kind") in ("catalog", "cart", "orders", "booking", "mybookings"):
+        if parent and parent.get("kind") in ("catalog", "cart", "orders", "booking", "mybookings", "quiz", "top", "bonus", "contest"):
             sct["parent"] = parent.get("parent") or "start"
     parents = {sct["parent"] for sct in sections if sct.get("parent")}
     for sct in sections:
@@ -1120,7 +1139,7 @@ async def write_content(model: str, brief: dict, plan: dict) -> tuple[dict, list
         f"BUSINESS BRIEF: {json.dumps(brief, ensure_ascii=False)}\nSTYLE: {plan['style']}\nVARIABLES: {variables or '—'}\n"
         f"FULL ARCHITECTURE (id | parent | kind | title | purpose):\n{outline}\n\n"
     )
-    writable = [sct for sct in sections if sct["kind"] not in ("feedback", "cart", "orders", "mybookings")]
+    writable = [sct for sct in sections if sct["kind"] not in ("feedback", "cart", "orders", "mybookings", "top", "bonus", "quiz")]
     chunks = [writable[i : i + 10] for i in range(0, len(writable), 10)] or [[]]
 
     async def one(chunk: list) -> tuple[dict, ai.AIResult]:
@@ -1195,7 +1214,7 @@ def compile_plan(plan: dict, content: dict) -> dict:
     for sct in sections:
         if sct["kind"] == "feedback":
             continue
-        if sct["kind"] in ("catalog", "cart", "orders", "booking", "mybookings"):
+        if sct["kind"] in ("catalog", "cart", "orders", "booking", "mybookings", "quiz", "top", "bonus", "contest"):
             page = _store_page(sct, (content.get("sections") or {}).get(sct["id"]) or {})
             if sct["kind"] == "catalog":
                 items += _products(sct, item_ids)
@@ -1326,6 +1345,9 @@ def compile_plan(plan: dict, content: dict) -> dict:
                 {"key": "ism", "label": "👤 Ismingiz?", "type": "text", "options": []},
                 {"key": "telefon", "label": "📱 Telefon raqamingiz?", "type": "phone", "options": []},
             ]
+    quizzes = _quizzes(plan)
+    bonus_cfg = plan.get("bonus") if isinstance(plan.get("bonus"), dict) else {}
+    has_bonus = any(sct["kind"] == "bonus" for sct in sections)
     auto = _auto_rules(plan, {p["id"] for p in pages})
     booking = _booking_cfg(plan) if any(sct["kind"] == "booking" for sct in sections) else {"enabled": False}
     return {
@@ -1334,6 +1356,8 @@ def compile_plan(plan: dict, content: dict) -> dict:
         "shop": shop,
         "booking": booking,
         "auto": auto,
+        "quizzes": quizzes,
+        "bonus": {"enabled": has_bonus, "points": _int(bonus_cfg.get("points"), 5, 1, 1000), "streak_bonus": _int(bonus_cfg.get("streak_bonus"), 1, 0, 100)},
         "pages": pages,
         "variables": variables,
         "forms": forms,
@@ -1345,6 +1369,33 @@ def compile_plan(plan: dict, content: dict) -> dict:
 
 
 _VARKEY = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+
+
+def _int(value, default: int, lo: int, hi: int) -> int:
+    try:
+        return min(hi, max(lo, int(float(value))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _quizzes(plan: dict) -> list[dict]:
+    """quiz bo'limlari → viktorinalar (savollar tekshiriladi, yaroqsizlari tashlanadi). Id = bo'lim id'si."""
+    out = []
+    for sct in plan.get("sections") or []:
+        if sct.get("kind") != "quiz":
+            continue
+        questions = []
+        for x in (sct.get("questions") or [])[:40]:
+            if not isinstance(x, dict) or not str(x.get("q") or "").strip():
+                continue
+            opts = [str(o).strip()[:60] for o in x.get("options") or [] if str(o).strip()][:6]
+            ans = x.get("answer")
+            if len(opts) < 2 or not isinstance(ans, int) or not 0 <= ans < len(opts):
+                continue
+            questions.append({"q": str(x["q"]).strip()[:300], "options": opts, "answer": ans, "explain": str(x.get("explain") or "")[:300], "points": 1})
+        if questions:
+            out.append({"id": sct["id"], "title": sct["title"].lstrip("🧠 ").strip() or sct["title"], "questions": questions, "var": "ball", "repeat": False})
+    return out
 
 
 def _auto_rules(plan: dict, page_ids: set) -> list[dict]:
@@ -1417,6 +1468,8 @@ def _store_page(sct: dict, data: dict) -> dict:
     post = next((p for p in data.get("posts") or [] if (isinstance(p, dict) and str(p.get("text", "")).strip()) or (isinstance(p, str) and p.strip())), None)
     text = (post["text"] if isinstance(post, dict) else post) if post else f"<b>{sct['title']}</b>"
     module: dict = {"type": sct["kind"]}
+    if sct["kind"] == "quiz":
+        module["ref"] = sct["id"]
     if sct["kind"] == "catalog":
         module.update(layout="cards" if sct.get("layout") == "cards" else "list", per_page=8)
     return {

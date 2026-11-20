@@ -36,6 +36,11 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
     (nom, telefon, manzil, ish vaqti) — javoblar hamma matnlarga o'zi joylashadi. Admin panel botdagi modullarga
     qarab chiziladi (Do'kon, Arizalar, Referal...), 📊 statistika (start, eng ko'p ochilgan bo'limlar, savdo
     voronkasi, tushum), 🧩 modullar ro'yxati va «🚀 Birinchi 5 daqiqa» yo'riqnomasi
+  - **🎮 O'yin va jalb qilish**: 🧠 viktorina (savollar chatda `+` to'g'ri / `-` noto'g'ri formatida yoziladi, ball
+    foydalanuvchi `{ball}` o'zgaruvchisiga, qayta topshirishda ball takror berilmaydi), 🏆 reyting (TOP-10 va o'z
+    o'rni), 🎁 kunlik bonus (ketma-ket kunlar uchun qo'shimcha), 🎉 konkurs (qatnashish tugmasi, bir bosishda tasodifiy
+    g'oliblar va ularga xabar), 🛡 kapcha (yangi foydalanuvchi oddiy misolga javob beradi). /admin → 🎮 O'yinlar;
+    «Viktorina boti» tayyor tizimi; AI viktorina, reyting va bonusni o'zi tuzadi
   - **⚡ Avtomatik xabarlar**: bot o'zi yozadi — start'dan N soat keyin, N kun kirmaganlarga, savatni tashlab
     ketganga, jadval bo'yicha (har kuni 10:00 «kun taklifi»). Har bir foydalanuvchiga qoida bir davrda bir marta
     (takror yuborilmaydi), auditoriya segmenti, xabar ostida bo'limni ochadigan tugma, «🧪 menga yuborish».

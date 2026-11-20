@@ -408,7 +408,9 @@ class Channel(_M):
 
 
 class Module(_M):
-    type: Literal["catalog", "cart", "orders", "booking", "mybookings"]
+    type: Literal["catalog", "cart", "orders", "booking", "mybookings", "quiz", "top", "bonus", "contest"]
+    ref: str | None = None  # quiz / contest identifikatori
+    var: str = "ball"  # reyting va bonus uchun ball o'zgaruvchisi
     layout: Literal["list", "cards"] = "list"  # list — bitta xabarda ro'yxat; cards — har mahsulot alohida xabar
     per_page: int = Field(default=8, ge=1, le=20)
 
@@ -545,6 +547,68 @@ class Booking(_M):
         return self
 
 
+class QuizQuestion(_M):
+    q: str = Field(min_length=1, max_length=300)
+    options: list[str] = Field(min_length=2, max_length=6)
+    answer: int = Field(ge=0)
+    explain: str = Field(default="", max_length=300)
+    points: int = Field(default=1, ge=1, le=100)
+
+    @model_validator(mode="after")
+    def _check(self):
+        self.options = [o.strip()[:60] for o in self.options if o.strip()]
+        if len(self.options) < 2 or self.answer >= len(self.options):
+            raise ValueError("savol variantlari yoki to'g'ri javob noto'g'ri")
+        return self
+
+
+class Quiz(_M):
+    id: str
+    title: str = Field(min_length=1, max_length=64)
+    questions: list[QuizQuestion] = Field(min_length=1, max_length=40)
+    var: str = "ball"  # ball shu o'zgaruvchiga qo'shiladi
+    repeat: bool = False  # false — ball faqat birinchi topshirishda beriladi (qayta topshirish mumkin, ball yo'q)
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v: str) -> str:
+        if not _PAGE_ID.match(v):
+            raise ValueError("viktorina identifikatori noto'g'ri")
+        return v
+
+    @field_validator("var")
+    @classmethod
+    def _v(cls, v: str) -> str:
+        return _var_key(v) or "ball"
+
+
+class Contest(_M):
+    id: str
+    title: str = Field(min_length=1, max_length=64)
+    prize: str = Field(default="", max_length=200)
+    winners: int = Field(default=1, ge=1, le=50)
+    active: bool = True
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v: str) -> str:
+        if not _PAGE_ID.match(v):
+            raise ValueError("konkurs identifikatori noto'g'ri")
+        return v
+
+
+class Bonus(_M):
+    enabled: bool = False
+    var: str = "ball"
+    points: int = Field(default=5, ge=1, le=100000)
+    streak_bonus: int = Field(default=1, ge=0, le=1000)  # ketma-ket har kun uchun qo'shimcha (7 kungacha)
+
+    @field_validator("var")
+    @classmethod
+    def _v(cls, v: str) -> str:
+        return _var_key(v) or "ball"
+
+
 AUTO_TRIGGERS = ("start_delay", "inactive", "cart", "schedule")
 AUTO_SEGMENTS = ("all", "new7", "active7", "inactive30", "ordered", "booked", "referrers")
 
@@ -606,6 +670,10 @@ class Menu(_M):
     booking: Booking = Booking()
     # Avtomatik xabarlar va ularning vaqt zonasi (UTC farqi, Toshkent +5)
     auto: list[AutoRule] = Field(default_factory=list, max_length=20)
+    quizzes: list[Quiz] = Field(default_factory=list, max_length=10)
+    contests: list[Contest] = Field(default_factory=list, max_length=10)
+    bonus: Bonus = Bonus()
+    captcha: bool = False  # yangi foydalanuvchi «men robot emasman» savoliga javob beradi
     tz: int = Field(default=5, ge=-12, le=14)
     # Tayyor tizim kodi (sys_shop...) va hali bajarilmagan sozlash ustasi qadamlari (bo'sh — usta tugagan)
     system: str = Field(default="", max_length=32)
@@ -624,6 +692,10 @@ class Menu(_M):
         forms = {f.id for f in self.forms}
         if len(forms) != len(self.forms):
             raise ValueError("formalar takrorlanmasin")
+        for coll, what in ((self.quizzes, "viktorina"), (self.contests, "konkurs")):
+            ids_ = [x.id for x in coll]
+            if len(set(ids_)) != len(ids_):
+                raise ValueError(f"{what} identifikatorlari takrorlanmasin")
         rule_ids = [r.id for r in self.auto]
         if len(set(rule_ids)) != len(rule_ids):
             raise ValueError("avtomatik xabar identifikatorlari takrorlanmasin")

@@ -18,7 +18,7 @@ from core.db.models.media import MediaFile
 from core.db.models.system import Notification, SystemSetting, WorkerJob
 from core.db.models.telegram import EncryptedSession, TelegramAccount
 from core.db.models.user import User
-from core.db.models.userbot import BotAutoLog, BotBroadcast, BotBooking, BotFormAnswer, BotOrder, BotSubscriber, UserBot
+from core.db.models.userbot import BotAutoLog, BotBroadcast, BotBooking, BotContestEntry, BotFormAnswer, BotOrder, BotSubscriber, UserBot
 from core.db.models.webapp import WebApp, WebAppSubmission, WebAppVersion, WebComponent
 from core.db.models.appdata import AppCollection, AppRecord
 
@@ -56,6 +56,7 @@ __all__ = [
     "BotFormAnswer",
     "BotAutoLog",
     "BotBooking",
+    "BotContestEntry",
     "BotOrder",
     "WebApp",
     "WebAppSubmission",

@@ -57,6 +57,7 @@ import ai_chat
 import auto
 import booking
 import editor
+import games
 import home
 import shop
 import stats
@@ -642,7 +643,9 @@ class Runner:
             await editor.show_posts(self, bot, chat_id, page, user)
             return
         if page.get("module") and start == 0 and (
-            await shop.render_module(self, bot, chat_id, page, vals, message=message) or await booking.render_module(self, bot, chat_id, page, vals, message=message)
+            await shop.render_module(self, bot, chat_id, page, vals, message=message)
+            or await booking.render_module(self, bot, chat_id, page, vals, message=message)
+            or await games.render_module(self, bot, chat_id, page, vals, message=message)
         ):
             return
         msgs = self.page_msgs(bot, page, vals, user, with_branding=with_branding, start=start)
@@ -1121,8 +1124,32 @@ class Runner:
             return bot
         return self.sandbox_copy(bot, json.loads(raw))
 
+    async def _captcha_gate(self, bot: RunningBot, upd: dict) -> bool:
+        """Kapcha yoqilgan bo'lsa: tasdiqlanmagan foydalanuvchi faqat «men robot emasman» savoliga javob beradi. True — to'xtatildi."""
+        q = upd.get("callback_query")
+        msg = upd.get("message")
+        src = (q or {}).get("from") or (msg or {}).get("from")
+        chat = ((q or {}).get("message") or msg or {}).get("chat", {})
+        if not src or chat.get("type") != "private" or self.is_admin(bot, chat["id"]) or getattr(bot, "sandbox", False):
+            return False
+        chat_id = chat["id"]
+        if q and (q.get("data") or "").startswith("cap:"):
+            await self._touch(bot, src)
+            if await games.captcha_callback(self, bot, chat_id, q["data"], q["message"], src, q["id"]):
+                await self.on_start(bot, chat_id, src, "/start")
+            return True
+        if await games.is_verified(self, bot, src["id"]):
+            return False
+        await self._touch(bot, src)
+        if q:
+            await self.answer(bot, q["id"])
+        await games.challenge(self, bot, chat_id)
+        return True
+
     async def handle(self, bot: RunningBot, upd: dict) -> None:
         bot = await self._sandboxed(bot, upd)
+        if bot.menu.get("captcha") and await self._captcha_gate(bot, upd):
+            return
         if "callback_query" in upd:
             await self.on_callback(bot, upd["callback_query"])
         elif "message" in upd:
@@ -1141,13 +1168,15 @@ class Runner:
             await self.answer(bot, query["id"])
             return
         chat_id = message["chat"]["id"]
-        if data.startswith(("adm:", "e:", "ai:", "sh:", "bm:", "au:")):
+        if data.startswith(("adm:", "e:", "ai:", "sh:", "bm:", "au:", "gm:")):
             await self.answer(bot, query["id"])
             if self.is_admin(bot, chat_id):
                 if data.startswith("sh:"):
                     await shop.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("au:"):
                     await auto.admin_callback(self, bot, chat_id, data, message, user)
+                elif data.startswith("gm:"):
+                    await games.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("bm:"):
                     await booking.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("adm:"):
@@ -1182,6 +1211,8 @@ class Runner:
                 return
         if data.startswith("bk:"):
             await booking.on_callback(self, bot, chat_id, data, message, user, query["id"])
+        elif data.startswith(("qz:", "bn:", "cn:")):
+            await games.callback(self, bot, chat_id, data, message, user, query["id"])
         elif data.split(":")[0] in SHOP_CALLBACKS:
             await shop.on_callback(self, bot, chat_id, data, message, user, query["id"])
         elif data.startswith("p:"):

@@ -423,6 +423,7 @@ class ShopItem(_M):
     price: int = Field(ge=0, le=10_000_000_000)
     old_price: int | None = Field(default=None, ge=0, le=10_000_000_000)
     badge: str = Field(default="", max_length=20)
+    stock: int | None = Field(default=None, ge=0, le=1_000_000)  # None — cheksiz; 0 — tugadi
     file_id: str | None = Field(default=None, max_length=300)  # egasi yuborgan rasm
     media_id: int | None = None
     active: bool = True
@@ -459,6 +460,39 @@ DEFAULT_CHECKOUT = [
 ]
 
 
+class Promo(_M):
+    """Promokod: foiz yoki qat'iy summa chegirma."""
+
+    code: str
+    kind: Literal["percent", "amount"] = "percent"
+    value: int = Field(ge=1, le=10_000_000_000)
+    min_total: int = Field(default=0, ge=0, le=10_000_000_000)
+    max_uses: int = Field(default=0, ge=0, le=1_000_000)  # 0 — cheksiz
+    active: bool = True
+
+    @field_validator("code")
+    @classmethod
+    def _code(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9_-]{2,16}", v):
+            raise ValueError("promokod 2-16 ta lotin harf/raqam bo'lsin")
+        return v
+
+    @model_validator(mode="after")
+    def _check(self):
+        if self.kind == "percent" and not 1 <= self.value <= 100:
+            raise ValueError("foiz 1 dan 100 gacha bo'lsin")
+        return self
+
+
+class ShopPay(_M):
+    """Telegram Payments: provayder tokeni sir sifatida alohida saqlanadi (hujjatda emas)."""
+
+    enabled: bool = False
+    cash: bool = True  # naqd to'lov ham mumkin
+    currency: str = Field(default="UZS", pattern=r"^[A-Z]{3}$")
+
+
 class Shop(_M):
     enabled: bool = False
     currency: str = Field(default="so'm", max_length=12)
@@ -468,6 +502,8 @@ class Shop(_M):
     free_from: int = Field(default=0, ge=0, le=10_000_000_000)  # shu summadan yetkazish bepul (0 — yo'q)
     min_order: int = Field(default=0, ge=0, le=10_000_000_000)
     done_text: str = Field(default="✅ Buyurtmangiz qabul qilindi! Raqami: <b>#{order}</b>\nTez orada bog'lanamiz.", max_length=1000)
+    promos: list[Promo] = Field(default_factory=list, max_length=30)
+    pay: ShopPay = ShopPay()
 
     @model_validator(mode="after")
     def _check(self):
@@ -477,6 +513,9 @@ class Shop(_M):
         keys = [f.key for f in self.checkout]
         if len(set(keys)) != len(keys):
             raise ValueError("buyurtma formasi maydonlari takrorlanmasin")
+        codes = [p.code for p in self.promos]
+        if len(set(codes)) != len(codes):
+            raise ValueError("promokodlar takrorlanmasin")
         return self
 
 

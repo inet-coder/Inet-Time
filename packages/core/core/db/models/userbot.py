@@ -20,6 +20,8 @@ class UserBot(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(128))
     # AES-256-GCM (core.crypto.encrypt_packed) — token hech qachon ochiq saqlanmaydi.
     token_encrypted: Mapped[bytes] = mapped_column(LargeBinary)
+    # Telegram Payments provayder tokeni (sir — menyu hujjatiga yozilmaydi, AI ko'rmaydi)
+    pay_token_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     # active | paused | error
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
     error_message: Mapped[str | None] = mapped_column(Text)
@@ -94,8 +96,12 @@ class BotOrder(TimestampMixin, Base):
     total: Mapped[int] = mapped_column(BigInteger)
     delivery: Mapped[int] = mapped_column(BigInteger, default=0)
     data: Mapped[dict] = mapped_column(JSONB)  # rasmiylashtirish javoblari
-    # new | accepted | delivering | done | cancelled
+    # awaiting | new | accepted | delivering | done | cancelled
     status: Mapped[str] = mapped_column(String(16), default="new", index=True)
+    paid: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    payment: Mapped[str] = mapped_column(String(8), default="", server_default="")  # "" | cash | card
+    discount: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    promo: Mapped[str] = mapped_column(String(16), default="", server_default="")
 
 
 class BotBooking(TimestampMixin, Base):

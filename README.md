@@ -36,6 +36,12 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
     (nom, telefon, manzil, ish vaqti) — javoblar hamma matnlarga o'zi joylashadi. Admin panel botdagi modullarga
     qarab chiziladi (Do'kon, Arizalar, Referal...), 📊 statistika (start, eng ko'p ochilgan bo'limlar, savdo
     voronkasi, tushum), 🧩 modullar ro'yxati va «🚀 Birinchi 5 daqiqa» yo'riqnomasi
+  - **💳 To'lov, 🎟 promokod, 📦 ombor** (do'konda): Telegram Payments — egasi @BotFather'dan olingan provayder
+    tokenini (Click, Payme...) chatda kiritadi (xabar o'chiriladi, token shifrlanib alohida saqlanadi, menyu
+    hujjatida va AI'da yo'q); buyurtmadan keyin mijoz «💳 Karta» yoki «💵 Naqd» tanlaydi, to'lov serverda
+    tekshiriladi (summa, qoldiq, takroriy to'lovdan himoya), egasiga «to'langan» belgisi bilan keladi. Promokodlar
+    (foiz yoki summa, minimal buyurtma, limit, har mijozga bir marta), mahsulot qoldig'i («Qoldi: 3», tugasa
+    «Tugadi», qoldiq oz qolsa egasiga ogohlantirish). /admin → 🛒 Do'kon → 💳 To'lov / 🎟 Promokodlar / 📦 Qoldiq
   - **🎫 Murojaatlar (tiketlar)**: qayta aloqa xabarlari raqamli murojaatga (#1, #2...) aylanadi — ochiq murojaatga
     yangi xabar qo'shiladi, mas'ul («🙋 Meniki» yoki birinchi javob bergan) belgilanadi va keyingi xabarlar faqat unga
     boradi; «Reply» bilan javob, 📝 shablon javoblar, ✅ yopish + mijozdan ⭐ baho. **Operatorlar** (faqat murojaatlar,

@@ -146,7 +146,7 @@ Egasi yozadi → AI niyatni aniqlaydi (qaysi tizim(lar)?) → kerakli modullar t
 | **D** ✅ | **Avtomatik xabarlar** + rejalashtirilgan post + segmentlar | Savdo va kanal botlari uchun marketing |
 | **E** ✅ | **Viktorina / reyting / kunlik bonus / konkurs / kapcha** | Kanal va jalb qilish botlari |
 | **F** ✅ | **Tiketlar + operatorlar + rollar** | Yordam xizmati botlari |
-| **G** | **To'lovlar** (Telegram Payments) + promokod + ombor | Savdo va pullik obuna |
+| **G** ✅ | **To'lovlar** (Telegram Payments) + promokod + ombor | Savdo va pullik obuna |
 | **H** | **Webhook + Google Sheets + kanalga avto-post** | Integratsiya |
 | **I** | **Ko'p til** + eksport/import | Kengayish |
 | **J** | **40 brifli sifat to'plami** | Har bosqichdan keyin regressiya |

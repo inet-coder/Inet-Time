@@ -105,12 +105,14 @@ class RunningBot:
     # 🧪 Sinov rejimi: egasi AI taklifini sinayotganda ishlatiladigan nusxa (saqlash taqiqlangan)
     sandbox: bool = False
     origin: object = None
+    # Telegram Payments provayder tokeni (shifrdan ochilgan; menyu hujjatida saqlanmaydi)
+    pay_token: str | None = None
     task: asyncio.Task | None = None
     conflict_reported: bool = False
     pending: set = field(default_factory=set)
 
 
-SHOP_CALLBACKS = {"sl", "si", "sa", "sk", "sz", "sx", "sm", "so"}
+SHOP_CALLBACKS = {"sl", "si", "sa", "sk", "sz", "sx", "sm", "so", "sg", "sp"}
 
 
 def _k(bot_id: int, kind: str, key) -> str:
@@ -174,13 +176,17 @@ class Runner:
                 except Exception:  # noqa: BLE001
                     logger.exception("bot %s tokeni ochilmadi", bot.id)
                     continue
+                try:
+                    pay_token = crypto.decrypt_packed(bot.pay_token_encrypted) if bot.pay_token_encrypted else None
+                except Exception:  # noqa: BLE001
+                    pay_token = None
                 branding = None if ent.flags.get("bot_no_branding") or not platform else f"🤖 @{platform} orqali yaratilgan"
                 app = apps.get(bot.id)
                 webapp_url = f"{base}/app/{app.id}" if app is not None and base else None
                 result[bot.id] = RunningBot(
                     bot_id=bot.id, user_id=bot.user_id, owner_chat_id=owner_chat, token=token,
                     username=bot.username, name=bot.name, menu=bot.menu, branding=branding, globals=dict(bot.vars or {}),
-                    webapp_url=webapp_url,
+                    webapp_url=webapp_url, pay_token=pay_token,
                     menu_button=(app.menu_button_text, webapp_url) if webapp_url and app.menu_button else None,
                 )
         return result
@@ -198,6 +204,7 @@ class Runner:
                 # Menyu/sozlamalar darhol yangilanadi, polling uzilmaydi.
                 running.menu, running.branding, running.owner_chat_id = wanted.menu, wanted.branding, wanted.owner_chat_id
                 running.username, running.name = wanted.username, wanted.name
+                running.pay_token = wanted.pay_token
                 running.webapp_url, running.menu_button = wanted.webapp_url, wanted.menu_button
                 running.globals = wanted.globals
                 await self.apply_menu_button(running)
@@ -282,7 +289,7 @@ class Runner:
                     self.http,
                     bot.token,
                     "getUpdates",
-                    {"offset": offset, "timeout": POLL_TIMEOUT, "allowed_updates": ["message", "callback_query", "my_chat_member"]},
+                    {"offset": offset, "timeout": POLL_TIMEOUT, "allowed_updates": ["message", "callback_query", "my_chat_member", "pre_checkout_query"]},
                 )
                 delay = 2
                 if bot.conflict_reported:
@@ -1153,6 +1160,8 @@ class Runner:
             return
         if "callback_query" in upd:
             await self.on_callback(bot, upd["callback_query"])
+        elif "pre_checkout_query" in upd:
+            await shop.on_pre_checkout(self, bot, upd["pre_checkout_query"])
         elif "message" in upd:
             await self.on_message(bot, upd["message"])
         elif "my_chat_member" in upd:
@@ -1276,6 +1285,9 @@ class Runner:
         text = (message.get("text") or "").strip()
         is_admin = self.is_admin(bot, chat_id)
 
+        if message.get("successful_payment"):
+            await shop.on_paid(self, bot, message, user)
+            return
         staff = is_admin or chat_id in (bot.menu.get("operators") or [])
         if staff and text == "/tickets":
             await tickets.staff_command(self, bot, chat_id, user)
@@ -1357,6 +1369,11 @@ class Runner:
                     await self.open_page(bot, chat_id, page["id"], user, push=bool(target))
                 return
 
+        if await self.redis.get(_k(bot.bot_id, "st", chat_id)) == b"promo" and text and text != "/cancel":
+            await self.redis.delete(_k(bot.bot_id, "st", chat_id))
+            result = await shop.apply_promo(self, bot, chat_id, text)
+            await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": result, "reply_markup": {"inline_keyboard": [[{"text": "🛒 Savatga qaytish", "callback_data": "sk"}]]}})
+            return
         if await self.redis.get(_k(bot.bot_id, "st", chat_id)) == b"fb" and text != "/cancel":
             await self.redis.delete(_k(bot.bot_id, "st", chat_id))
             await self.forward_feedback(bot, message, user)

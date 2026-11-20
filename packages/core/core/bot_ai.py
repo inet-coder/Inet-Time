@@ -49,7 +49,10 @@ SHOP (built-in store with cart, checkout and order statuses — use it for ANY s
   "items": [{"id": "<[a-z0-9_-]>", "category": "<id of a page with module catalog>", "title": "Latte", "price": 28000,
              "old_price": null, "badge": "🔥 Hit", "text": "<HTML description>", "active": true}],
   "checkout": [{"key": "ism", "label": "👤 Ismingiz?", "type": "text|number|phone|email|choice|location", "options": []}],
-  "done_text": "✅ Buyurtmangiz qabul qilindi! Raqami: <b>#{order}</b>"}
+  "done_text": "✅ Buyurtmangiz qabul qilindi! Raqami: <b>#{order}</b>",
+  "promos": [{"code": "BAHOR20", "kind": "percent" | "amount", "value": 20, "min_total": 100000, "max_uses": 0, "active": true}]}
+ Items may have "stock": <int> (remaining quantity; omit for unlimited; 0 = sold out). Online card payments ("pay") are configured by the
+ owner with a provider token — never enable or change "pay" yourself; keep the existing value.
  Pages with "module": {"type": "catalog", "layout": "list"|"cards", "per_page": 8} show their category's items with
  ➕/➖ and a cart button (keyboard "inline", one intro post, a back button). {"type": "cart"} — the cart page;
  {"type": "orders"} — "My orders". A shop needs catalog pages, one cart page and one orders page reachable from the menu.
@@ -346,6 +349,8 @@ def _prepare_shop(doc: dict, current: dict, remap) -> None:
             continue
         it["id"] = _clean_id(it.get("id") or it["title"], used)
         prev = old_items.get(it["id"])
+        if prev is not None and "stock" not in it:
+            it["stock"] = prev.get("stock")
         it["file_id"] = prev.get("file_id") if prev else None
         it["media_id"] = prev.get("media_id") if prev else None
         it["category"] = remap(it.get("category"))
@@ -355,6 +360,10 @@ def _prepare_shop(doc: dict, current: dict, remap) -> None:
             it["category"] = catalogs[0]
         items.append(it)
     shop["items"] = items
+    # To'lov sozlamasini AI o'zgartira olmaydi (provayder tokeni egasiniki); promokodlar AI bermasa saqlanadi
+    shop["pay"] = copy.deepcopy(cur_shop.get("pay")) if cur_shop.get("pay") else {"enabled": False}
+    if "promos" not in shop:
+        shop["promos"] = copy.deepcopy(cur_shop.get("promos") or [])
 
 
 def _prepare_booking(doc: dict, current: dict) -> None:
@@ -917,6 +926,7 @@ PLAN FORMAT
  "booking": null | {"services": [{"title": "Soch olish", "minutes": 45, "price": 80000}], "staff": ["Aziza", "Dilnoza"],
                     "hours": "Du-Sha 09:00-18:00\\nYa yopiq", "confirm": "manual", "days_ahead": 14},
  "shop": null | {"currency": "so'm", "delivery_fee": 15000, "free_from": 200000, "min_order": 0, "pickup": false,
+                 "promos": [{"code": "WELCOME10", "percent": 10, "min_total": 0}],
                  "checkout": [{"key": "ism", "label": "👤 Ismingiz?", "type": "text"}, ...]}}
 KIND:
  menu — a group with children sections (catalog, categories, services list). info — a content page (about, delivery terms, promotions).
@@ -926,7 +936,7 @@ KIND:
  points, referral stats). referral — invite friends page (needs referral.enabled). feedback — "write to admin" (live chat with the owner).
  link — opens an external URL (site, channel, Instagram) — needs "url".
  catalog — a product category of the built-in STORE (cart, checkout, order numbers and statuses are automatic). Needs
- "products": [{"title": "Latte", "price": 28000, "old_price": null, "badge": "", "text": "1-2 appetizing lines: taste, size, weight"}]
+ "products": [{"title": "Latte", "price": 28000, "old_price": null, "badge": "", "stock": null, "text": "1-2 appetizing lines: taste, size, weight"}]
  (4-12 realistic products per category, integer prices in the currency). Leaf section (no children). "layout": "cards" when
  photos/visuals matter (clothes, cakes), otherwise "list".
  cart — the shopping cart page. orders — "📦 Buyurtmalarim" (the user's orders and their statuses).
@@ -1325,7 +1335,7 @@ def compile_plan(plan: dict, content: dict) -> dict:
     shop = {"enabled": False}
     if items or any(sct["kind"] == "catalog" for sct in sections):
         cfg = plan.get("shop") if isinstance(plan.get("shop"), dict) else {}
-        shop = {"enabled": True, "items": items, "currency": str(cfg.get("currency") or "so'm")[:12]}
+        shop = {"enabled": True, "items": items, "currency": str(cfg.get("currency") or "so'm")[:12], "promos": _promos(cfg)}
         for key in ("delivery_fee", "free_from", "min_order"):
             try:
                 shop[key] = max(0, int(float(cfg.get(key) or 0)))
@@ -1378,6 +1388,23 @@ def compile_plan(plan: dict, content: dict) -> dict:
 
 
 _VARKEY = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+
+
+def _promos(cfg: dict) -> list[dict]:
+    out, seen = [], set()
+    for x in (cfg.get("promos") or [])[:10]:
+        if not isinstance(x, dict):
+            continue
+        code = re.sub(r"[^A-Z0-9_-]", "", str(x.get("code") or "").upper())[:16]
+        if len(code) < 2 or code in seen:
+            continue
+        percent = _int(x.get("percent"), 0, 0, 100)
+        amount = _int(x.get("amount"), 0, 0, 10_000_000_000)
+        if not percent and not amount:
+            continue
+        seen.add(code)
+        out.append({"code": code, "kind": "percent" if percent else "amount", "value": percent or amount, "min_total": _int(x.get("min_total"), 0, 0, 10_000_000_000), "max_uses": 0, "active": True})
+    return out
 
 
 def _canned(plan: dict) -> list[dict]:
@@ -1518,6 +1545,8 @@ def _products(sct: dict, used: set) -> list[dict]:
             "badge": str(x.get("badge") or "").strip()[:20],
             "active": True,
         }
+        if isinstance(x.get("stock"), (int, float)) and not isinstance(x.get("stock"), bool) and x["stock"] >= 0:
+            item["stock"] = int(x["stock"])
         try:
             old = int(float(x.get("old_price") or 0))
             if old > price:

@@ -358,6 +358,15 @@ def action_detail(bot: "RunningBot", b: dict) -> str:
         return f"→ <code>{{{b.get('var')}}}</code>"
     if a == "random":
         return f"{len(b.get('targets') or [])} ta bo'limdan"
+    if a in ("copy", "inline"):
+        return f"<code>{esc(b.get('value') or '')[:40]}</code>"
+    if a == "login":
+        return esc(b.get("url") or "")
+    if a == "flow":
+        f_ = next((x for x in bot.menu.get("flows") or [] if x["id"] == b.get("value")), None)
+        return f"«{esc(f_['title'] or f_['id'])}»" if f_ else ""
+    if a in ("pick_user", "pick_chat"):
+        return f"→ <code>{{{b.get('var')}}}</code>"
     return ""
 
 
@@ -443,9 +452,15 @@ ACTION_CODES = [
     ("bk", "⬅️ Orqaga"),
     ("hm", "🏠 Bosh menyu"),
     ("wa", "🌐 Web App"),
+    ("cp", "📋 Nusxalash (promokod...)"),
+    ("lg", "🔐 Telegram orqali kirish"),
+    ("si", "🔁 Ulashish (inline qidiruv)"),
+    ("fx", "⚙️ Oqim ishga tushirish"),
+    ("pu", "👤 Foydalanuvchi tanlash"),
+    ("pc", "📡 Kanal tanlash"),
 ]
-INLINE_ONLY = ("ur", "al")
-REPLY_ONLY = ("ct", "lc")
+INLINE_ONLY = ("ur", "al", "cp", "lg", "si")
+REPLY_ONLY = ("ct", "lc", "pu", "pc")
 
 
 def action_picker(bot: "RunningBot", loc: str) -> tuple[str, list]:
@@ -1076,6 +1091,13 @@ async def on_input(runner: "Runner", bot: "RunningBot", chat_id: int, user: dict
         values = {"action": "url", "url": url}
     elif kind == "alert":
         values = {"action": "alert", "alert": text[:200]}
+    elif kind == "copy":
+        values = {"action": "copy", "value": text[:256]}
+    elif kind == "login":
+        url = text if text.startswith("https://") else f"https://{text.lstrip('/')}"
+        values = {"action": "login", "url": url}
+    elif kind == "swin":
+        values = {"action": "inline", "value": "" if text == "-" else text[:256]}
     elif kind == "notify":
         values = {"action": "notify", "alert": "" if text == "-" else text[:200]}
     elif kind == "share":
@@ -1314,9 +1336,16 @@ async def on_callback(runner: "Runner", bot: "RunningBot", chat_id: int, data: s
     if cmd == "as":
         await choose_action(runner, bot, chat_id, user, message, parts[2], parts[3])
         return
-    if cmd in ("ep", "fo", "rn"):
+    if cmd in ("ep", "fo", "rn", "fx"):
         loc, idx = parts[2], int(parts[3])
-        if cmd == "ep":
+        if cmd == "fx":
+            fl = (bot.menu.get("flows") or [])
+            if idx < len(fl):
+                error = await save(runner, bot, lambda m: assign(m, loc, {"action": "flow", "value": fl[idx]["id"]}))
+                if error:
+                    await err(error)
+            await panel(loc)
+        elif cmd == "ep":
             pages = bot.menu.get("pages") or []
             if idx < len(pages):
                 error = await save(runner, bot, lambda m: assign(m, loc, {"action": "page", "target": pages[idx]["id"]}))
@@ -1546,6 +1575,22 @@ async def choose_action(runner: "Runner", bot: "RunningBot", chat_id: int, user:
         await send(runner, bot, chat_id, "📑 Qaysi bo'lim ochilsin?", rows, message=message)
     elif code == "ur":
         await ask("url", "🔗 Havolani yuboring (https://... yoki t.me/...).")
+    elif code == "cp":
+        await ask("copy", "📋 Bosganda nusxalanadigan matnni yuboring (masalan promokod: <code>BAHOR20</code>; 256 belgigacha).")
+    elif code == "lg":
+        await ask("login", "🔐 Telegram orqali kirish havolasi (https://sizning-sayt.uz/login). Domen @BotFather → /setdomain da ulangan bo'lishi kerak.")
+    elif code == "si":
+        await ask("swin", "🔁 Bosilganda ochiladigan inline qidiruv matni (masalan <code>latte</code>). Bo'sh qoldirish: -")
+    elif code == "fx":
+        flows_ = bot.menu.get("flows") or []
+        if not flows_:
+            await runner.api(bot, "sendMessage", {"chat_id": chat_id, "text": "⚙️ Hali oqim yo'q. ⚙️ Admin panel → 🧩 Modullar → ⚙️ Oqimlar da yarating."})
+            return
+        rows = [[{"text": f_["title"][:60] or f_["id"], "callback_data": f"e:fx:{loc}:{n}"}] for n, f_ in enumerate(flows_[:30])]
+        rows.append([{"text": "⬅️ Orqaga", "callback_data": f"e:a:{loc}"}])
+        await send(runner, bot, chat_id, "⚙️ Qaysi oqim ishga tushsin?", rows, message=message)
+    elif code in ("pu", "pc"):
+        await done({"action": "pick_user" if code == "pu" else "pick_chat", "var": "picked_user" if code == "pu" else "picked_chat"})
     elif code == "al":
         await ask("alert", "🔔 Bosilganda qalqib chiqadigan matn (200 belgigacha). O'zgaruvchilar ishlaydi: {name}, {ball}...")
     elif code == "nt":

@@ -27,6 +27,42 @@ def _ui(kind: str, example: str = "") -> dict:
     return {"ui": kind, "example": example}
 
 
+EFFECTS = {"🔥": "5104841245755180586", "👍": "5107584321108051014", "👎": "5104858069142078462", "❤️": "5159385139981059251", "🎉": "5046509860389126442", "💩": "5046589136895476101"}
+BUTTON_HELP = "Har qatorga bitta tugma: «Matn | https://havola», «Matn | page:bo'lim_id», «Matn | flow:oqim_id», «Matn | copy:nusxalanadigan matn», «Matn | inline:qidiruv»"
+
+
+def parse_buttons(lines: list[str]) -> list[list[dict]]:
+    """Qator → tugma. Xato — ValueError. Natija: [[{text, kind, value}]] (har qatorda bitta tugma)."""
+    out = []
+    for line in lines:
+        if "|" not in line:
+            raise ValueError(f"«{line[:30]}» — «Matn | havola» ko'rinishida yozing")
+        label, target = (x.strip() for x in line.split("|", 1))
+        if not label or not target:
+            raise ValueError(f"«{line[:30]}» — tugma matni va manzili kerak")
+        if target.startswith(("https://", "http://", "tg://")):
+            out.append([{"text": label[:64], "kind": "url", "value": target}])
+        elif target.split(":", 1)[0] in ("page", "flow", "copy", "inline"):
+            kind, _, value = target.partition(":")
+            if kind in ("page", "flow") and not value.strip():
+                raise ValueError(f"«{label}» — {kind}: dan keyin identifikator yozing")
+            out.append([{"text": label[:64], "kind": kind, "value": value.strip()[:200]}])
+        else:
+            raise ValueError(f"«{line[:30]}» — manzil https://, page:, flow:, copy: yoki inline: bilan boshlansin")
+    if len(out) > 8:
+        raise ValueError("ko'pi bilan 8 ta tugma")
+    return out
+
+
+_BUTTONS_FIELD = dict(default_factory=list, max_length=8, description="Tugmalar (ixtiyoriy). " + BUTTON_HELP, json_schema_extra=_ui("lines", "🛒 Buyurtma | https://t.me/bot_nomi\n📋 Promokod | copy:BAHOR20"))
+
+
+def _check_buttons(v: list[str]) -> list[str]:
+    v = [x.strip() for x in v if x.strip()]
+    parse_buttons(v)
+    return v
+
+
 @dataclass(frozen=True)
 class Capability:
     id: str
@@ -71,6 +107,67 @@ class SendText(_P):
     preview: bool = Field(default=False, description="Havola ko'rinishi (preview) bo'lsinmi?", json_schema_extra=_ui("bool"))
     silent: bool = Field(default=False, description="Ovozsiz (jim) yuborilsinmi?", json_schema_extra=_ui("bool"))
     protect: bool = Field(default=False, description="Ulashish/saqlashni taqiqlash?", json_schema_extra=_ui("bool"))
+    effect: Literal["yo'q", "🔥", "👍", "👎", "❤️", "🎉", "💩"] = Field(default="yo'q", description="Xabar effekti (shaxsiy chatda animatsiya)", json_schema_extra=_ui("choice"))
+    reply: bool = Field(default=False, description="Foydalanuvchi xabariga javob (reply) sifatida yuborilsinmi?", json_schema_extra=_ui("bool"))
+    delete_after: int = Field(default=0, ge=0, le=1440, description="Necha daqiqadan keyin o'chirilsin? (0 — o'chirilmasin)", json_schema_extra=_ui("int", "0"))
+    buttons: list[str] = Field(**_BUTTONS_FIELD)
+
+    @field_validator("buttons")
+    @classmethod
+    def _btns(cls, v: list[str]) -> list[str]:
+        return _check_buttons(v)
+
+
+@action("send_media", "Rasm / video / fayl", "🖼", "Xabarlar", ("sendPhoto", "sendVideo", "sendDocument", "sendAudio", "sendVoice", "sendAnimation", "sendVideoNote", "sendSticker"), "Faylni shu yerda yuboring (yoki havola); izoh, spoiler, tugmalar")
+class SendMedia(_P):
+    file: str = Field(min_length=3, max_length=500, description="Faylni shu yerga yuboring (rasm, video, hujjat, ovoz...) yoki https:// havola yozing", json_schema_extra=_ui("media"))
+    kind: Literal["photo", "video", "document", "audio", "voice", "animation", "video_note", "sticker"] = Field(default="photo", description="Fayl turi", json_schema_extra=_ui("choice"))
+    caption: str = Field(default="", max_length=1024, description="Izoh (HTML, {o'zgaruvchi}) — ixtiyoriy", json_schema_extra=_ui("long", "Yangi kolleksiya 🔥"))
+    spoiler: bool = Field(default=False, description="Yashirin (spoiler) ko'rinsinmi? (rasm/video)", json_schema_extra=_ui("bool"))
+    caption_above: bool = Field(default=False, description="Izoh media tepasida bo'lsinmi?", json_schema_extra=_ui("bool"))
+    silent: bool = Field(default=False, description="Ovozsiz yuborilsinmi?", json_schema_extra=_ui("bool"))
+    delete_after: int = Field(default=0, ge=0, le=1440, description="Necha daqiqadan keyin o'chirilsin? (0 — o'chirilmasin)", json_schema_extra=_ui("int", "0"))
+    buttons: list[str] = Field(**_BUTTONS_FIELD)
+
+    @field_validator("buttons")
+    @classmethod
+    def _btns(cls, v: list[str]) -> list[str]:
+        return _check_buttons(v)
+
+
+@action("send_album", "Albom (2–10 ta media)", "🗂", "Xabarlar", ("sendMediaGroup",), "Bir nechta rasm/video bir albomda (havola yoki file_id)")
+class SendAlbum(_P):
+    files: list[str] = Field(min_length=2, max_length=10, description="Fayllar: har qatorga bitta https:// havola yoki file_id (2–10 ta)", json_schema_extra=_ui("lines", "https://site.uz/1.jpg\nhttps://site.uz/2.jpg"))
+    kind: Literal["photo", "video", "document", "audio"] = Field(default="photo", description="Hammasi qaysi turda?", json_schema_extra=_ui("choice"))
+    caption: str = Field(default="", max_length=1024, description="Albom izohi (birinchi faylda ko'rinadi) — ixtiyoriy", json_schema_extra=_ui("long"))
+    silent: bool = Field(default=False, description="Ovozsiz yuborilsinmi?", json_schema_extra=_ui("bool"))
+
+    @field_validator("files")
+    @classmethod
+    def _files(cls, v: list[str]) -> list[str]:
+        out = [x.strip() for x in v if x.strip()]
+        if not 2 <= len(out) <= 10:
+            raise ValueError("albomda 2 dan 10 gacha fayl bo'lsin")
+        return out
+
+
+@action("send_carousel", "Karusel (◀️ ▶️ rasmlar)", "🎠", "Xabarlar", ("sendPhoto", "editMessageMedia"), "Rasmlar bitta xabarda ◀️ ▶️ bilan almashinadi")
+class SendCarousel(_P):
+    items: list[str] = Field(min_length=2, max_length=20, description="Har qatorga bitta rasm: «havola yoki file_id | izoh»", json_schema_extra=_ui("lines", "https://site.uz/1.jpg | Birinchi mahsulot — 120 000 so'm\nhttps://site.uz/2.jpg | Ikkinchi — 90 000 so'm"))
+    buttons: list[str] = Field(**_BUTTONS_FIELD)
+
+    @field_validator("items")
+    @classmethod
+    def _items(cls, v: list[str]) -> list[str]:
+        out = [x.strip() for x in v if x.strip()]
+        if len(out) < 2:
+            raise ValueError("karuselda kamida 2 ta rasm bo'lsin")
+        return out
+
+    @field_validator("buttons")
+    @classmethod
+    def _btns(cls, v: list[str]) -> list[str]:
+        return _check_buttons(v)
 
 
 @action("send_location", "Joylashuv yuborish", "📍", "Xabarlar", ("sendLocation", "sendVenue"), "Xaritadagi nuqta (nom/manzil bo'lsa — joy kartasi)")
@@ -181,6 +278,7 @@ class Ask(_P):
         default="text", description="Javob turi", json_schema_extra=_ui("choice")
     )
     options: list[str] = Field(default_factory=list, max_length=12, description="Variantlar (faqat «choice» uchun, har qatorga bittadan)", json_schema_extra=_ui("lines", "Ha\nYo'q"))
+    placeholder: str = Field(default="", max_length=64, description="Yozish maydonidagi maslahat matni (ixtiyoriy)", json_schema_extra=_ui("text", "Ismingizni yozing"))
 
     @field_validator("var")
     @classmethod

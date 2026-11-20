@@ -52,8 +52,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from core.bot_templates import TEMPLATES
 
-ACTIONS = ("page", "url", "back", "home", "feedback", "webapp", "alert", "form", "set", "share", "check_sub", "contact", "location", "notify", "random", "copy")
-INLINE_ONLY = ("url", "alert", "copy")
+ACTIONS = ("page", "url", "back", "home", "feedback", "webapp", "alert", "form", "set", "share", "check_sub", "contact", "location", "notify", "random", "copy", "login", "inline", "flow", "pick_user", "pick_chat")
+INLINE_ONLY = ("url", "alert", "copy", "login", "inline")
+REPLY_ONLY = ("contact", "location", "pick_user", "pick_chat")
 KEYBOARDS = ("inline", "reply")
 MSG_TYPES = ("text", "photo", "video", "animation", "document", "audio", "voice", "video_note", "sticker")
 CAPTIONLESS = ("sticker", "video_note")
@@ -162,8 +163,10 @@ class Button(_M):
             raise ValueError(f"noma'lum amal: {self.action}")
         if self.action == "page" and not self.target:
             raise ValueError(f"«{self.text}» tugmasi uchun sahifa tanlanmagan")
-        if self.action == "url" and not (self.url and _URL.match(self.url)):
+        if self.action in ("url", "login") and not (self.url and _URL.match(self.url)):
             raise ValueError(f"«{self.text}» tugmasi havolasi noto'g'ri (https:// bilan boshlansin)")
+        if self.action == "flow" and not self.value.strip():
+            raise ValueError(f"«{self.text}»: oqim tanlanmagan")
         if self.action == "alert" and not self.alert.strip():
             raise ValueError(f"«{self.text}»: ogohlantirish matni kiritilmagan")
         if self.action == "copy" and not self.value.strip():
@@ -174,11 +177,11 @@ class Button(_M):
             raise ValueError(f"«{self.text}»: o'zgaruvchi tanlanmagan")
         if self.action == "random" and not self.targets:
             raise ValueError(f"«{self.text}»: tasodifiy sahifalar tanlanmagan")
-        if self.action in ("contact", "location") and not self.var:
-            self.var = "phone" if self.action == "contact" else "location"
+        if self.action in ("contact", "location", "pick_user", "pick_chat") and not self.var:
+            self.var = {"contact": "phone", "location": "location", "pick_user": "picked_user", "pick_chat": "picked_chat"}[self.action]
         if self.action not in ("page", "set", "check_sub", "contact", "location", "notify", "form"):
             self.target = None
-        if self.action != "url":
+        if self.action not in ("url", "login"):
             self.url = None
         if self.action != "random":
             self.targets = []
@@ -214,8 +217,8 @@ class Msg(_M):
             if len(row) > MAX_PER_ROW:
                 raise ValueError(f"bir qatorda ko'pi bilan {MAX_PER_ROW} tugma")
             for b in row:
-                if b.action in ("contact", "location"):
-                    raise ValueError(f"«{b.text}»: telefon/joylashuv so'rash faqat klaviatura tugmasida")
+                if b.action in REPLY_ONLY:
+                    raise ValueError(f"«{b.text}»: telefon/joylashuv/tanlash so'rovi faqat klaviatura tugmasida")
         if self.type == "question":
             if not self.text.strip():
                 raise ValueError("savol matni bo'sh")
@@ -852,6 +855,11 @@ class Menu(_M):
         flow_ids = [f.id for f in self.flows]
         if len(set(flow_ids)) != len(flow_ids):
             raise ValueError("oqimlar identifikatorlari takrorlanmasin")
+        for page in self.pages:
+            for row in list(page.buttons) + [r for m in page.messages for r in m.buttons]:
+                for button in row:
+                    if button.action == "flow" and button.value not in flow_ids:
+                        raise ValueError(f"«{button.text}» tugmasi mavjud bo'lmagan oqimga bog'langan")
         for flow in self.flows:
             for step in flow.steps:
                 if step.type == "open_page" and step.params.get("page") not in known:
@@ -974,7 +982,10 @@ def new_page_id() -> str:
 
 # --- O'zgaruvchilar va shartlar ---
 
-_TOKEN = re.compile(r"\{([a-z][a-z0-9_]{0,31})\}")
+_TOKEN = re.compile(r"\{([a-z][a-z0-9_]{0,31})(?:\|([^{}]{0,200}))?\}")
+_IF = re.compile(r"\{if ([^{}]{1,80})\}((?:(?!\{if ).)*?)(?:\{else\}((?:(?!\{if ).)*?))?\{/if\}", re.S)
+_RANDOM = re.compile(r"\{~([^{}]{1,400})\}")
+_MATH = re.compile(r"\{=([^{}]{1,80})\}")
 
 
 def render_text(text: str, *, name: str | None, username: str | None, bot: str) -> str:
@@ -986,13 +997,66 @@ def render_text(text: str, *, name: str | None, username: str | None, bot: str) 
     )
 
 
+def _safe_math(expr: str, values: dict[str, str]) -> str | None:
+    """{=ball*2+1} — xavfsiz arifmetika (+ − * / % ** va qavslar); o'zgaruvchilar son bo'lishi kerak."""
+    import ast
+    import operator
+
+    ops = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv, ast.Mod: operator.mod, ast.FloorDiv: operator.floordiv, ast.Pow: operator.pow}
+
+    def ev(node):
+        if isinstance(node, ast.Expression):
+            return ev(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+            return node.value
+        if isinstance(node, ast.Name):
+            n = _num(values.get(node.id))
+            if n is None:
+                raise ValueError(node.id)
+            return n
+        if isinstance(node, ast.BinOp) and type(node.op) in ops:
+            a, b = ev(node.left), ev(node.right)
+            if isinstance(node.op, ast.Pow) and (abs(b) > 6 or abs(a) > 1e6):
+                raise ValueError("pow")
+            return ops[type(node.op)](a, b)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+            return -ev(node.operand) if isinstance(node.op, ast.USub) else ev(node.operand)
+        raise ValueError("expr")
+
+    try:
+        result = ev(ast.parse(expr.strip(), mode="eval"))
+    except (ValueError, SyntaxError, ZeroDivisionError, OverflowError, RecursionError):
+        return None
+    return str(int(result)) if float(result).is_integer() else f"{result:.2f}".rstrip("0").rstrip(".")
+
+
 def fill(text: str, values: dict[str, str], *, escape: bool) -> str:
-    """{kalit} → qiymat. escape=True — HTML matn uchun qiymatlar xavfsizlanadi. Noma'lum kalit o'zgarishsiz qoladi."""
+    """Shablon tili. {kalit} → qiymat; {kalit|standart} — bo'sh bo'lsa standart; {~a|b|c} — tasodifiy; {=ball*2+1} — hisob;
+    {if ball >= 10}...{else}...{/if} — shart. escape=True — HTML matn uchun qiymatlar xavfsizlanadi. Noma'lum kalit o'zgarishsiz qoladi."""
+    import random
+
+    if "{if " in text:
+        for _ in range(3):  # ichma-ich bloklar
+            def cond_sub(m: re.Match) -> str:
+                c = parse_cond(m.group(1)) or ({"var": m.group(1).strip().strip("{}").lower(), "op": "set", "value": ""} if re.fullmatch(r"\{?[a-z][a-z0-9_]{0,31}\}?", m.group(1).strip(), re.I) else None)
+                if c is None:
+                    return m.group(0)
+                return (m.group(2) or "") if check_cond(c, values) else (m.group(3) or "")
+
+            new = _IF.sub(cond_sub, text)
+            if new == text:
+                break
+            text = new
+    if "{=" in text:
+        text = _MATH.sub(lambda m: _safe_math(m.group(1), values) or m.group(0), text)
+    if "{~" in text:
+        text = _RANDOM.sub(lambda m: random.choice(m.group(1).split("|")).strip(), text)
 
     def sub(m: re.Match) -> str:
         key = m.group(1)
-        if key not in values:
-            return m.group(0)
+        default = m.group(2)
+        if key not in values or (default is not None and str(values[key]) == ""):
+            return default if default is not None else m.group(0)
         value = str(values[key])
         if key == "mention" and escape:
             return value  # o'zi tayyor HTML havola
@@ -1195,6 +1259,11 @@ ACTION_LABELS = {
     "notify": "🔔 Adminga bildirish",
     "random": "🎲 Tasodifiy sahifa",
     "copy": "📋 Nusxalash",
+    "login": "🔐 Telegram orqali kirish",
+    "inline": "🔁 Ulashish (inline)",
+    "flow": "⚙️ Oqim ishga tushirish",
+    "pick_user": "👤 Foydalanuvchi tanlash",
+    "pick_chat": "📡 Kanal tanlash",
 }
 
 

@@ -43,20 +43,166 @@ def _flow(bot: "RunningBot", fid: str) -> dict | None:
 # ============================================================
 
 
+def inline_markup(bot: "RunningBot", vals: dict, lines: list[str]) -> dict | None:
+    """«Matn | havola / page: / flow: / copy: / inline:» qatorlari → inline klaviatura."""
+    rows = []
+    for (b,) in caps.parse_buttons(lines or []):
+        label, kind, value = fill(b["text"], vals, escape=False), b["kind"], b["value"]
+        if kind == "url":
+            rows.append([{"text": label, "url": fill(value, vals, escape=False)}])
+        elif kind == "page" and page_by_id(bot.menu, value):
+            rows.append([{"text": label, "callback_data": f"p:{value}"}])
+        elif kind == "flow" and _flow(bot, value):
+            rows.append([{"text": label, "callback_data": f"fx:{value}"}])
+        elif kind == "copy":
+            rows.append([{"text": label, "copy_text": {"text": fill(value, vals, escape=False)[:256]}}])
+        elif kind == "inline":
+            rows.append([{"text": label, "switch_inline_query": fill(value, vals, escape=False)}])
+    return {"inline_keyboard": rows} if rows else None
+
+
+async def _schedule_delete(runner, bot, chat_id: int, message_id: int | None, minutes: int) -> None:
+    if message_id and minutes:
+        import time
+
+        await runner.redis.zadd(f"ub:{bot.bot_id}:autodel", {f"{chat_id}:{message_id}": time.time() + minutes * 60})
+
+
+async def tick(runner: "Runner") -> None:
+    """Avto-o'chirish: muddati kelgan xabarlarni o'chiradi."""
+    import time
+
+    for bot in list(runner.bots.values()):
+        key = f"ub:{bot.bot_id}:autodel"
+        due = await runner.redis.zrangebyscore(key, 0, time.time(), start=0, num=100)
+        for member in due:
+            chat, mid = (member.decode() if isinstance(member, bytes) else member).split(":")
+            try:
+                await runner.api(bot, "deleteMessage", {"chat_id": int(chat), "message_id": int(mid)})
+            except BotApiError:
+                pass
+            await runner.redis.zrem(key, member)
+
+
 async def _text(runner, bot, ctx, p):
     data = {"chat_id": ctx["chat_id"], "text": fill(p["text"], ctx["vals"], escape=True)[:4096], "parse_mode": "HTML", "disable_web_page_preview": not p.get("preview")}
     if p.get("silent"):
         data["disable_notification"] = True
     if p.get("protect"):
         data["protect_content"] = True
+    if p.get("reply") and ctx.get("msg_id"):
+        data["reply_parameters"] = {"message_id": ctx["msg_id"], "allow_sending_without_reply": True}
+    markup = inline_markup(bot, ctx["vals"], p.get("buttons") or [])
+    if markup:
+        data["reply_markup"] = markup
+    effect = caps.EFFECTS.get(p.get("effect", ""))
+    if effect:
+        data["message_effect_id"] = effect
+    sent = None
+    for attempt in range(3):
+        try:
+            sent = await runner.api(bot, "sendMessage", data)
+            break
+        except BotApiError as exc:
+            if "message_effect_id" in data and ("effect" in exc.description.lower() or "EFFECT" in exc.description):
+                data.pop("message_effect_id")
+            elif "parse entities" in exc.description and "parse_mode" in data:
+                data.pop("parse_mode")
+                data["text"] = html_to_plain(fill(p["text"], ctx["vals"], escape=False))[:4096]
+            elif "reply" in exc.description.lower() and "reply_parameters" in data:
+                data.pop("reply_parameters")
+            else:
+                raise
+    await _schedule_delete(runner, bot, ctx["chat_id"], (sent or {}).get("message_id"), int(p.get("delete_after") or 0))
+
+
+_MEDIA = {"photo": "sendPhoto", "video": "sendVideo", "document": "sendDocument", "audio": "sendAudio", "voice": "sendVoice", "animation": "sendAnimation", "video_note": "sendVideoNote", "sticker": "sendSticker"}
+
+
+async def _media(runner, bot, ctx, p):
+    kind = p.get("kind", "photo")
+    data = {"chat_id": ctx["chat_id"], kind: p["file"]}
+    if kind not in ("sticker", "video_note") and p.get("caption"):
+        data["caption"] = fill(p["caption"], ctx["vals"], escape=True)[:1024]
+        data["parse_mode"] = "HTML"
+        if p.get("caption_above") and kind in ("photo", "video", "animation"):
+            data["show_caption_above_media"] = True
+    if p.get("spoiler") and kind in ("photo", "video", "animation"):
+        data["has_spoiler"] = True
+    if p.get("silent"):
+        data["disable_notification"] = True
+    markup = inline_markup(bot, ctx["vals"], p.get("buttons") or [])
+    if markup:
+        data["reply_markup"] = markup
+    sent = await runner.api(bot, _MEDIA[kind], data)
+    await _schedule_delete(runner, bot, ctx["chat_id"], (sent or {}).get("message_id") if isinstance(sent, dict) else None, int(p.get("delete_after") or 0))
+
+
+async def _album(runner, bot, ctx, p):
+    media = [{"type": p.get("kind", "photo"), "media": f} for f in p["files"]]
+    if p.get("caption"):
+        media[0]["caption"] = fill(p["caption"], ctx["vals"], escape=True)[:1024]
+        media[0]["parse_mode"] = "HTML"
+    data = {"chat_id": ctx["chat_id"], "media": media}
+    if p.get("silent"):
+        data["disable_notification"] = True
+    await runner.api(bot, "sendMediaGroup", data)
+
+
+def _carousel_markup(bot, vals: dict, cid: str, i: int, total: int, lines: list[str]) -> dict:
+    nav = [
+        {"text": "◀️", "callback_data": f"cr:{cid}:{(i - 1) % total}"},
+        {"text": f"{i + 1}/{total}", "callback_data": f"cr:{cid}:{i}"},
+        {"text": "▶️", "callback_data": f"cr:{cid}:{(i + 1) % total}"},
+    ]
+    extra = (inline_markup(bot, vals, lines) or {}).get("inline_keyboard", [])
+    return {"inline_keyboard": [nav] + extra}
+
+
+async def _carousel(runner, bot, ctx, p):
+    items = []
+    for line in p["items"]:
+        media, _, caption = line.partition("|")
+        items.append({"media": media.strip(), "caption": fill(caption.strip(), ctx["vals"], escape=True)[:1024]})
+    cid = new_page_id()
+    await runner.redis.set(f"ub:{bot.bot_id}:car:{cid}", json.dumps({"items": items, "buttons": p.get("buttons") or [], "vals": {k: v for k, v in ctx["vals"].items() if isinstance(v, str) and len(v) < 200}}), ex=30 * 24 * 3600)
+    first = items[0]
+    await runner.api(
+        bot, "sendPhoto",
+        {"chat_id": ctx["chat_id"], "photo": first["media"], "caption": first["caption"], "parse_mode": "HTML", "reply_markup": _carousel_markup(bot, ctx["vals"], cid, 0, len(items), p.get("buttons") or [])},
+    )
+
+
+async def on_carousel(runner: "Runner", bot: "RunningBot", chat_id: int, data: str, message: dict, query_id: str) -> None:
+    _, cid, n = data.split(":")
+    raw = await runner.redis.get(f"ub:{bot.bot_id}:car:{cid}")
+    if not raw:
+        await runner.answer(bot, query_id, "Bu karusel eskirgan")
+        return
+    info = json.loads(raw)
+    items = info["items"]
+    i = max(0, min(len(items) - 1, int(n)))
+    await runner.answer(bot, query_id)
+    item = items[i]
     try:
-        await runner.api(bot, "sendMessage", data)
+        await runner.api(
+            bot, "editMessageMedia",
+            {"chat_id": chat_id, "message_id": message["message_id"], "media": {"type": "photo", "media": item["media"], "caption": item["caption"], "parse_mode": "HTML"},
+             "reply_markup": _carousel_markup(bot, info.get("vals") or {}, cid, i, len(items), info.get("buttons") or [])},
+        )
     except BotApiError as exc:
-        if "parse entities" not in exc.description:
+        if "not modified" not in exc.description:
             raise
-        data.pop("parse_mode")
-        data["text"] = html_to_plain(fill(p["text"], ctx["vals"], escape=False))[:4096]
-        await runner.api(bot, "sendMessage", data)
+
+
+async def on_button(runner: "Runner", bot: "RunningBot", chat_id: int, flow_id: str, user: dict, message: dict | None, query_id: str | None = None) -> None:
+    """Tugma orqali oqimni ishga tushirish (fx:<oqim>)."""
+    flow = _flow(bot, flow_id)
+    await runner.answer(bot, query_id)
+    if flow is None or not flow.get("enabled", True):
+        return
+    ctx = await _ctx(runner, bot, chat_id, user, None)
+    await run(runner, bot, flow, ctx)
 
 
 async def _location(runner, bot, ctx, p):
@@ -167,7 +313,7 @@ async def _ask(runner, bot, ctx, p):
     await runner.api(
         bot, "sendMessage",
         {"chat_id": ctx["chat_id"], "text": fill(p["question"], ctx["vals"], escape=True), "parse_mode": "HTML",
-         "reply_markup": {"keyboard": rows, "resize_keyboard": True, "one_time_keyboard": kind == "choice"}},
+         "reply_markup": {"keyboard": rows, "resize_keyboard": True, "one_time_keyboard": kind == "choice", **({"input_field_placeholder": p["placeholder"][:64]} if p.get("placeholder") else {})}},
     )
     return "wait"
 
@@ -177,7 +323,7 @@ async def _stop(runner, bot, ctx, p):
 
 
 ACTIONS = {
-    "send_text": _text, "send_location": _location, "send_contact": _contact, "send_poll": _poll, "send_dice": _dice, "typing": _typing,
+    "send_text": _text, "send_media": _media, "send_album": _album, "send_carousel": _carousel, "send_location": _location, "send_contact": _contact, "send_poll": _poll, "send_dice": _dice, "typing": _typing,
     "react": _react, "set_var": _set_var, "notify_admin": _notify, "wait": _wait, "open_page": _open_page, "ask": _ask, "stop": _stop,
 }
 
@@ -420,9 +566,35 @@ async def _ask_next(runner, bot, chat_id: int, st: dict) -> None:
     await runner.api(bot, "sendMessage", data)
 
 
-async def _accept(runner, bot, chat_id: int, st: dict, raw: str) -> None:
+def _file_of(message: dict | None) -> tuple[str, str] | None:
+    """Egasi yuborgan fayl → (tur, file_id)."""
+    if not message:
+        return None
+    if message.get("photo"):
+        return "photo", message["photo"][-1]["file_id"]
+    for k in ("animation", "video", "document", "audio", "voice", "video_note", "sticker"):
+        if message.get(k):
+            return k, message[k]["file_id"]
+    return None
+
+
+async def _accept(runner, bot, chat_id: int, st: dict, raw: str, message: dict | None = None) -> None:
     cap = caps.get(st["kind"], st["cap"])
     spec = next(s for s in caps.fields_of(cap) if s.name == st["queue"][0])
+    if spec.ui == "media":
+        found = _file_of(message)
+        if found:
+            kind, fid = found
+            values = {**st["values"], spec.name: fid}
+            queue = st["queue"][1:]
+            if "kind" in queue and any(f.name == "kind" for f in caps.fields_of(cap)):
+                values["kind"] = kind
+                queue = [q for q in queue if q != "kind"]
+            await _ask_next(runner, bot, chat_id, {**st, "values": values, "queue": queue})
+            return
+        if not raw.strip().startswith(("https://", "http://")) and len(raw.strip()) < 20:
+            await runner.api(bot, "sendMessage", {"chat_id": chat_id, "text": "⚠️ Faylni shu yerga yuboring (rasm, video, hujjat...) yoki https:// havola yozing"})
+            return
     if raw.strip() == "-" and not spec.required:
         value = spec.default
     else:
@@ -597,7 +769,7 @@ async def admin_input(runner, bot, chat_id: int, message: dict, state: dict) -> 
         return False
     text = (message.get("text") or "").strip()
     if kind == "fl_p":
-        await _accept(runner, bot, chat_id, state, message.get("text") or "")
+        await _accept(runner, bot, chat_id, state, message.get("text") or message.get("caption") or "", message)
         return True
     if kind == "fl_name":
         def rename(m: dict) -> None:

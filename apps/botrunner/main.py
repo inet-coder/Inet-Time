@@ -115,6 +115,13 @@ class RunningBot:
     pending: set = field(default_factory=set)
 
 
+def req_id(var: str) -> int:
+    """request_users / request_chat uchun barqaror identifikator (o'zgaruvchi nomidan)."""
+    import zlib
+
+    return zlib.crc32(var.encode()) % 2_000_000_000 + 1
+
+
 SHOP_CALLBACKS = {"sl", "si", "sa", "sk", "sz", "sx", "sm", "so", "sg", "sp"}
 
 
@@ -515,6 +522,12 @@ class Runner:
                     line.append({"text": t, "url": fill(b["url"], vals, escape=False)})
                 elif a == "webapp":
                     line.append({"text": t, "web_app": {"url": bot.webapp_url}})
+                elif a == "login":
+                    line.append({"text": t, "login_url": {"url": fill(b["url"], vals, escape=False)}})
+                elif a == "inline":
+                    line.append({"text": t, "switch_inline_query": fill(b.get("value") or "", vals, escape=False)})
+                elif a == "flow":
+                    line.append({"text": t, "callback_data": f"fx:{b['value']}"})
                 elif a == "copy":
                     line.append({"text": t, "copy_text": {"text": fill(b.get("value") or "", vals, escape=False)[:256]}})
                 elif a == "share":
@@ -551,6 +564,10 @@ class Runner:
                     item["request_contact"] = True
                 elif b["action"] == "location":
                     item["request_location"] = True
+                elif b["action"] == "pick_user":
+                    item["request_users"] = {"request_id": req_id(b["var"]), "user_is_bot": False, "max_quantity": 1}
+                elif b["action"] == "pick_chat":
+                    item["request_chat"] = {"request_id": req_id(b["var"]), "chat_is_channel": True}
                 line.append(item)
             rows.append(line)
         if page["id"] != bot.menu.get("start") and (page.get("nav") or editing):
@@ -903,6 +920,8 @@ class Runner:
                     },
                 },
             )
+        elif action == "flow":
+            await flows.on_button(self, bot, chat_id, button.get("value") or "", user, message, query_id)
         elif action == "notify":
             vals = await self.values(bot, user)
             note = fill(button.get("alert") or "", vals, escape=False)
@@ -1257,7 +1276,11 @@ class Runner:
                 await self.answer(bot, query["id"], "❗ Avval kanallarga obuna bo'ling", alert=True)
                 await self.ask_subscribe(bot, chat_id, missing)
                 return
-        if data.startswith("bk:"):
+        if data.startswith("fx:"):
+            await flows.on_button(self, bot, chat_id, data[3:], user, message, query["id"])
+        elif data.startswith("cr:"):
+            await flows.on_carousel(self, bot, chat_id, data, message, query["id"])
+        elif data.startswith("bk:"):
             await booking.on_callback(self, bot, chat_id, data, message, user, query["id"])
         elif data.startswith(("qz:", "bn:", "cn:")):
             await games.callback(self, bot, chat_id, data, message, user, query["id"])
@@ -1317,6 +1340,10 @@ class Runner:
 
         if message.get("successful_payment"):
             await shop.on_paid(self, bot, message, user)
+            return
+        shared = message.get("users_shared") or message.get("chat_shared")
+        if shared and not is_admin:
+            await self._on_shared(bot, chat_id, message, shared, user)
             return
         staff = is_admin or chat_id in (bot.menu.get("operators") or [])
         if staff and text == "/tickets":
@@ -1447,6 +1474,22 @@ class Runner:
             await self.forward_feedback(bot, message, user)
             return
         await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": bot.menu.get("fallback") or "Menyudan tanlang 👇"})
+
+    async def _on_shared(self, bot: RunningBot, chat_id: int, message: dict, shared: dict, user: dict) -> None:
+        """Foydalanuvchi «foydalanuvchi/kanal tanlash» tugmasi orqali ma'lumot yubordi → o'zgaruvchiga saqlanadi."""
+        action = "pick_user" if message.get("users_shared") else "pick_chat"
+        var = next(
+            (b["var"] for p in bot.menu.get("pages") or [] for row in p.get("buttons") or [] for b in row if b["action"] == action and req_id(b["var"]) == shared.get("request_id")),
+            None,
+        )
+        if var is None:
+            return
+        value = ",".join(str(u["user_id"]) for u in shared.get("users") or []) if action == "pick_user" else str(shared.get("chat_id"))
+        await self.set_vars(bot, user["id"], {var: value})
+        page = await self.current_page(bot, chat_id)
+        vals = await self.values(bot, user)
+        markup = await self.menu_markup(bot, chat_id, page, vals) if page else None
+        await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": "✅ Qabul qilindi", **({"reply_markup": markup} if markup else {})})
 
     async def on_start(self, bot: RunningBot, chat_id: int, user: dict, text: str) -> None:
         payload = text.split(maxsplit=1)[1].strip() if " " in text else ""
@@ -1611,6 +1654,7 @@ class Runner:
                     await booking.reminder_tick(self)
                     await auto.tick(self)
                     await posting.tick(self)
+                    await flows.tick(self)
             except Exception:  # noqa: BLE001
                 logger.exception("eslatmalarda xato")
             await asyncio.sleep(CHECK_SECONDS)

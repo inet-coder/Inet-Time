@@ -2,7 +2,7 @@
 
 `python tools/api_coverage.py --write docs/api-coverage.md` bilan yangilanadi.
 
-**Metodlar: 30/142 (21%)** · update turlari: 5/23 (22%)
+**Metodlar: 32/142 (23%)** · update turlari: 5/23 (22%)
 
 ## Update turlari
 
@@ -16,13 +16,13 @@
 
 ✅ `getMe` ✅ `setMyCommands` ❌ `deleteMyCommands` ❌ `getMyCommands` ❌ `setMyName` ❌ `getMyName` ❌ `setMyDescription` ❌ `getMyDescription` ❌ `setMyShortDescription` ❌ `getMyShortDescription` ✅ `setChatMenuButton` ❌ `getChatMenuButton` ❌ `setMyDefaultAdministratorRights` ❌ `getMyDefaultAdministratorRights`
 
-## Xabar yuborish (17/23)
+## Xabar yuborish (18/23)
 
-✅ `sendMessage` ❌ `forwardMessage` ❌ `forwardMessages` ✅ `copyMessage` ❌ `copyMessages` ✅ `sendPhoto` ✅ `sendAudio` ✅ `sendDocument` ✅ `sendVideo` ✅ `sendAnimation` ✅ `sendVoice` ✅ `sendVideoNote` ❌ `sendPaidMedia` ❌ `sendMediaGroup` ✅ `sendLocation` ✅ `sendVenue` ✅ `sendContact` ✅ `sendPoll` ✅ `sendDice` ✅ `sendChatAction` ✅ `setMessageReaction` ✅ `sendSticker` ⛔ `sendGame`
+✅ `sendMessage` ❌ `forwardMessage` ❌ `forwardMessages` ✅ `copyMessage` ❌ `copyMessages` ✅ `sendPhoto` ✅ `sendAudio` ✅ `sendDocument` ✅ `sendVideo` ✅ `sendAnimation` ✅ `sendVoice` ✅ `sendVideoNote` ❌ `sendPaidMedia` ✅ `sendMediaGroup` ✅ `sendLocation` ✅ `sendVenue` ✅ `sendContact` ✅ `sendPoll` ✅ `sendDice` ✅ `sendChatAction` ✅ `setMessageReaction` ✅ `sendSticker` ⛔ `sendGame`
 
-## Xabarni o'zgartirish (3/9)
+## Xabarni o'zgartirish (4/9)
 
-✅ `editMessageText` ❌ `editMessageCaption` ❌ `editMessageMedia` ❌ `editMessageLiveLocation` ❌ `stopMessageLiveLocation` ✅ `editMessageReplyMarkup` ❌ `stopPoll` ✅ `deleteMessage` ❌ `deleteMessages`
+✅ `editMessageText` ❌ `editMessageCaption` ✅ `editMessageMedia` ❌ `editMessageLiveLocation` ❌ `stopMessageLiveLocation` ✅ `editMessageReplyMarkup` ❌ `stopPoll` ✅ `deleteMessage` ❌ `deleteMessages`
 
 ## Fayl va foydalanuvchi (0/5)
 

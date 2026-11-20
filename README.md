@@ -43,6 +43,11 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
     javobni kutish** (matn, son, telefon, rasm, hujjat, ovoz...). Har qadamga shart («ball ≥ 10»). Egasi chatda yig'adi
     (so'rovlar reyestr sxemasidan avtomatik), AI ham yozadi. Yangi imkoniyat = reyestrga bitta e'lon: interfeys, tekshiruv, AI
     hujjati va API qamrov hisoboti o'zi yangilanadi. «📋 Nusxalash» tugmasi (inline). `python tools/api_coverage.py` — Bot API qamrovi
+  - **Kontent va tugmalar (2-sprint)**: oqimda 🖼 rasm/video/hujjat (faylni chatda yuborasiz — tur o'zi aniqlanadi; spoiler,
+    izoh tepada, tugmalar), 🗂 albom, 🎠 karusel (◀️ ▶️ bilan rasmlar almashinadi), effektli xabar 🔥🎉, «reply» sifatida
+    yuborish, ⏳ avto-o'chirish. Tugmalar: 🔐 Telegram orqali kirish, 🔁 ulashish (inline), 📋 nusxalash, ⚙️ oqim ishga
+    tushirish, 👤 foydalanuvchi va 📡 kanal tanlash. **Shablon tili** (barcha matnlarda): `{city|Toshkent}`, `{~🔥|🎉|👍}`,
+    `{=ball*2+1}`, `{if ball >= 10}VIP{else}oddiy{/if}`
   - **🧪 Sifat to'plami**: 40 ta turli brif (gul do'koni, salon, klinika, kurs, viktorina, yordam xizmati...) bo'yicha
     AI quruvchini avtomatik baholash — tekshiruv, yetib borish, joy tutuvchilar, kutilgan modullar, mazmun va tugma
     sifati, o'zgaruvchilar, xavfsizlik (0–100 ball). Promptni o'zgartirgach regressiyani ushlaydi:

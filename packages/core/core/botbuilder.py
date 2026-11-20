@@ -668,6 +668,48 @@ class Tickets(_M):
     rating: bool = True  # yopilganda mijozdan baho so'raladi
 
 
+WEBHOOK_EVENTS = ("user.started", "order.created", "order.paid", "order.status", "booking.created", "booking.status", "form.submitted", "ticket.created")
+
+
+class Webhook(_M):
+    """Tashqi tizimga hodisa yuborish (JSON yoki Google Sheets qatori). Faqat egasi sozlaydi (AI o'zgartirmaydi)."""
+
+    id: str
+    title: str = Field(default="", max_length=40)
+    url: str = Field(max_length=500)
+    kind: Literal["json", "sheets"] = "json"
+    events: list[str] = Field(min_length=1, max_length=len(WEBHOOK_EVENTS))
+    secret: str = Field(default="", max_length=64)  # HMAC-SHA256 imzo kaliti (X-InetTime-Signature)
+    enabled: bool = True
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v: str) -> str:
+        if not _PAGE_ID.match(v):
+            raise ValueError("webhook identifikatori noto'g'ri")
+        return v
+
+    @field_validator("url")
+    @classmethod
+    def _url(cls, v: str) -> str:
+        v = v.strip()
+        if not re.fullmatch(r"https://[^\s<>\"']{4,480}", v):
+            raise ValueError("webhook manzili https:// bilan boshlansin")
+        return v
+
+    @model_validator(mode="after")
+    def _check(self):
+        self.events = [e for e in dict.fromkeys(self.events) if e in WEBHOOK_EVENTS]
+        if not self.events:
+            raise ValueError("kamida bitta hodisa tanlang")
+        return self
+
+
+class PostChannel(_M):
+    chat_id: int
+    title: str = Field(default="", max_length=64)
+
+
 AUTO_TRIGGERS = ("start_delay", "inactive", "cart", "schedule")
 AUTO_SEGMENTS = ("all", "new7", "active7", "inactive30", "ordered", "booked", "referrers")
 
@@ -733,6 +775,8 @@ class Menu(_M):
     contests: list[Contest] = Field(default_factory=list, max_length=10)
     bonus: Bonus = Bonus()
     tickets: Tickets = Tickets()
+    webhooks: list[Webhook] = Field(default_factory=list, max_length=10)
+    post_channels: list[PostChannel] = Field(default_factory=list, max_length=5)
     operators: list[int] = Field(default_factory=list, max_length=20)  # faqat murojaatlarga javob beradigan xodimlar
     canned: list[Canned] = Field(default_factory=list, max_length=20)
     captcha: bool = False  # yangi foydalanuvchi «men robot emasman» savoliga javob beradi
@@ -758,6 +802,9 @@ class Menu(_M):
             ids_ = [x.id for x in coll]
             if len(set(ids_)) != len(ids_):
                 raise ValueError(f"{what} identifikatorlari takrorlanmasin")
+        hook_ids = [h.id for h in self.webhooks]
+        if len(set(hook_ids)) != len(hook_ids):
+            raise ValueError("webhooklar takrorlanmasin")
         rule_ids = [r.id for r in self.auto]
         if len(set(rule_ids)) != len(rule_ids):
             raise ValueError("avtomatik xabar identifikatorlari takrorlanmasin")

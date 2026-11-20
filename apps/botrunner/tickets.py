@@ -18,6 +18,7 @@ from core.botbuilder import fill, new_page_id
 from core.db.base import async_session
 from core.db.models import BotTicket
 
+import integrations
 import stats
 
 if TYPE_CHECKING:
@@ -117,6 +118,7 @@ async def intake(runner: "Runner", bot: "RunningBot", message: dict, user: dict)
         return
     if fresh:
         await stats.track(runner, bot, "ticket")
+        integrations.emit(runner, bot, "ticket.created", {"number": t.number, "customer_id": chat_id, "customer_name": user.get("first_name"), "customer_username": user.get("username"), "message": preview})
         done = (bot.menu.get("feedback_done") or "✅ Murojaatingiz qabul qilindi.").rstrip()
         await runner.api(bot, "sendMessage", {"chat_id": chat_id, "text": f"{done}\n🎫 Murojaat raqami: <b>#{t.number}</b>", "parse_mode": "HTML"})
 

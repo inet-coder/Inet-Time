@@ -59,6 +59,8 @@ import booking
 import editor
 import games
 import home
+import integrations
+import posting
 import shop
 import stats
 import tickets
@@ -1073,6 +1075,7 @@ class Runner:
             return
         await self.set_vars(bot, user["id"], data)
         await stats.track(self, bot, f"form:{form['id']}")
+        integrations.emit(self, bot, "form.submitted", {"form": form["id"], "title": form["title"], "user": {"id": user["id"], "first_name": user.get("first_name"), "username": user.get("username")}, "answers": data})
         async with async_session() as db:
             db.add(BotFormAnswer(bot_id=bot.bot_id, tg_user_id=user["id"], form_id=form["id"], data=data))
             await db.commit()
@@ -1186,7 +1189,7 @@ class Runner:
         if data.startswith("tr:"):
             await tickets.rate(self, bot, chat_id, data, message, query["id"])
             return
-        if data.startswith(("adm:", "e:", "ai:", "sh:", "bm:", "au:", "gm:")):
+        if data.startswith(("adm:", "e:", "ai:", "sh:", "bm:", "au:", "gm:", "wh:", "pc:")):
             await self.answer(bot, query["id"])
             if self.is_admin(bot, chat_id):
                 if data.startswith("sh:"):
@@ -1195,6 +1198,10 @@ class Runner:
                     await auto.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("gm:"):
                     await games.admin_callback(self, bot, chat_id, data, message, user)
+                elif data.startswith("wh:"):
+                    await integrations.admin_callback(self, bot, chat_id, data, message, user)
+                elif data.startswith("pc:"):
+                    await posting.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("bm:"):
                     await booking.admin_callback(self, bot, chat_id, data, message, user)
                 elif data.startswith("adm:"):
@@ -1419,6 +1426,8 @@ class Runner:
         if is_new and payload.startswith("r") and payload[1:].isdigit():
             await self.on_referral(bot, user, int(payload[1:]))
         await stats.track(self, bot, "start")
+        if is_new:
+            integrations.emit(self, bot, "user.started", {"user": {"id": user["id"], "first_name": user.get("first_name"), "username": user.get("username")}, "referrer": int(payload[1:]) if payload.startswith("r") and payload[1:].isdigit() else None})
         if chat_id in (bot.menu.get("operators") or []):
             await self.api(bot, "sendMessage", {"chat_id": chat_id, "text": "🎫 Siz operatorsiz — murojaatlar shu yerga keladi. Ro'yxat: /tickets"})
         if chat_id == bot.owner_chat_id:
@@ -1568,6 +1577,7 @@ class Runner:
                     last_remind = loop.time()
                     await booking.reminder_tick(self)
                     await auto.tick(self)
+                    await posting.tick(self)
             except Exception:  # noqa: BLE001
                 logger.exception("eslatmalarda xato")
             await asyncio.sleep(CHECK_SECONDS)

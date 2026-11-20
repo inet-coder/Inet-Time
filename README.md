@@ -36,6 +36,13 @@ Kod yozmasdan Telegram bot yaratish platformasi va Telegram profilni avtomatlash
     (nom, telefon, manzil, ish vaqti) — javoblar hamma matnlarga o'zi joylashadi. Admin panel botdagi modullarga
     qarab chiziladi (Do'kon, Arizalar, Referal...), 📊 statistika (start, eng ko'p ochilgan bo'limlar, savdo
     voronkasi, tushum), 🧩 modullar ro'yxati va «🚀 Birinchi 5 daqiqa» yo'riqnomasi
+  - **🔌 Integratsiyalar**: hodisalar (yangi foydalanuvchi, buyurtma, to'lov, holat, yozilish, ariza, murojaat)
+    tashqi tizimga avtomatik ketadi — 🟢 **Google Sheets** (Apps Script orqali, kod tayyor beriladi: har hodisa
+    jadvalga yangi qator) va 🔗 **webhook** (CRM, Zapier/Make; HMAC-SHA256 imzo, 3 urinish, yuborishlar tarixi, 🧪 sinov).
+    Xavfsizlik: faqat https, ichki tarmoq/localhost/bulut metadata manzillari taqiqlangan, yo'naltirish kuzatilmaydi;
+    manzillar va sirlarni AI ko'rmaydi va o'zgartirmaydi. **📣 Kanal postlari**: botni kanalga admin qiling →
+    istalgan turdagi post (matn/rasm/video/so'rovnoma) + inline tugmalar, hozir yoki rejalashtirilgan vaqtda; do'kon
+    mahsulotini «🛒 Buyurtma berish» tugmasi bilan kanalga chiqarish. /admin → 🧩 Modullar → 🔌 / 📣
   - **💳 To'lov, 🎟 promokod, 📦 ombor** (do'konda): Telegram Payments — egasi @BotFather'dan olingan provayder
     tokenini (Click, Payme...) chatda kiritadi (xabar o'chiriladi, token shifrlanib alohida saqlanadi, menyu
     hujjatida va AI'da yo'q); buyurtmadan keyin mijoz «💳 Karta» yoki «💵 Naqd» tanlaydi, to'lov serverda

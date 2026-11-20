@@ -24,6 +24,7 @@ from core.botbuilder import catalog_pages, fill, money, new_page_id, page_by_id,
 from core.db.base import async_session
 from core.db.models import BotOrder
 
+import integrations
 import stats
 
 if TYPE_CHECKING:
@@ -497,6 +498,16 @@ async def create_order(runner, bot, chat_id: int, user: dict, data: dict) -> Non
     await runner.api(bot, "sendMessage", {"chat_id": chat_id, "text": f"🧾 <b>Buyurtma #{order.number}</b> tayyor.\n\nTo'lov usulini tanlang 👇", "parse_mode": "HTML", "reply_markup": {"inline_keyboard": rows}})
 
 
+def order_payload(order: BotOrder, user: dict | None = None) -> dict:
+    """Webhook uchun buyurtma ma'lumoti (ichki kalitlarsiz)."""
+    return {
+        "number": order.number, "status": order.status, "total": order.total, "delivery": order.delivery, "discount": order.discount, "promo": order.promo,
+        "payment": order.payment, "paid": order.paid, "customer_id": order.tg_user_id, "customer_name": (user or {}).get("first_name"),
+        "customer_username": (user or {}).get("username"), "items": "; ".join(f"{i['title']} × {i['qty']}" for i in order.items),
+        "answers": {k: v for k, v in (order.data or {}).items() if not k.startswith("_")},
+    }
+
+
 def _stock_problem(bot: "RunningBot", items: dict[str, int]) -> str | None:
     for item_id, qty in items.items():
         item = shop_item(bot.menu, item_id)
@@ -549,6 +560,10 @@ async def finalize(runner, bot, order: BotOrder, user: dict, *, payment: str = "
         await db.refresh(row)
         order = row
     warnings = await _take_stock(runner, bot, order)
+    payload = order_payload(order, user)
+    integrations.emit(runner, bot, "order.created", payload)
+    if paid:
+        integrations.emit(runner, bot, "order.paid", payload)
     await runner.redis.delete(_ck(bot, chat_id), f"ub:{bot.bot_id}:cartat:{chat_id}", f"ub:{bot.bot_id}:promo:{chat_id}")
     if paid:
         await stats.track(runner, bot, "paid")
@@ -691,6 +706,8 @@ async def set_status(runner, bot, order_id: int, status: str, message: dict | No
         order.updated_at = datetime.datetime.now(datetime.timezone.utc)
         await db.commit()
         await db.refresh(order)
+    if changed:
+        integrations.emit(runner, bot, "order.status", order_payload(order))
     if message is not None:
         old = message.get("text") or ""
         head = old.rsplit("Holat:", 1)[0] if "Holat:" in old else ""
@@ -1039,6 +1056,7 @@ async def _item_view(runner, bot, chat_id: int, item_id: str, message: dict | No
     rows = [
         [{"text": "✏️ Nom", "callback_data": f"sh:in:{item_id}"}, {"text": "💰 Narx", "callback_data": f"sh:ip:{item_id}"}, {"text": "🏷 Eski narx", "callback_data": f"sh:io:{item_id}"}],
         [{"text": "📝 Tavsif", "callback_data": f"sh:id:{item_id}"}, {"text": "🖼 Rasm", "callback_data": f"sh:ir:{item_id}"}, {"text": "📦 Qoldiq", "callback_data": f"sh:is:{item_id}"}],
+        [{"text": "📣 Kanalga chiqarish", "callback_data": f"pc:item:{item_id}"}],
         [{"text": "🚫 Yashirish" if item.get("active", True) else "✅ Sotuvga qaytarish", "callback_data": f"sh:ia:{item_id}"}, {"text": "🗑 O'chirish", "callback_data": f"sh:ix:{item_id}"}],
         [{"text": "⬅️ Mahsulotlar", "callback_data": "sh:items:0"}],
     ]

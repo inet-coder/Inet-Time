@@ -20,6 +20,7 @@ from core.botbuilder import fill, money, new_page_id
 from core.db.base import async_session
 from core.db.models import BotBooking
 
+import integrations
 import stats
 
 if TYPE_CHECKING:
@@ -302,6 +303,7 @@ async def finish(runner, bot, chat_id: int, user: dict, data: dict) -> None:
         await render_start(runner, bot, chat_id)
         return
     await stats.track(runner, bot, "book")
+    integrations.emit(runner, bot, "booking.created", {"number": created.number, "service": service["title"], "staff": created.staff_title, "starts_at": fmt_when(b, created.starts_at), "minutes": created.minutes, "price": created.price, "status": created.status, "customer_id": chat_id, "answers": data})
     await runner.set_vars(bot, user["id"], {k: v for k, v in data.items() if k})
     vals = await runner.values(bot, user)
     when = fmt_when(b, created.starts_at)
@@ -369,6 +371,7 @@ async def set_status(runner, bot, booking_id: int, status: str, message: dict | 
         except BotApiError:
             pass
     if changed:
+        integrations.emit(runner, bot, "booking.status", {"number": row.number, "status": row.status, "service": row.service_title, "starts_at": fmt_when(cfg(bot), row.starts_at), "customer_id": row.tg_user_id})
         b = cfg(bot)
         note = {"confirmed": "✅ Yozilishingiz tasdiqlandi!", "cancelled": "❌ Afsuski, yozilishingiz bekor qilindi.", "done": "🙏 Tashrifingiz uchun rahmat!"}.get(status)
         if note:

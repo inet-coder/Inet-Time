@@ -171,3 +171,23 @@ class BotTicket(TimestampMixin, Base):
     rating: Mapped[int | None] = mapped_column(Integer)
     first_reply_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BotPost(Base):
+    """Kanalga rejalashtirilgan / yuborilgan post: egasining xabari nusxalanadi (copyMessage)."""
+
+    __tablename__ = "bot_posts"
+    __table_args__ = (Index("ix_bot_posts_due", "status", "publish_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("user_bots.id", ondelete="CASCADE"), index=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger)
+    channel_title: Mapped[str] = mapped_column(String(64), default="")
+    from_chat_id: Mapped[int] = mapped_column(BigInteger)
+    message_id: Mapped[int] = mapped_column(Integer)
+    buttons: Mapped[list] = mapped_column(JSONB, default=list)  # [[{text, url}]]
+    publish_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(10), default="scheduled")  # scheduled | sent | failed | cancelled
+    error: Mapped[str] = mapped_column(String(200), default="")
+    sent_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

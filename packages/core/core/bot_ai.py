@@ -181,8 +181,10 @@ def _strip(value):
 
 
 def compact(menu: dict) -> str:
-    """Joriy hujjat — standart qiymatlarsiz (token tejaladi)."""
+    """Joriy hujjat — standart qiymatlarsiz (token tejaladi). Webhook manzillari va sirlari AI'ga berilmaydi."""
     doc = _strip(copy.deepcopy(menu))
+    doc.pop("webhooks", None)
+    doc.pop("post_channels", None)
     for p in doc.get("pages", []):
         p.pop("text", None)  # postlardan tiklanadi
         if p.get("media_id") is None:
@@ -285,6 +287,8 @@ def prepare(new: dict, current: dict) -> dict:
     _prepare_shop(doc, current, remap)
     _prepare_booking(doc, current)
     doc["operators"] = current.get("operators") or []  # xodimlar ro'yxatini faqat egasi o'zgartiradi
+    doc["webhooks"] = copy.deepcopy(current.get("webhooks") or [])  # tashqi manzillar va sirlar — faqat egasi
+    doc["post_channels"] = copy.deepcopy(current.get("post_channels") or [])
     for key, empty in (("quizzes", []), ("contests", []), ("bonus", None), ("captcha", False), ("canned", []), ("tickets", None)):
         if key not in doc:
             doc[key] = copy.deepcopy(current[key]) if key in current else (empty if empty is not None else {"enabled": False})
